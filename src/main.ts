@@ -3,7 +3,7 @@ import { GAME_H, GAME_W, computeScale } from './core/config';
 import { Input } from './input/input';
 import { Player, type CharacterDef } from './player/player';
 import { ProjectileSystem } from './combat/projectile';
-import { Room } from './world/room';
+import { PARALLAX, Room } from './world/room';
 
 // 캐릭터는 데이터로 추가된다 — 이 파일에 캐릭터별 분기는 없다.
 const characterDefs = Object.entries(
@@ -41,12 +41,17 @@ async function boot(): Promise<void> {
   window.addEventListener('resize', fit);
   window.addEventListener('orientationchange', () => setTimeout(fit, 100));
 
+  // 시차 배경 3층 — 층마다 카메라가 다른 비율로 민다
+  const bgFar = new Container();
+  const bgMid = new Container();
   const world = new Container();
   const ui = new Container();
-  app.stage.addChild(world, ui);
+  app.stage.addChild(bgFar, bgMid, world, ui);
 
   const room = new Room();
-  room.render(world);
+  const terrain = new Container();
+  world.addChild(terrain);
+  room.render(bgFar, bgMid, terrain);
 
   const shotLayer = new Container();
   const actorLayer = new Container();
@@ -115,6 +120,16 @@ async function boot(): Promise<void> {
 
   document.getElementById('boot')?.remove();
 
+  // 자동 검증용 상태 훅
+  (globalThis as Record<string, unknown>).__dbg = () => ({
+    x: Math.round(player.x),
+    y: Math.round(player.y),
+    state: player.state,
+    grounded: player.grounded,
+    wallDir: player.wallDir,
+    character: player.def.id,
+  });
+
   // ------------------------------------------------------------ 루프
   app.ticker.add((ticker) => {
     const dt = Math.min(ticker.deltaMS / 1000, 1 / 30);
@@ -125,6 +140,8 @@ async function boot(): Promise<void> {
     // 카메라 — 플레이어 추적 후 룸 경계로 제한
     const camX = Math.max(0, Math.min(room.width - GAME_W, player.x - GAME_W / 2));
     world.x = -Math.round(camX);
+    bgFar.x = -Math.round(camX * PARALLAX.far);
+    bgMid.x = -Math.round(camX * PARALLAX.mid);
 
     nameLabel.text = `${player.def.name}  ${player.def.archetype}`;
     const m = player.def.movement;

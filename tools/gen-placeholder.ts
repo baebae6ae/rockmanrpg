@@ -135,10 +135,12 @@ function drawLeg(f: Frame, palette: Palette, hipX: number, hipY: number, foot: [
   limb(f, palette.main, palette.dark, hipX, hipY, kneeX, kneeY, 4);
   limb(f, palette.main, palette.dark, kneeX, kneeY, fx, fy + 3, 3);
 
-  // 부츠
-  f.rect(fx - 3, fy, 7, 4, palette.main);
-  f.rect(fx - 3, fy, 7, 1, palette.dark);
-  f.rect(fx - 3, fy + 3, 1, 1, palette.light);
+  // 부츠 — 록맨 계열 특유의 큼직한 실루엣
+  f.rect(fx - 4, fy, 8, 5, palette.main);
+  f.rect(fx - 4, fy, 8, 1, palette.dark);
+  f.rect(fx - 4, fy + 4, 8, 1, palette.light);
+  f.rect(fx - 4, fy + 1, 1, 3, palette.light);
+  f.rect(fx + 3, fy + 1, 1, 3, palette.dark);
 }
 
 /** 두 점을 잇는 굵은 선 */
@@ -245,9 +247,23 @@ function drawFigure(f: Frame, palette: Palette, pose: Pose): void {
   f.rect(headCx + 5, headBase + 4, 1, 4, palette.dark);
   // 헬멧 앞챙
   f.rect(headCx - 5, headBase + 3, 11, 1, palette.dark);
-  // 귀 유닛
-  f.rect(headCx - 6, headBase + 1, 2, 3, palette.accent);
-  f.rect(headCx + 5, headBase + 1, 2, 3, palette.accent);
+  // 이마 보석
+  f.rect(headCx - 1, headBase + 6, 3, 2, palette.glow);
+  f.rect(headCx, headBase + 7, 1, 1, palette.accent);
+  // 귀 유닛과 측면 핀
+  f.rect(headCx - 7, headBase + 1, 3, 4, palette.accent);
+  f.rect(headCx + 5, headBase + 1, 3, 4, palette.accent);
+  f.rect(headCx - 8, headBase + 2, 1, 2, palette.light);
+  f.rect(headCx + 8, headBase + 2, 1, 2, palette.light);
+
+  // 어깨 아머 — 팔보다 뒤, 앞팔보다 앞에 그린다
+  const padY = shoulderY - 4;
+  f.rect(chestX - 10, padY, 5, 6, palette.main);
+  f.rect(chestX - 10, padY + 5, 5, 1, palette.light);
+  f.rect(chestX - 10, padY, 1, 6, palette.light);
+  f.rect(chestX + 6, padY, 5, 6, palette.main);
+  f.rect(chestX + 6, padY + 5, 5, 1, palette.light);
+  f.rect(chestX + 10, padY, 1, 6, palette.dark);
 
   // 앞다리·앞팔
   drawLeg(f, palette, lean + 1, hipY, footFront);

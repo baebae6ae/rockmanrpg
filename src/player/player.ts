@@ -42,6 +42,8 @@ export class Player {
   private dashTimer = 0;
   private dashCooldown = 0;
   private airDashUsed = false;
+  /** 대시 중 점프하면 공중에서도 대시 속도를 유지한다 — X 시리즈의 대시점프 */
+  private dashJump = false;
   private jumpsUsed = 0;
   private coyote = 0;
   private buffer = 0;
@@ -49,6 +51,7 @@ export class Player {
   private landTimer = 0;
   private attackTimer = 0;
   private chargeTime = 0;
+  private sliding = false;
 
   readonly view: AnimView;
   spriteSource: 'sprites' | 'generated';
@@ -117,8 +120,8 @@ export class Player {
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     this.lock = Math.max(0, this.lock - dt);
 
-    const axis = this.lock > 0 ? 0 : input.axisX;
-    if (axis !== 0 && this.dashTimer <= 0) this.facing = axis;
+    const axis = input.axisX;
+    if (axis !== 0 && this.dashTimer <= 0 && this.lock <= 0) this.facing = axis;
 
     // ---------------------------------------------------------- 대시
     if (
@@ -131,15 +134,26 @@ export class Player {
       this.dashTimer = PHYSICS.dashDuration;
       if (!this.grounded) this.airDashUsed = true;
     }
-
     if (this.dashTimer > 0) {
       this.dashTimer -= dt;
-      this.vx = this.facing * PHYSICS.dashSpeed;
       if (this.dashTimer <= 0) this.dashCooldown = PHYSICS.dashCooldown;
+    }
+
+    // 벽에 붙으면 대시점프 관성은 끊긴다
+    if (this.wallDir !== 0) this.dashJump = false;
+    // 대시점프 중 반대 방향을 누르면 관성을 버린다
+    if (this.dashJump && axis !== 0 && axis !== this.facing) this.dashJump = false;
+
+    // ---------------------------------------------------------- 수평 속도
+    // 가속 곡선 없음. 입력이 그대로 속도가 된다.
+    if (this.lock > 0) {
+      // 벽차기 직후 짧은 구간만 반동 속도를 유지한다
+    } else if (this.dashTimer > 0) {
+      this.vx = this.facing * PHYSICS.dashSpeed;
+    } else if (this.dashJump && !this.grounded) {
+      this.vx = this.facing * PHYSICS.dashSpeed;
     } else {
-      const target = axis * PHYSICS.runSpeed;
-      const accel = this.grounded ? 1 : PHYSICS.airControl;
-      this.vx += (target - this.vx) * Math.min(1, accel * dt * 22);
+      this.vx = axis * PHYSICS.runSpeed;
     }
 
     // ---------------------------------------------------------- 점프
@@ -147,21 +161,25 @@ export class Player {
     this.buffer = Math.max(0, this.buffer - dt);
     this.coyote = this.grounded ? PHYSICS.coyoteTime : Math.max(0, this.coyote - dt);
 
-    const sliding =
-      move.can_wall_kick && !this.grounded && this.wallDir !== 0 && this.vy > 0 && axis === this.wallDir;
+    // 벽에 닿아 낙하 중이면 매달린다. 방향키를 붙잡고 있을 필요는 없다 —
+    // 그 조건을 걸면 등반 중 재접촉이 까다로워져 벽타기가 사실상 불가능해진다.
+    this.sliding = move.can_wall_kick && !this.grounded && this.wallDir !== 0 && this.vy > 0;
 
     if (this.buffer > 0) {
       if (this.coyote > 0) {
         this.vy = -PHYSICS.jumpVelocity;
         this.buffer = 0;
+        this.coyote = 0;
         this.jumpsUsed = 1;
-      } else if (sliding) {
+        if (this.dashTimer > 0) this.dashJump = true;
+      } else if (this.sliding) {
         this.vy = -PHYSICS.wallKickY;
         this.vx = -this.wallDir * PHYSICS.wallKickX;
         this.facing = -this.wallDir;
         this.lock = PHYSICS.wallKickLock;
         this.buffer = 0;
         this.airDashUsed = false;
+        this.dashJump = false;
         this.jumpsUsed = 1;
       } else if (move.can_double_jump && this.jumpsUsed < 2) {
         this.vy = -PHYSICS.jumpVelocity * 0.92;
@@ -171,11 +189,13 @@ export class Player {
     }
 
     // 버튼을 일찍 떼면 상승을 자른다 — 가변 점프 높이
-    if (input.released('jump') && this.vy < 0) this.vy *= PHYSICS.jumpCutFactor;
+    if (input.released('jump') && this.vy < -PHYSICS.jumpCutVelocity) {
+      this.vy = -PHYSICS.jumpCutVelocity;
+    }
 
     // ---------------------------------------------------------- 중력
     this.vy += PHYSICS.gravity * dt;
-    if (sliding) this.vy = Math.min(this.vy, PHYSICS.wallSlideSpeed);
+    if (this.sliding) this.vy = Math.min(this.vy, PHYSICS.wallSlideSpeed);
     this.vy = Math.min(this.vy, PHYSICS.maxFall);
 
     // ---------------------------------------------------------- 이동·충돌
@@ -200,6 +220,7 @@ export class Player {
     if (this.grounded) {
       this.airDashUsed = false;
       this.jumpsUsed = 0;
+      this.dashJump = false;
       if (!wasGrounded) this.landTimer = 0.14;
     }
 
@@ -208,6 +229,13 @@ export class Player {
     if (!this.grounded) {
       if (this.blocked(room, this.x + 1, this.y)) this.wallDir = 1;
       else if (this.blocked(room, this.x - 1, this.y)) this.wallDir = -1;
+
+      // 벽에 붙으면 에어대시와 점프 횟수가 회복된다. 이게 없으면 긴 벽을
+      // 끝까지 오를 수 없다.
+      if (this.wallDir !== 0) {
+        this.airDashUsed = false;
+        this.jumpsUsed = 0;
+      }
     }
 
     // 룸 밖으로 나가지 않게
@@ -224,7 +252,7 @@ export class Player {
       this.chargeTime = 0;
     }
 
-    this.applyAnimation(sliding, dt);
+    this.applyAnimation(dt);
   }
 
   private fire(shots: ProjectileSystem, charged: boolean): void {
@@ -241,11 +269,11 @@ export class Player {
     });
   }
 
-  private applyAnimation(sliding: boolean, dt: number): void {
+  private applyAnimation(dt: number): void {
     let tag: string;
 
-    if (sliding) tag = 'wall_slide';
-    else if (this.dashTimer > 0) tag = 'dash';
+    if (this.sliding) tag = 'wall_slide';
+    else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
     else if (!this.grounded) {
       tag = this.attackTimer > 0 ? 'attack_air' : this.vy < 0 ? 'jump_rise' : 'jump_fall';
     } else if (this.attackTimer > 0) tag = 'attack_main';
@@ -257,6 +285,7 @@ export class Player {
     this.view.play(tag);
     this.view.update(dt * 1000);
     this.view.position.set(Math.round(this.x), Math.round(this.y));
-    this.view.scale.x = this.facing;
+    // 벽에 매달릴 때는 벽을 등지고 보이도록 뒤집는다
+    this.view.scale.x = this.sliding ? -this.wallDir : this.facing;
   }
 }

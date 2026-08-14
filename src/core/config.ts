@@ -13,25 +13,41 @@ export function computeScale(screenW: number, screenH: number): number {
   return fit >= 2 ? Math.floor(fit) : fit;
 }
 
-/** 물리 — 단위는 게임 픽셀 / 초 */
+/**
+ * 물리 — 단위는 게임 픽셀 / 초.
+ *
+ * 록맨 시리즈의 조작감은 "가속이 없다"는 데서 나온다. 방향키를 누르면 즉시
+ * 최고 속도, 떼면 즉시 정지. 공중에서도 방향 전환이 즉시 된다. 가속 곡선을
+ * 넣으면 미끄러지는 느낌이 되어 시리즈 특유의 정확한 조작감이 사라진다.
+ */
 export const PHYSICS = {
-  gravity: 900,
-  maxFall: 320,
-  runSpeed: 92,
-  airControl: 0.65,
-  jumpVelocity: 255,
-  /** 점프 버튼을 일찍 떼면 상승을 잘라 가변 점프 높이를 만든다 */
-  jumpCutFactor: 0.42,
+  gravity: 780,
+  maxFall: 300,
+
+  /** 즉시 도달하는 지상·공중 이동 속도 */
+  runSpeed: 95,
+
+  /** 약 57px 높이 — X 시리즈의 점프 높이에 맞춤 */
+  jumpVelocity: 300,
+  /**
+   * 점프 버튼을 일찍 떼면 여기까지 상승을 자른다 (약 17px 높이).
+   * 남은 속도에 비율을 곱하면 떼는 시점에 따라 최소 점프 높이가 들쭉날쭉해지므로
+   * 하한을 고정한다.
+   */
+  jumpCutVelocity: 165,
   coyoteTime: 0.08,
-  jumpBuffer: 0.1,
+  jumpBuffer: 0.12,
 
-  dashSpeed: 195,
-  dashDuration: 0.34,
-  dashCooldown: 0.08,
+  dashSpeed: 200,
+  dashDuration: 0.33,
+  dashCooldown: 0.05,
 
-  wallSlideSpeed: 62,
-  wallKickX: 165,
-  wallKickY: 245,
-  /** 벽차기 직후 입력이 잠기는 시간 */
-  wallKickLock: 0.12,
+  wallSlideSpeed: 68,
+  /**
+   * 벽차기 반동. 너무 크면 같은 벽으로 되돌아갈 수 없어 벽타기 등반이 불가능해진다.
+   * 입력 잠금도 짧게 잡아야 즉시 벽으로 복귀할 수 있다.
+   */
+  wallKickX: 110,
+  wallKickY: 300,
+  wallKickLock: 0.09,
 } as const;
