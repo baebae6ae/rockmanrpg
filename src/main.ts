@@ -9,14 +9,7 @@ import { Progress, type ItemDef, type SkillDef } from './progression/progress';
 import { HealthBar } from './ui/healthbar';
 import { Menu } from './ui/menu';
 import { Pickup } from './world/pickup';
-import { PARALLAX, Room } from './world/room';
-
-interface MapDef {
-  id: string;
-  name: string;
-  spawns: { enemy: string; x: number; y: number; params?: Record<string, unknown> }[];
-  items?: { id: string; x: number; y: number }[];
-}
+import { PARALLAX, Room, type MapDef } from './world/room';
 
 // 콘텐츠는 전부 데이터에서 온다 — 이 파일에 캐릭터·적·무기별 분기는 없다.
 const byId = <T>(glob: Record<string, unknown>): Record<string, T> => {
@@ -70,7 +63,8 @@ async function boot(): Promise<void> {
   const ui = new Container();
   app.stage.addChild(bgFar, bgMid, world, ui);
 
-  const room = new Room();
+  const map = mapDefs.test_room;
+  const room = new Room(map);
   const terrain = new Container();
   world.addChild(terrain);
   room.render(bgFar, bgMid, terrain);
@@ -130,7 +124,6 @@ async function boot(): Promise<void> {
   ui.addChild(menu.view);
 
   // ------------------------------------------------------------ 배치
-  const map = mapDefs.test_room;
   const enemies: Enemy[] = [];
 
   for (const spawn of map.spawns) {
@@ -145,7 +138,12 @@ async function boot(): Promise<void> {
     enemies.push(await Enemy.create(merged, pattern, spawn.x, spawn.y, actorLayer, shots));
   }
 
-  const boss = enemies.find((e) => e.def.tier === 'boss' || e.def.tier === 'signature');
+  const bosses = enemies.filter((e) => e.def.tier === 'boss' || e.def.tier === 'signature');
+  /** 화면 안에 있는 살아 있는 보스 — 게이지를 누구 것으로 띄울지 정한다 */
+  const nearestBoss = (): Enemy | undefined =>
+    bosses
+      .filter((b) => b.alive && Math.abs(b.x - player.x) < GAME_W * 0.7)
+      .sort((a, b) => Math.abs(a.x - player.x) - Math.abs(b.x - player.x))[0];
 
   const pickups: Pickup[] = [];
   for (const entry of map.items ?? []) {
@@ -159,7 +157,7 @@ async function boot(): Promise<void> {
 
   // ------------------------------------------------------------ 캐릭터
   let index = 0;
-  let player = await Player.create(characterDefs[index], actorLayer, progress, skillDefs);
+  let player = await Player.create(characterDefs[index], actorLayer, progress, skillDefs, map.player_spawn);
 
   let swapping = false;
   const swap = async (): Promise<void> => {
@@ -169,7 +167,7 @@ async function boot(): Promise<void> {
       index = (index + 1) % characterDefs.length;
       // 새 캐릭터를 먼저 만든 뒤 교체한다. 로딩을 기다리는 동안에도 루프는
       // 계속 돌기 때문에, 먼저 파괴하면 파괴된 뷰를 갱신하게 된다.
-      const next = await Player.create(characterDefs[index], actorLayer, progress, skillDefs);
+      const next = await Player.create(characterDefs[index], actorLayer, progress, skillDefs, map.player_spawn);
       next.x = player.x;
       next.y = player.y;
       next.facing = player.facing;
@@ -221,9 +219,10 @@ async function boot(): Promise<void> {
     owned: [...progress.owned],
     equipped: { ...progress.equipped },
     enemiesAlive: enemies.filter((e) => e.alive).length,
-    bossHp: boss?.hp ?? null,
-    bossPos: boss ? [Math.round(boss.x), Math.round(boss.y)] : null,
+    bosses: bosses.map((b) => ({ id: b.def.id, hp: b.hp, x: Math.round(b.x) })),
     menuOpen: menu.open,
+    energy: player.weapon ? progress.energyOf(player.weapon.id) : null,
+    cost: player.weapon ? progress.energyCost(player.weapon) : null,
   });
 
   // ------------------------------------------------------------ 보상
@@ -264,6 +263,7 @@ async function boot(): Promise<void> {
 
     // 메뉴가 열려 있으면 게임은 멈춘다
     if (!menu.open) {
+      progress.regen(dt);
       player.update(dt, input, room, shots);
 
       const ctx = { target: { x: player.x, y: player.y - player.hitboxH / 2 }, room };
@@ -297,9 +297,9 @@ async function boot(): Promise<void> {
     weaponBar.visible = usesEnergy;
     if (weapon && usesEnergy) weaponBar.set(progress.energyOf(weapon.id) / progress.maxEnergy);
 
-    const bossVisible = !!boss && boss.alive && Math.abs(boss.x - player.x) < GAME_W * 0.75;
-    bossBar.visible = bossVisible;
-    if (boss && bossVisible) bossBar.set(boss.hp / boss.maxHp);
+    const boss = nearestBoss();
+    bossBar.visible = !!boss;
+    if (boss) bossBar.set(boss.hp / boss.maxHp);
 
     nameLabel.text = player.def.name;
     levelLabel.text = `Lv ${progress.level}  SP ${progress.sp}`;

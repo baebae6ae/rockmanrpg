@@ -1,0 +1,24 @@
+{
+  "id": "spark_mandriller",
+  "name": "스파크 맨드릴러",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+
+  "hitbox": { "w": 24, "h": 36 },
+  "stats": { "hp": 260, "attack": 15, "exp": 450 },
+
+  "element": "electric",
+  "weakness": [{ "element": "cutter", "multiplier": 2.5 }],
+  "contact_damage": 11,
+
+  "pattern": "boss_charger_a",
+  "pattern_params": {
+    "charge_speed": 215,
+    "shot_speed": 165,
+    "shot_power": 12,
+    "melee_power": 17,
+    "element": "electric",
+    "lair_center": 880
+  }
+}

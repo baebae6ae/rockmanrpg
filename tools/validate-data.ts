@@ -197,9 +197,26 @@ for (const { id, where, data } of enemies) {
 const enemyIds = new Set(enemies.map((e) => e.id));
 
 for (const { where, data } of readAll('data/maps')) {
+  for (const key of ['width', 'height', 'ground_y', 'player_spawn', 'solids']) {
+    if (data[key] === undefined) fail(where, `필수 필드 누락: ${key}`);
+  }
+  if (!Array.isArray(data.solids) || data.solids.length === 0) {
+    fail(where, 'solids 가 비어 있다 — 바닥이 없으면 플레이어가 떨어진다');
+  } else {
+    data.solids.forEach((s: Record<string, any>, i: number) => {
+      for (const k of ['x', 'y', 'w', 'h']) {
+        if (typeof s[k] !== 'number') fail(where, `solids[${i}].${k} 가 숫자가 아니다`);
+      }
+      if (s.w <= 0 || s.h <= 0) fail(where, `solids[${i}] 의 크기가 0 이하다`);
+    });
+  }
+
   for (const spawn of (data.spawns ?? []) as Record<string, unknown>[]) {
     if (!enemyIds.has(String(spawn.enemy))) {
       fail(where, `배치가 참조하는 적이 없다: ${String(spawn.enemy)}`);
+    }
+    if (typeof spawn.x === 'number' && data.width && (spawn.x < 0 || spawn.x > data.width)) {
+      fail(where, `배치가 맵 밖이다: ${String(spawn.enemy)} x=${String(spawn.x)}`);
     }
   }
 }

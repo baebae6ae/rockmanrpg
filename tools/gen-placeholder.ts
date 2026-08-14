@@ -733,6 +733,14 @@ const ENEMY_PALETTES: Record<string, Palette> = {
     main: '#3f9c58', light: '#8ee59a', dark: '#1d4d2c',
     skin: '#e8d9a8', eye: '#12301c', accent: '#ffd85c', weapon: '#b6ff8e', glow: '#b6ff8e',
   },
+  spark_mandriller: {
+    main: '#c8a020', light: '#ffe890', dark: '#6a5008',
+    skin: '#f0dcb0', eye: '#301a08', accent: '#fff0a0', weapon: '#ffee88', glow: '#ffee88',
+  },
+  boomer_kuwanger: {
+    main: '#7a5ec8', light: '#c0a8ff', dark: '#3a2a70',
+    skin: '#e0d0f0', eye: '#1a1030', accent: '#a8f0ff', weapon: '#a8f0ff', glow: '#a8f0ff',
+  },
 };
 
 /** 지상 잡몹 — 다리 달린 메카니로이드 */
@@ -791,6 +799,8 @@ const ENEMIES: EnemySpec[] = [
   { id: 'walker', kind: 'walker' },
   { id: 'hover', kind: 'hover' },
   { id: 'sting_chameleon', kind: 'boss' },
+  { id: 'spark_mandriller', kind: 'boss' },
+  { id: 'boomer_kuwanger', kind: 'boss' },
 ];
 
 function mobFrames(kind: 'walker' | 'hover', palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {

@@ -1,0 +1,49 @@
+{
+  "id": "boss_teleporter",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.35 },
+    {
+      "op": "random",
+      "options": [
+        [{ "op": "teleport", "x": "$spot_a", "y": 208, "fade": 0.22 }],
+        [{ "op": "teleport", "x": "$spot_b", "y": 208, "fade": 0.22 }]
+      ]
+    },
+    { "op": "face_player" },
+    { "op": "shoot_aimed", "count": 2, "spread": 12, "interval": 0.1, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 4, "color": 11073279 },
+    { "op": "wait", "duration": 0.35 },
+
+    {
+      "op": "random",
+      "options": [
+        [
+          { "op": "face_player" },
+          { "op": "charge", "speed": "$charge_speed", "distance": 130 },
+          { "op": "melee", "w": 28, "h": 26, "duration": 0.22, "power": "$melee_power" }
+        ],
+        [
+          { "op": "face_player" },
+          { "op": "jump", "vy": 250, "vx": 60, "timeout": 2.5 },
+          { "op": "shoot_aimed", "count": 4, "spread": 26, "interval": 0.07, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 4, "color": 11073279 }
+        ]
+      ]
+    },
+    { "op": "wait", "duration": 0.4 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.45,
+      "then": [
+        { "op": "invulnerable", "value": true },
+        { "op": "teleport", "x": "$spot_a", "y": 208, "fade": 0.2 },
+        { "op": "shoot", "count": 6, "spread": 70, "interval": 0.05, "speed": 150, "power": "$shot_power", "element": "$element", "radius": 4, "color": 11073279 },
+        { "op": "teleport", "x": "$spot_b", "y": 208, "fade": 0.2 },
+        { "op": "shoot", "count": 6, "spread": 70, "interval": 0.05, "speed": 150, "power": "$shot_power", "element": "$element", "radius": 4, "color": 11073279 },
+        { "op": "invulnerable", "value": false },
+        { "op": "wait", "duration": 0.4 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}

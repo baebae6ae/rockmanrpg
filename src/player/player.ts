@@ -81,12 +81,15 @@ export class Player implements Damageable {
     view: AnimView,
     source: 'sprites' | 'generated',
     readonly progress: Progress,
+    spawn: { x: number; y: number },
   ) {
     this.view = view;
     this.spriteSource = source;
     this.hp = this.maxHp;
-    this.spawnX = this.x;
-    this.spawnY = this.y;
+    this.x = spawn.x;
+    this.y = spawn.y;
+    this.spawnX = spawn.x;
+    this.spawnY = spawn.y;
   }
 
   /** 레벨 성장과 장비를 반영한 최대 체력 */
@@ -152,11 +155,12 @@ export class Player implements Damageable {
     layer: Container,
     progress: Progress,
     skills: Record<string, SkillDef>,
+    spawn: { x: number; y: number },
   ): Promise<Player> {
     const sheet = await loadSheet('characters', def.id);
     const view = new AnimView(sheet);
     layer.addChild(view);
-    const player = new Player(def, view, sheet.source, progress);
+    const player = new Player(def, view, sheet.source, progress, spawn);
     player.refreshWeapons(skills);
     return player;
   }

@@ -150,6 +150,23 @@ export class Progress {
     }
   }
 
+  /**
+   * 무기 에너지 자연 회복.
+   *
+   * 원작에는 없지만, 적이 없는 보스 구역에서 에너지가 바닥나면 특수무기가
+   * 영구히 잠겨 약점 시스템 자체가 성립하지 않는다. 연사를 막을 정도로만
+   * 느리게 회복시킨다 (완충까지 약 19초).
+   */
+  regen(dt: number): void {
+    this.regenCarry += dt * 1.5;
+    if (this.regenCarry < 1) return;
+    const whole = Math.floor(this.regenCarry);
+    this.regenCarry -= whole;
+    this.refillEnergy(whole);
+  }
+
+  private regenCarry = 0;
+
   // ------------------------------------------------------------ 장비
 
   equip(item: ItemDef): void {
