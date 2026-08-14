@@ -50,6 +50,8 @@ export class Player implements Damageable {
   private airDashUsed = false;
   /** 대시 중 점프하면 공중에서도 대시 속도를 유지한다 — X 시리즈의 대시점프 */
   private dashJump = false;
+  /** 클래식 계열의 슬라이딩 — 대시와 같은 이동이지만 아래+점프로 나간다 */
+  private slideMode = false;
   private jumpsUsed = 0;
   private coyote = 0;
   private buffer = 0;
@@ -258,7 +260,7 @@ export class Player implements Damageable {
     const axis = stunned ? 0 : input.axisX;
     if (axis !== 0 && this.dashTimer <= 0 && this.lock <= 0) this.facing = axis;
 
-    // ---------------------------------------------------------- 대시
+    // ---------------------------------------------------------- 대시·슬라이딩
     if (
       move.can_dash &&
       !stunned &&
@@ -268,11 +270,31 @@ export class Player implements Damageable {
       (this.grounded || (move.can_air_dash && !this.airDashUsed))
     ) {
       this.dashTimer = PHYSICS.dashDuration;
+      this.slideMode = false;
       if (!this.grounded) this.airDashUsed = true;
     }
+
+    // 클래식 계열은 대시가 없는 대신 아래+점프로 슬라이딩한다
+    if (
+      move.can_slide &&
+      !stunned &&
+      this.grounded &&
+      this.dashTimer <= 0 &&
+      this.dashCooldown <= 0 &&
+      input.down('down') &&
+      input.pressed('jump')
+    ) {
+      this.dashTimer = PHYSICS.dashDuration;
+      this.slideMode = true;
+      this.buffer = 0;
+    }
+
     if (this.dashTimer > 0) {
       this.dashTimer -= dt;
-      if (this.dashTimer <= 0) this.dashCooldown = PHYSICS.dashCooldown;
+      if (this.dashTimer <= 0) {
+        this.dashCooldown = PHYSICS.dashCooldown;
+        this.slideMode = false;
+      }
     }
 
     // 벽에 붙으면 대시점프 관성은 끊긴다
@@ -296,7 +318,9 @@ export class Player implements Damageable {
     }
 
     // ---------------------------------------------------------- 점프
-    if (input.pressed('jump') && !stunned) this.buffer = PHYSICS.jumpBuffer;
+    if (input.pressed('jump') && !stunned && !(this.slideMode && this.dashTimer > 0)) {
+      this.buffer = PHYSICS.jumpBuffer;
+    }
     this.buffer = Math.max(0, this.buffer - dt);
     this.coyote = this.grounded ? PHYSICS.coyoteTime : Math.max(0, this.coyote - dt);
 
@@ -406,7 +430,8 @@ export class Player implements Damageable {
 
     const ok = fireSkill(skill, {
       x: this.x,
-      y: this.y,
+      // 총구 높이는 캐릭터 키를 따른다 — 클래식 계열은 X 계열보다 낮다
+      y: this.y - this.def.hitbox.h * 0.63,
       facing: this.facing,
       shots,
       progress: this.progress,
@@ -423,7 +448,7 @@ export class Player implements Damageable {
 
     if (this.hurtTimer > 0) tag = 'hurt';
     else if (this.sliding) tag = 'wall_slide';
-    else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
+    else if (this.dashTimer > 0 && this.grounded) tag = this.slideMode ? 'slide' : 'dash';
     else if (!this.grounded) {
       tag = this.attackTimer > 0 ? 'attack_air' : this.vy < 0 ? 'jump_rise' : 'jump_fall';
     } else if (this.attackTimer > 0) tag = 'attack_main';

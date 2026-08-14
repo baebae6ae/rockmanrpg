@@ -59,7 +59,52 @@ const PALETTES: Record<string, Palette> = {
     weapon: '#8ef0d8',
     glow: '#8ef0d8',
   },
+  // 클래식 계열 — 색수가 적고 대비가 강한 8비트풍 배색
+  rockman: {
+    main: '#3a86e0',
+    light: '#9fd4ff',
+    dark: '#12408f',
+    skin: '#f6c9a0',
+    eye: '#10306a',
+    accent: '#ffffff',
+    weapon: '#c8dcf5',
+    glow: '#9fd4ff',
+  },
+  blues: {
+    main: '#c8352f',
+    light: '#ff9a86',
+    dark: '#701410',
+    skin: '#f6c9a0',
+    eye: '#2a1010',
+    accent: '#e8e8e8',
+    weapon: '#c8dcf5',
+    glow: '#ffd85c',
+  },
+  forte: {
+    main: '#4a3a72',
+    light: '#9a86d0',
+    dark: '#221a3a',
+    skin: '#f6c9a0',
+    eye: '#f04040',
+    accent: '#ffd020',
+    weapon: '#c0a0ff',
+    glow: '#ffd020',
+  },
 };
+
+interface CharacterSpec {
+  id: string;
+  style: 'x' | 'classic';
+}
+
+/** 화풍 혼용 — X 계열과 클래식 계열의 크기·프레임 수가 다르다 (docs/DESIGN.md §2.1) */
+const CHARACTERS: CharacterSpec[] = [
+  { id: 'x', style: 'x' },
+  { id: 'zero', style: 'x' },
+  { id: 'rockman', style: 'classic' },
+  { id: 'blues', style: 'classic' },
+  { id: 'forte', style: 'classic' },
+];
 
 // ---------------------------------------------------------------- 픽셀 버퍼
 
@@ -293,6 +338,164 @@ function drawFigure(f: Frame, palette: Palette, pose: Pose): void {
   }
 }
 
+// ---------------------------------------------------------------- 클래식 계열
+
+/**
+ * 8비트 계열 체형 — 머리가 크고 몸이 짧다. 전체 높이 약 26px 로,
+ * X 계열(약 36px)과 나란히 놓으면 세대 차이가 그대로 보인다.
+ */
+function drawClassicFigure(f: Frame, p: Palette, pose: Pose): void {
+  const hipY = pose.hipY ?? 10;
+  const lean = pose.lean ?? 0;
+  const footFront = pose.footFront ?? [2, 0];
+  const footBack = pose.footBack ?? [-2, 0];
+  const shoulderY = hipY + 8;
+  const cx = lean;
+
+  const leg = (pal: Palette, foot: [number, number]): void => {
+    const [fx, fy] = foot;
+    f.rect(fx - 2, fy + 3, 5, hipY - fy - 2, pal.main);
+    f.rect(fx - 3, fy, 7, 4, pal.main);
+    f.rect(fx - 3, fy, 7, 1, pal.dark);
+    f.rect(fx - 3, fy + 3, 7, 1, pal.light);
+  };
+
+  const arm = (pal: Palette, pose2: ArmPose, sx: number, weapon: boolean): void => {
+    const t: Partial<Record<ArmPose, [number, number]>> = {
+      down: [sx, shoulderY - 6],
+      forward: [sx + 7, shoulderY - 1],
+      back: [sx - 5, shoulderY - 4],
+      up: [sx + 2, shoulderY + 5],
+      guard: [sx + 4, shoulderY - 3],
+    };
+    const [hx, hy] = t[pose2] ?? t.down!;
+    limb(f, pal.main, pal.dark, sx, shoulderY, hx, hy, 3);
+    if (weapon) {
+      f.rect(hx - 1, hy - 2, 5, 5, p.weapon);
+      f.rect(hx - 1, hy - 2, 5, 1, p.dark);
+    } else {
+      f.rect(hx - 1, hy - 2, 3, 3, p.accent);
+    }
+  };
+
+  // 뒤쪽
+  leg({ ...p, main: p.dark, light: p.main }, footBack);
+  arm({ ...p, main: p.dark }, pose.armBack ?? 'down', cx - 3, false);
+
+  // 몸통 — 짧고 통짜
+  for (let y = 0; y < 9; y++) {
+    const halfW = y > 6 ? 5 : 4;
+    for (let x = -halfW; x <= halfW; x++) {
+      f.set(cx + x, hipY + y, x === -halfW ? p.light : x === halfW ? p.dark : p.main);
+    }
+  }
+  f.rect(cx - 1, hipY + 3, 3, 2, p.accent);
+
+  // 큰 머리
+  const hb = shoulderY + 1;
+  f.rect(cx - 4, hb, 9, 4, p.skin);
+  f.rect(cx - 3, hb + 1, 2, 2, p.eye);
+  f.rect(cx + 2, hb + 1, 2, 2, p.eye);
+  // 헬멧
+  f.rect(cx - 6, hb + 3, 13, 5, p.main);
+  f.row(hb + 8, 5, p.main);
+  f.row(hb + 9, 3, p.light);
+  f.rect(cx - 6, hb + 3, 1, 5, p.light);
+  f.rect(cx + 6, hb + 3, 1, 5, p.dark);
+  f.rect(cx - 6, hb + 2, 13, 1, p.dark);
+  // 귀 유닛
+  f.rect(cx - 7, hb + 3, 1, 3, p.accent);
+  f.rect(cx + 7, hb + 3, 1, 3, p.accent);
+
+  // 앞쪽
+  leg(p, footFront);
+  arm(p, pose.armFront ?? 'down', cx + 3, pose.buster ?? false);
+
+  if (pose.charge) {
+    const r = 3 + pose.charge * 4;
+    f.ring(cx + 10, shoulderY - 1, r, p.glow, 170 + pose.charge * 85);
+  }
+}
+
+/** 클래식 계열은 프레임 수가 적다 — 달리기 4장 (X 계열은 8장) */
+function classicTags(): Tag[] {
+  const run: Pose[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const swing = Math.sin(a) * 4;
+    run.push({
+      hipY: 10,
+      footFront: [swing, Math.max(0, Math.cos(a)) * 3],
+      footBack: [-swing, Math.max(0, -Math.cos(a)) * 3],
+      armFront: swing > 0 ? 'back' : 'forward',
+      armBack: swing > 0 ? 'forward' : 'back',
+    });
+  }
+
+  return [
+    { name: 'idle', duration: 200, loop: true, poses: [{ hipY: 10 }, { hipY: 10, headY: -1 }] },
+    { name: 'run', duration: 90, loop: true, poses: run },
+    {
+      name: 'jump_rise',
+      duration: 100,
+      loop: false,
+      poses: [{ hipY: 12, footFront: [3, 4], footBack: [-3, 3], armFront: 'up', armBack: 'up' }],
+    },
+    {
+      name: 'jump_fall',
+      duration: 100,
+      loop: true,
+      poses: [{ hipY: 12, footFront: [3, 2], footBack: [-3, 4], armFront: 'guard', armBack: 'up' }],
+    },
+    {
+      name: 'jump_land',
+      duration: 80,
+      loop: false,
+      poses: [{ hipY: 7, footFront: [3, 0], footBack: [-3, 0], armFront: 'guard', armBack: 'guard' }],
+    },
+    {
+      name: 'slide',
+      duration: 120,
+      loop: true,
+      poses: [
+        { hipY: 5, lean: 3, footFront: [7, 0], footBack: [-4, 0], armFront: 'back', armBack: 'back' },
+      ],
+    },
+    {
+      name: 'attack_main',
+      duration: 80,
+      loop: false,
+      poses: [
+        { hipY: 10, armFront: 'forward', armBack: 'back', buster: true },
+        { hipY: 10, lean: -1, armFront: 'forward', armBack: 'down', buster: true },
+      ],
+    },
+    {
+      name: 'attack_air',
+      duration: 80,
+      loop: false,
+      poses: [
+        { hipY: 12, footFront: [3, 3], footBack: [-3, 3], armFront: 'forward', buster: true },
+      ],
+    },
+    {
+      name: 'charge_loop',
+      duration: 100,
+      loop: true,
+      poses: [
+        { hipY: 10, armFront: 'forward', buster: true, charge: 0.3 },
+        { hipY: 10, armFront: 'forward', buster: true, charge: 1 },
+      ],
+    },
+    {
+      name: 'hurt',
+      duration: 110,
+      loop: false,
+      poses: [{ hipY: 11, lean: -3, footFront: [-1, 2], footBack: [-5, 0], armFront: 'up', armBack: 'up' }],
+    },
+  ];
+}
+
 // ---------------------------------------------------------------- 포즈 정의
 
 interface Tag {
@@ -459,15 +662,16 @@ interface SheetMeta {
   tags: Record<string, { from: number; to: number; duration: number; loop: boolean }>;
 }
 
-function buildSheet(palette: Palette): { png: Buffer; meta: SheetMeta } {
+function buildSheet(palette: Palette, style: 'x' | 'classic'): { png: Buffer; meta: SheetMeta } {
   const frames: Frame[] = [];
   const tags: SheetMeta['tags'] = {};
+  const draw = style === 'classic' ? drawClassicFigure : drawFigure;
 
-  for (const tag of characterTags()) {
+  for (const tag of style === 'classic' ? classicTags() : characterTags()) {
     const from = frames.length;
     for (const pose of tag.poses) {
       const f = new Frame();
-      drawFigure(f, palette, pose);
+      draw(f, palette, pose);
       frames.push(f);
     }
     tags[tag.name] = { from, to: frames.length - 1, duration: tag.duration, loop: tag.loop };
@@ -660,9 +864,9 @@ function buildEnemySheet(spec: EnemySpec): { png: Buffer; meta: SheetMeta } {
 
 let total = 0;
 
-for (const [id, palette] of Object.entries(PALETTES)) {
-  const { png, meta } = buildSheet(palette);
-  writeSheet(OUT_CHARS, id, png, meta);
+for (const spec of CHARACTERS) {
+  const { png, meta } = buildSheet(PALETTES[spec.id], spec.style);
+  writeSheet(OUT_CHARS, spec.id, png, meta);
   total++;
 }
 

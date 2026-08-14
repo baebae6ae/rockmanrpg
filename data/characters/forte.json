@@ -1,0 +1,24 @@
+{
+  "id": "forte",
+  "name": "포르테",
+  "series": "classic",
+  "sprite_scale": 1,
+  "archetype": "ranged",
+
+  "hitbox": { "w": 13, "h": 25 },
+
+  "base_stats": { "hp": 95, "attack": 11, "defense": 4 },
+  "growth": { "hp": 7, "attack": 1.8, "defense": 0.7 },
+
+  "movement": {
+    "can_dash": true,
+    "can_air_dash": false,
+    "can_wall_kick": false,
+    "can_double_jump": true,
+    "can_climb_ladder": true,
+    "can_slide": false
+  },
+
+  "equipment_slots": ["head", "body", "arm", "foot"],
+  "starting_skills": ["forte_buster"]
+}

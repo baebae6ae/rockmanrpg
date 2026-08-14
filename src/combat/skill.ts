@@ -19,6 +19,7 @@ function num(effect: SkillEffect | undefined, key: string, fallback: number): nu
 
 export interface FireContext {
   x: number;
+  /** 총구 높이 (캐릭터 키에 따라 다르다) */
   y: number;
   facing: number;
   shots: ProjectileSystem;
@@ -59,7 +60,7 @@ export function fireSkill(skill: SkillDef, ctx: FireContext): boolean {
     const angle = base + offset;
     ctx.shots.spawn({
       x: ctx.x + ctx.facing * 11,
-      y: ctx.y - 19,
+      y: ctx.y,
       dx: Math.cos(angle),
       dy: Math.sin(angle),
       speed,
