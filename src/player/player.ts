@@ -10,6 +10,8 @@ import { AnimView, loadSheet } from '../anim/sheet';
 import { PHYSICS } from '../core/config';
 import { overlaps, type Room } from '../world/room';
 import type { ProjectileSystem } from '../combat/projectile';
+import { computeDamage } from '../combat/elements';
+import type { Damageable } from '../combat/types';
 import type { Input } from '../input/input';
 
 export interface CharacterDef {
@@ -26,10 +28,18 @@ export interface CharacterDef {
     can_climb_ladder: boolean;
     can_slide: boolean;
   };
-  shot: { speed: number; color: string; radius: number; lifetime: number };
+  base_stats: { hp: number; attack: number; defense?: number };
+  shot: {
+    speed: number;
+    color: string;
+    radius: number;
+    lifetime: number;
+    power: number;
+    element: string;
+  };
 }
 
-export class Player {
+export class Player implements Damageable {
   x = 40;
   y = 208;
   vx = 0;
@@ -53,6 +63,15 @@ export class Player {
   private chargeTime = 0;
   private sliding = false;
 
+  hp: number;
+  readonly maxHp: number;
+  readonly element = 'neutral';
+  private invulnTimer = 0;
+  private hurtTimer = 0;
+  private deathTimer = 0;
+  private readonly spawnX: number;
+  private readonly spawnY: number;
+
   readonly view: AnimView;
   spriteSource: 'sprites' | 'generated';
 
@@ -63,6 +82,50 @@ export class Player {
   ) {
     this.view = view;
     this.spriteSource = source;
+    this.hp = def.base_stats.hp;
+    this.maxHp = def.base_stats.hp;
+    this.spawnX = this.x;
+    this.spawnY = this.y;
+  }
+
+  get alive(): boolean {
+    return this.hp > 0;
+  }
+  get hitboxW(): number {
+    return this.def.hitbox.w;
+  }
+  get hitboxH(): number {
+    return this.def.hitbox.h;
+  }
+  get invulnerable(): boolean {
+    return this.invulnTimer > 0;
+  }
+
+  takeDamage(power: number, element: string, fromX: number): void {
+    if (this.invulnTimer > 0 || this.deathTimer > 0 || !this.alive) return;
+
+    this.hp = Math.max(0, this.hp - computeDamage(power, element, this.element));
+    this.invulnTimer = 1;
+    this.hurtTimer = 0.34;
+    this.dashTimer = 0;
+    this.dashJump = false;
+    this.vx = (this.x >= fromX ? 1 : -1) * 78;
+    this.vy = -130;
+
+    if (this.hp <= 0) {
+      this.deathTimer = 1.3;
+      this.view.play('death');
+    }
+  }
+
+  private respawn(): void {
+    this.hp = this.maxHp;
+    this.x = this.spawnX;
+    this.y = this.spawnY;
+    this.vx = 0;
+    this.vy = 0;
+    this.invulnTimer = 1.2;
+    this.view.alpha = 1;
   }
 
   static async create(def: CharacterDef, layer: Container): Promise<Player> {
@@ -102,6 +165,24 @@ export class Player {
     return y;
   }
 
+  /** 축별로 이동시킨 뒤 지형에 붙인다 */
+  private integrate(dt: number, room: Room): void {
+    this.x += this.vx * dt;
+    if (this.blocked(room, this.x, this.y)) {
+      this.x = this.snapX(room, Math.sign(this.vx) || this.facing);
+      this.vx = 0;
+      if (this.dashTimer > 0) this.dashTimer = 0;
+    }
+
+    this.y += this.vy * dt;
+    if (this.blocked(room, this.x, this.y)) {
+      this.y = this.snapY(room, Math.sign(this.vy) || 1);
+      this.vy = 0;
+    }
+
+    this.x = Math.max(this.halfWidth, Math.min(room.width - this.halfWidth, this.x));
+  }
+
   private snapX(room: Room, dir: number): number {
     const { w, h } = this.def.hitbox;
     let x = this.x;
@@ -115,17 +196,35 @@ export class Player {
   update(dt: number, input: Input, room: Room, shots: ProjectileSystem): void {
     const move = this.def.movement;
 
+    this.invulnTimer = Math.max(0, this.invulnTimer - dt);
+    this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+
+    // 사망 중에는 조작을 받지 않고 낙하만 시킨다
+    if (this.deathTimer > 0) {
+      this.deathTimer -= dt;
+      this.vx *= 0.88;
+      this.vy = Math.min(this.vy + PHYSICS.gravity * dt, PHYSICS.maxFall);
+      this.integrate(dt, room);
+      if (this.deathTimer <= 0) this.respawn();
+      this.view.update(dt * 1000);
+      this.syncView();
+      return;
+    }
+
+    const stunned = this.hurtTimer > 0;
+
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
     this.landTimer = Math.max(0, this.landTimer - dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     this.lock = Math.max(0, this.lock - dt);
 
-    const axis = input.axisX;
+    const axis = stunned ? 0 : input.axisX;
     if (axis !== 0 && this.dashTimer <= 0 && this.lock <= 0) this.facing = axis;
 
     // ---------------------------------------------------------- 대시
     if (
       move.can_dash &&
+      !stunned &&
       input.pressed('dash') &&
       this.dashCooldown <= 0 &&
       this.dashTimer <= 0 &&
@@ -146,7 +245,10 @@ export class Player {
 
     // ---------------------------------------------------------- 수평 속도
     // 가속 곡선 없음. 입력이 그대로 속도가 된다.
-    if (this.lock > 0) {
+    if (stunned) {
+      // 피격 경직 중에는 넉백 속도만 남긴다
+      this.vx *= 0.9;
+    } else if (this.lock > 0) {
       // 벽차기 직후 짧은 구간만 반동 속도를 유지한다
     } else if (this.dashTimer > 0) {
       this.vx = this.facing * PHYSICS.dashSpeed;
@@ -157,7 +259,7 @@ export class Player {
     }
 
     // ---------------------------------------------------------- 점프
-    if (input.pressed('jump')) this.buffer = PHYSICS.jumpBuffer;
+    if (input.pressed('jump') && !stunned) this.buffer = PHYSICS.jumpBuffer;
     this.buffer = Math.max(0, this.buffer - dt);
     this.coyote = this.grounded ? PHYSICS.coyoteTime : Math.max(0, this.coyote - dt);
 
@@ -173,13 +275,17 @@ export class Player {
         this.jumpsUsed = 1;
         if (this.dashTimer > 0) this.dashJump = true;
       } else if (this.sliding) {
+        // 대시를 누른 채 벽을 차면 훨씬 멀리 튀어나간다 — X 시리즈의 대시 벽차기
+        const dashKick = move.can_dash && (input.down('dash') || this.dashTimer > 0);
+
         this.vy = -PHYSICS.wallKickY;
-        this.vx = -this.wallDir * PHYSICS.wallKickX;
         this.facing = -this.wallDir;
-        this.lock = PHYSICS.wallKickLock;
+        this.vx = this.facing * (dashKick ? PHYSICS.dashSpeed : PHYSICS.wallKickX);
+        this.lock = dashKick ? PHYSICS.wallKickLock * 1.6 : PHYSICS.wallKickLock;
         this.buffer = 0;
         this.airDashUsed = false;
-        this.dashJump = false;
+        this.dashTimer = 0;
+        this.dashJump = dashKick;
         this.jumpsUsed = 1;
       } else if (move.can_double_jump && this.jumpsUsed < 2) {
         this.vy = -PHYSICS.jumpVelocity * 0.92;
@@ -201,18 +307,7 @@ export class Player {
     // ---------------------------------------------------------- 이동·충돌
     const wasGrounded = this.grounded;
 
-    this.x += this.vx * dt;
-    if (this.blocked(room, this.x, this.y)) {
-      this.x = this.snapX(room, Math.sign(this.vx) || this.facing);
-      this.vx = 0;
-      if (this.dashTimer > 0) this.dashTimer = 0;
-    }
-
-    this.y += this.vy * dt;
-    if (this.blocked(room, this.x, this.y)) {
-      this.y = this.snapY(room, Math.sign(this.vy) || 1);
-      this.vy = 0;
-    }
+    this.integrate(dt, room);
 
     // 접지는 충돌 결과가 아니라 별도 탐침으로 판정한다.
     // 충돌 해제 후에는 접촉면에 정확히 붙어 있어 "겹침"이 발생하지 않기 때문.
@@ -242,12 +337,13 @@ export class Player {
     this.x = Math.max(this.halfWidth, Math.min(room.width - this.halfWidth, this.x));
 
     // ---------------------------------------------------------- 사격
-    if (input.down('shoot')) this.chargeTime += dt;
-    if (input.pressed('shoot')) {
+    if (stunned) this.chargeTime = 0;
+    else if (input.down('shoot')) this.chargeTime += dt;
+    if (input.pressed('shoot') && !stunned) {
       const charged = false;
       this.fire(shots, charged);
     }
-    if (input.released('shoot')) {
+    if (input.released('shoot') && !stunned) {
       if (this.chargeTime > 0.55) this.fire(shots, true);
       this.chargeTime = 0;
     }
@@ -261,18 +357,24 @@ export class Player {
     shots.spawn({
       x: this.x + this.facing * 11,
       y: this.y - 19,
-      dir: this.facing,
+      dx: this.facing,
+      dy: 0,
       speed: s.speed,
       color: Number(s.color),
       radius: charged ? s.radius * 2.4 : s.radius,
       lifetime: s.lifetime,
+      team: 'player',
+      power: charged ? s.power * 3 : s.power,
+      element: s.element,
+      pierce: charged,
     });
   }
 
   private applyAnimation(dt: number): void {
     let tag: string;
 
-    if (this.sliding) tag = 'wall_slide';
+    if (this.hurtTimer > 0) tag = 'hurt';
+    else if (this.sliding) tag = 'wall_slide';
     else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
     else if (!this.grounded) {
       tag = this.attackTimer > 0 ? 'attack_air' : this.vy < 0 ? 'jump_rise' : 'jump_fall';
@@ -284,8 +386,14 @@ export class Player {
 
     this.view.play(tag);
     this.view.update(dt * 1000);
+    this.syncView();
+  }
+
+  private syncView(): void {
     this.view.position.set(Math.round(this.x), Math.round(this.y));
     // 벽에 매달릴 때는 벽을 등지고 보이도록 뒤집는다
     this.view.scale.x = this.sliding ? -this.wallDir : this.facing;
+    // 무적 시간 동안 깜빡인다
+    this.view.alpha = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 24) % 2 === 0 ? 0.3 : 1;
   }
 }

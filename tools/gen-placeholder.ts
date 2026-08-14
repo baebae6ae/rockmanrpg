@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT_DIR = resolve(ROOT, 'assets/generated/characters');
+const OUT_CHARS = resolve(ROOT, 'assets/generated/characters');
+const OUT_ENEMIES = resolve(ROOT, 'assets/generated/enemies');
 
 const CANVAS = 64;
 const COLUMNS = 8;
@@ -125,6 +126,8 @@ interface Pose {
   charge?: number;
   /** 전체 투명도 */
   alpha?: number;
+  /** 몸집 보정 — 보스처럼 덩치가 큰 대상에 쓴다 */
+  bulk?: number;
 }
 
 function drawLeg(f: Frame, palette: Palette, hipX: number, hipY: number, foot: [number, number]): void {
@@ -216,10 +219,12 @@ function drawFigure(f: Frame, palette: Palette, pose: Pose): void {
   drawLeg(f, { ...palette, main: palette.dark, light: palette.main }, lean - 1, hipY, footBack);
   drawArm(f, { ...palette, main: palette.dark }, pose.armBack ?? 'down', chestX - 3, shoulderY, false, false);
 
+  const bulk = pose.bulk ?? 0;
+
   // 몸통
   for (let y = 0; y < 13; y++) {
     const t = y / 12;
-    const halfW = Math.round(5 + t * 1.5);
+    const halfW = Math.round(5 + t * 1.5) + bulk;
     const cx = Math.round(chestX * t);
     for (let x = -halfW; x <= halfW; x++) {
       const isEdgeL = x === -halfW;
@@ -258,12 +263,12 @@ function drawFigure(f: Frame, palette: Palette, pose: Pose): void {
 
   // 어깨 아머 — 팔보다 뒤, 앞팔보다 앞에 그린다
   const padY = shoulderY - 4;
-  f.rect(chestX - 10, padY, 5, 6, palette.main);
-  f.rect(chestX - 10, padY + 5, 5, 1, palette.light);
-  f.rect(chestX - 10, padY, 1, 6, palette.light);
-  f.rect(chestX + 6, padY, 5, 6, palette.main);
-  f.rect(chestX + 6, padY + 5, 5, 1, palette.light);
-  f.rect(chestX + 10, padY, 1, 6, palette.dark);
+  f.rect(chestX - 10 - bulk, padY, 5 + bulk, 6, palette.main);
+  f.rect(chestX - 10 - bulk, padY + 5, 5 + bulk, 1, palette.light);
+  f.rect(chestX - 10 - bulk, padY, 1, 6, palette.light);
+  f.rect(chestX + 6, padY, 5 + bulk, 6, palette.main);
+  f.rect(chestX + 6, padY + 5, 5 + bulk, 1, palette.light);
+  f.rect(chestX + 10 + bulk, padY, 1, 6, palette.dark);
 
   // 앞다리·앞팔
   drawLeg(f, palette, lean + 1, hipY, footFront);
@@ -478,6 +483,14 @@ function buildSheet(palette: Palette): { png: Buffer; meta: SheetMeta } {
     loop: death.tag.loop,
   };
 
+  return {
+    png: packFrames(frames),
+    meta: { canvas: { w: CANVAS, h: CANVAS }, columns: COLUMNS, tags },
+  };
+}
+
+/** 프레임들을 균일 격자 PNG 로 묶는다 */
+function packFrames(frames: Frame[]): Buffer {
   const rows = Math.ceil(frames.length / COLUMNS);
   const png = new PNG({ width: COLUMNS * CANVAS, height: rows * CANVAS });
   png.data.fill(0);
@@ -498,24 +511,174 @@ function buildSheet(palette: Palette): { png: Buffer; meta: SheetMeta } {
     }
   });
 
-  return {
-    png: PNG.sync.write(png),
-    meta: { canvas: { w: CANVAS, h: CANVAS }, columns: COLUMNS, tags },
+  return PNG.sync.write(png);
+}
+
+// ---------------------------------------------------------------- 적
+
+const ENEMY_PALETTES: Record<string, Palette> = {
+  walker: {
+    main: '#7a6a4e', light: '#c4ad7f', dark: '#3f3626',
+    skin: '#c9b48c', eye: '#2a1a10', accent: '#ffb545', weapon: '#c4ad7f', glow: '#ff8a3c',
+  },
+  hover: {
+    main: '#4a5f8c', light: '#96b0e0', dark: '#22304f',
+    skin: '#96b0e0', eye: '#101a30', accent: '#cfe0ff', weapon: '#96b0e0', glow: '#7fd8ff',
+  },
+  sting_chameleon: {
+    main: '#3f9c58', light: '#8ee59a', dark: '#1d4d2c',
+    skin: '#e8d9a8', eye: '#12301c', accent: '#ffd85c', weapon: '#b6ff8e', glow: '#b6ff8e',
+  },
+};
+
+/** 지상 잡몹 — 다리 달린 메카니로이드 */
+function drawWalker(f: Frame, p: Palette, phase: number): void {
+  const swing = Math.round(Math.sin(phase * Math.PI * 2) * 3);
+  const bob = Math.round(Math.abs(Math.cos(phase * Math.PI * 2)));
+
+  f.rect(-7 + swing, 0, 5, 7, p.dark);
+  f.rect(2 - swing, 0, 5, 7, p.dark);
+  f.rect(-7 + swing, 0, 5, 1, p.eye);
+  f.rect(2 - swing, 0, 5, 1, p.eye);
+
+  const by = 6 + bob;
+  f.rect(-9, by, 18, 14, p.main);
+  f.rect(-9, by, 18, 1, p.dark);
+  f.rect(-9, by + 13, 18, 1, p.light);
+  f.rect(-9, by, 1, 14, p.light);
+  f.rect(8, by, 1, 14, p.dark);
+  for (let i = -6; i <= 6; i += 4) f.rect(i, by + 2, 1, 2, p.dark);
+
+  f.rect(-4, by + 5, 8, 5, p.eye);
+  f.rect(-3, by + 6, 6, 3, p.glow);
+  f.rect(-1, by + 7, 2, 1, p.accent);
+
+  f.rect(0, by + 14, 1, 4, p.dark);
+  f.rect(-1, by + 18, 3, 2, p.accent);
+}
+
+/** 비행 잡몹 — 부유 드론 */
+function drawHover(f: Frame, p: Palette, phase: number): void {
+  const cy = 24 + Math.round(Math.sin(phase * Math.PI * 2) * 2);
+
+  for (let y = -9; y <= 9; y++) {
+    for (let x = -10; x <= 10; x++) {
+      if ((x * x) / 100 + (y * y) / 81 > 1) continue;
+      const edge = (x * x) / 100 + (y * y) / 81 > 0.72;
+      f.set(x, cy + y, edge ? (x < 0 ? p.light : p.dark) : p.main);
+    }
+  }
+
+  f.rect(-5, cy - 2, 10, 6, p.eye);
+  f.rect(-4, cy - 1, 8, 4, p.glow);
+  f.rect(-2, cy, 3, 2, p.accent);
+
+  const fin = Math.round(Math.sin(phase * Math.PI * 4) * 1);
+  f.rect(-14, cy + 1 + fin, 4, 2, p.accent);
+  f.rect(10, cy + 1 - fin, 4, 2, p.accent);
+}
+
+interface EnemySpec {
+  id: string;
+  kind: 'walker' | 'hover' | 'boss';
+}
+
+const ENEMIES: EnemySpec[] = [
+  { id: 'walker', kind: 'walker' },
+  { id: 'hover', kind: 'hover' },
+  { id: 'sting_chameleon', kind: 'boss' },
+];
+
+function mobFrames(kind: 'walker' | 'hover', palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {
+  const frames: Frame[] = [];
+  const tags: SheetMeta['tags'] = {};
+  const draw = kind === 'walker' ? drawWalker : drawHover;
+
+  const push = (name: string, count: number, duration: number, loop: boolean, pal: Palette): void => {
+    const from = frames.length;
+    for (let i = 0; i < count; i++) {
+      const f = new Frame();
+      draw(f, pal, i / count);
+      frames.push(f);
+    }
+    tags[name] = { from, to: frames.length - 1, duration, loop };
   };
+
+  push('idle', 2, 220, true, palette);
+  push('move', 4, 120, true, palette);
+  // 피격은 밝은 팔레트로 대체해 눈에 띄게 한다
+  push('hurt', 2, 90, false, { ...palette, main: palette.light, dark: palette.main });
+  return { frames, tags };
+}
+
+function bossFrames(palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {
+  const frames: Frame[] = [];
+  const tags: SheetMeta['tags'] = {};
+  const BULK = 2;
+
+  const push = (name: string, poses: Pose[], duration: number, loop: boolean): void => {
+    const from = frames.length;
+    for (const pose of poses) {
+      const f = new Frame();
+      drawFigure(f, palette, { ...pose, bulk: BULK });
+      frames.push(f);
+    }
+    tags[name] = { from, to: frames.length - 1, duration, loop };
+  };
+
+  const byName = new Map(characterTags().map((t) => [t.name, t.poses]));
+  push('idle', byName.get('idle')!, 170, true);
+  push('move', byName.get('run')!, 70, true);
+  push('telegraph', [
+    { hipY: 11, lean: -2, armFront: 'back', armBack: 'back' },
+    { hipY: 10, lean: -3, armFront: 'back', armBack: 'back', headY: -1 },
+  ], 130, false);
+  push('attack_1', byName.get('attack_main')!, 80, false);
+  push('attack_2', [
+    { hipY: 13, lean: 2, armFront: 'slash_high', saber: 'high' },
+    { hipY: 13, lean: 3, armFront: 'slash_low', saber: 'low' },
+  ], 90, false);
+  push('hurt', byName.get('hurt')!, 100, false);
+  return { frames, tags };
+}
+
+function buildEnemySheet(spec: EnemySpec): { png: Buffer; meta: SheetMeta } {
+  const palette = ENEMY_PALETTES[spec.id];
+  const built = spec.kind === 'boss' ? bossFrames(palette) : mobFrames(spec.kind, palette);
+  const frames = built.frames;
+  const tags = built.tags;
+
+  const death = deathTag(palette);
+  const from = frames.length;
+  frames.push(...death.frames);
+  tags.death = { from, to: frames.length - 1, duration: death.tag.duration, loop: false };
+
+  return { png: packFrames(frames), meta: { canvas: { w: CANVAS, h: CANVAS }, columns: COLUMNS, tags } };
 }
 
 // ---------------------------------------------------------------- 실행
 
 let total = 0;
+
 for (const [id, palette] of Object.entries(PALETTES)) {
   const { png, meta } = buildSheet(palette);
-  const dir = resolve(OUT_DIR, id);
+  writeSheet(OUT_CHARS, id, png, meta);
+  total++;
+}
+
+for (const spec of ENEMIES) {
+  const { png, meta } = buildEnemySheet(spec);
+  writeSheet(OUT_ENEMIES, spec.id, png, meta);
+  total++;
+}
+
+console.log(`임시 도트 ${total}개 생성 → assets/generated/`);
+
+function writeSheet(dirBase: string, id: string, png: Buffer, meta: SheetMeta): void {
+  const dir = resolve(dirBase, id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(resolve(dir, `${id}.png`), png);
   writeFileSync(resolve(dir, `${id}.json`), `${JSON.stringify(meta, null, 2)}\n`);
-
   const frameCount = Math.max(...Object.values(meta.tags).map((t) => t.to)) + 1;
-  console.log(`  ${id.padEnd(6)} ${frameCount}프레임 ${Object.keys(meta.tags).length}태그`);
-  total++;
+  console.log(`  ${id.padEnd(18)} ${frameCount}프레임 ${Object.keys(meta.tags).length}태그`);
 }
-console.log(`임시 도트 ${total}개 생성 → assets/generated/characters/`);

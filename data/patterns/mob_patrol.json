@@ -1,0 +1,16 @@
+{
+  "id": "mob_patrol",
+  "sequence": [
+    { "op": "move_to", "x": "$left", "speed": "$speed", "timeout": 5 },
+    { "op": "wait", "duration": 0.4 },
+    { "op": "face_player" },
+    { "op": "shoot", "count": 1, "speed": 115, "power": "$shot_power", "element": "$element", "radius": 3, "color": 16758085 },
+    { "op": "wait", "duration": 0.5 },
+    { "op": "move_to", "x": "$right", "speed": "$speed", "timeout": 5 },
+    { "op": "wait", "duration": 0.4 },
+    { "op": "face_player" },
+    { "op": "shoot", "count": 2, "spread": 10, "interval": 0.14, "speed": 115, "power": "$shot_power", "element": "$element", "radius": 3, "color": 16758085 },
+    { "op": "wait", "duration": 0.6 },
+    { "op": "loop", "count": -1 }
+  ]
+}

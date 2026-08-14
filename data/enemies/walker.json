@@ -1,0 +1,20 @@
+{
+  "id": "walker",
+  "name": "메카니로이드 워커",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+
+  "hitbox": { "w": 18, "h": 24 },
+  "stats": { "hp": 32, "attack": 6, "exp": 12 },
+
+  "element": "ground",
+  "contact_damage": 6,
+
+  "pattern": "mob_patrol",
+  "pattern_params": {
+    "speed": 40,
+    "shot_power": 7,
+    "element": "ground"
+  }
+}

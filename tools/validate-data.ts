@@ -112,6 +112,98 @@ for (const file of files) {
   }
 }
 
+// ---------------------------------------------------------------- 적·패턴·맵
+
+/** §7.1 — 인터프리터가 아는 프리미티브. 새 op 을 추가하면 여기도 갱신한다. */
+const KNOWN_OPS = new Set([
+  'wait', 'anim', 'telegraph', 'face_player', 'invulnerable',
+  'loop', 'if_hp_below', 'random',
+  'move_to', 'charge', 'jump', 'teleport',
+  'shoot', 'shoot_aimed', 'melee',
+]);
+
+const MOB_TAGS = ['idle', 'hurt', 'death'];
+const BOSS_TAGS = ['idle', 'move', 'telegraph', 'attack_1', 'hurt', 'death'];
+
+function readAll(dir: string): { id: string; where: string; data: Record<string, any> }[] {
+  const full = resolve(ROOT, dir);
+  if (!existsSync(full)) return [];
+  return readdirSync(full)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => ({
+      id: f.replace(/\.json$/, ''),
+      where: `${dir}/${f}`,
+      data: readJson(resolve(full, f)) as Record<string, any>,
+    }))
+    .filter((e) => e.data);
+}
+
+function walkOps(steps: unknown, where: string): void {
+  if (!Array.isArray(steps)) return;
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') continue;
+    const op = (step as Record<string, unknown>).op;
+    if (typeof op !== 'string' || !KNOWN_OPS.has(op)) {
+      fail(where, `알 수 없는 프리미티브: ${String(op)}`);
+    }
+    walkOps((step as Record<string, unknown>).then, where);
+    for (const branch of ((step as Record<string, unknown>).options as unknown[]) ?? []) {
+      walkOps(branch, where);
+    }
+  }
+}
+
+const patterns = readAll('data/patterns');
+for (const { id, where, data } of patterns) {
+  if (data.id !== id) fail(where, `id 가 파일명과 다르다 (${data.id} ≠ ${id})`);
+  if (!Array.isArray(data.sequence) || data.sequence.length === 0) {
+    fail(where, 'sequence 가 비어 있다');
+    continue;
+  }
+  walkOps(data.sequence, where);
+}
+const patternIds = new Set(patterns.map((p) => p.id));
+
+const enemies = readAll('data/enemies');
+for (const { id, where, data } of enemies) {
+  if (data.id !== id) fail(where, `id 가 파일명과 다르다 (${data.id} ≠ ${id})`);
+
+  for (const key of ['name', 'tier', 'hitbox', 'stats', 'element', 'pattern']) {
+    if (data[key] === undefined) fail(where, `필수 필드 누락: ${key}`);
+  }
+  if (data.stats && (data.stats.hp === undefined || data.stats.exp === undefined)) {
+    fail(where, 'stats 에 hp 와 exp 가 필요하다');
+  }
+  if (data.pattern && !patternIds.has(data.pattern)) {
+    fail(where, `참조하는 패턴이 없다: ${data.pattern}`);
+  }
+
+  const sheet = findSheet('enemies', id);
+  if (!sheet) {
+    fail(where, `스프라이트가 없다 — assets/{sprites,generated}/enemies/${id}/`);
+    continue;
+  }
+  const meta = readJson(resolve(sheet.dir, `${id}.json`)) as Record<string, any> | null;
+  if (!meta) continue;
+
+  const required = data.tier === 'boss' || data.tier === 'signature' ? BOSS_TAGS : MOB_TAGS;
+  const tags = Object.keys(meta.tags ?? {});
+  for (const tag of required) {
+    if (!tags.includes(tag)) {
+      fail(`${sheet.source}/enemies/${id}`, `필수 애니메이션 태그 누락: ${tag}`);
+    }
+  }
+}
+const enemyIds = new Set(enemies.map((e) => e.id));
+
+for (const { where, data } of readAll('data/maps')) {
+  for (const spawn of (data.spawns ?? []) as Record<string, unknown>[]) {
+    if (!enemyIds.has(String(spawn.enemy))) {
+      fail(where, `배치가 참조하는 적이 없다: ${String(spawn.enemy)}`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- 결과
 
 for (const w of warnings) console.log(w);
@@ -122,4 +214,6 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log(`데이터 검증 통과 — 캐릭터 ${files.length}개`);
+console.log(
+  `데이터 검증 통과 — 캐릭터 ${files.length} · 적 ${enemies.length} · 패턴 ${patterns.length}`,
+);

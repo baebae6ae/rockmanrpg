@@ -1,0 +1,15 @@
+{
+  "id": "mob_hover",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "move_to", "x": "$left", "speed": "$speed", "timeout": 4 },
+    { "op": "telegraph", "anim": "idle", "duration": 0.35 },
+    { "op": "shoot_aimed", "count": 1, "speed": 130, "power": "$shot_power", "element": "$element", "radius": 3, "color": 8378623 },
+    { "op": "wait", "duration": 0.5 },
+    { "op": "move_to", "x": "$right", "speed": "$speed", "timeout": 4 },
+    { "op": "telegraph", "anim": "idle", "duration": 0.35 },
+    { "op": "shoot_aimed", "count": 3, "spread": 16, "interval": 0.1, "speed": 130, "power": "$shot_power", "element": "$element", "radius": 3, "color": 8378623 },
+    { "op": "wait", "duration": 0.7 },
+    { "op": "loop", "count": -1 }
+  ]
+}

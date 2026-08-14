@@ -1,0 +1,21 @@
+{
+  "id": "hover",
+  "name": "부유 드론",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+
+  "hitbox": { "w": 20, "h": 20 },
+  "stats": { "hp": 24, "attack": 5, "exp": 15 },
+
+  "element": "electric",
+  "gravity": false,
+  "contact_damage": 5,
+
+  "pattern": "mob_hover",
+  "pattern_params": {
+    "speed": 55,
+    "shot_power": 6,
+    "element": "electric"
+  }
+}
