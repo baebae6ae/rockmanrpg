@@ -1,0 +1,26 @@
+# --- 에셋 (저장소 외부 관리) ---
+# 원작 스프라이트는 버전 관리하지 않는다. 규격은 docs/DESIGN.md §5 참고.
+assets/sprites/
+assets/audio/
+
+# --- Godot ---
+.godot/
+/android/
+export_presets.cfg
+*.translation
+
+# --- 빌드 산출물 ---
+build/
+export/
+*.pck
+*.exe
+*.x86_64
+*.dmg
+*.apk
+
+# --- OS / 에디터 ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
