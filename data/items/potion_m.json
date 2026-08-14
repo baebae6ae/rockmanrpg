@@ -1,0 +1,10 @@
+{
+  "id": "potion_m",
+  "name": "대형 회복 캡슐",
+  "kind": "consumable",
+  "description": "체력 100 회복",
+  "price": 110,
+  "use": {
+    "hp": 100
+  }
+}

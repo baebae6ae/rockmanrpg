@@ -6,6 +6,8 @@
  */
 
 import { Container, Graphics } from 'pixi.js';
+import type { PortalDef } from './portal';
+import type { NpcDef } from './npc';
 
 export interface Solid {
   x: number;
@@ -19,13 +21,19 @@ export interface Solid {
 export interface MapDef {
   id: string;
   name: string;
+  /** 사냥터 권장 레벨. 마을은 0 */
+  recommended_level?: number;
+  /** 적이 나오지 않는 안전 지대인지 */
+  safe?: boolean;
   width: number;
   height: number;
   ground_y: number;
   player_spawn: { x: number; y: number };
   solids: Solid[];
-  spawns: { enemy: string; x: number; y: number; params?: Record<string, unknown> }[];
+  spawns?: { enemy: string; x: number; y: number; params?: Record<string, unknown> }[];
   items?: { id: string; x: number; y: number }[];
+  portals?: PortalDef[];
+  npcs?: NpcDef[];
 }
 
 /** 배경을 매번 같은 모양으로 그리기 위한 결정적 난수 */

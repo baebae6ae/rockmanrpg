@@ -35,6 +35,11 @@
       "kind": "health",
       "chance": 1,
       "amount": 40
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 210
     }
   ]
 }

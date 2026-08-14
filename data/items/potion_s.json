@@ -1,0 +1,10 @@
+{
+  "id": "potion_s",
+  "name": "소형 회복 캡슐",
+  "kind": "consumable",
+  "description": "체력 40 회복",
+  "price": 45,
+  "use": {
+    "hp": 40
+  }
+}

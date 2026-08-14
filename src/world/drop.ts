@@ -8,15 +8,16 @@
 import { Graphics } from 'pixi.js';
 import { overlaps, type Room } from './room';
 
-export type DropKind = 'health' | 'energy';
+export type DropKind = 'health' | 'energy' | 'bolt';
 
 const LOOK: Record<DropKind, { color: number; edge: number }> = {
   health: { color: 0x7fe4ff, edge: 0x2f6fd0 },
   energy: { color: 0xffd85c, edge: 0xb07a10 },
+  bolt: { color: 0xc0c8d8, edge: 0x6a7488 },
 };
 
 const GRAVITY = 620;
-const LIFETIME = 12;
+const LIFETIME = 18;
 
 export class Drop {
   readonly view = new Graphics();
@@ -66,7 +67,8 @@ export class Drop {
 
   touches(px: number, py: number, pw: number, ph: number): boolean {
     if (this.taken) return false;
-    return overlaps(this.x - 5, this.y - 8, 10, 10, {
+    // 실제 그림보다 넉넉하게 잡는다 — 정확히 밟아야 주워지면 사냥이 성가시다
+    return overlaps(this.x - 10, this.y - 18, 20, 24, {
       x: px - pw / 2,
       y: py - ph,
       w: pw,

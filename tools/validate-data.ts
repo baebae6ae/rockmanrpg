@@ -196,7 +196,10 @@ for (const { id, where, data } of enemies) {
 }
 const enemyIds = new Set(enemies.map((e) => e.id));
 
-for (const { where, data } of readAll('data/maps')) {
+const mapList = readAll('data/maps');
+const mapIds = new Set(mapList.map((m) => m.id));
+
+for (const { where, data } of mapList) {
   for (const key of ['width', 'height', 'ground_y', 'player_spawn', 'solids']) {
     if (data[key] === undefined) fail(where, `필수 필드 누락: ${key}`);
   }
@@ -261,8 +264,21 @@ const skillIds = new Set(skills.map((s) => s.id));
 const itemsList = readAll('data/items');
 for (const { id, where, data } of itemsList) {
   if (data.id !== id) fail(where, `id 가 파일명과 다르다 (${data.id} ≠ ${id})`);
-  if (!SLOTS.has(data.slot)) fail(where, `알 수 없는 장비 슬롯: ${data.slot}`);
   if (!data.name) fail(where, '필수 필드 누락: name');
+
+  if (data.kind === 'armor') {
+    if (!SLOTS.has(data.slot)) fail(where, `알 수 없는 장비 슬롯: ${data.slot}`);
+  } else if (data.kind === 'consumable') {
+    if (!data.use || (data.use.hp === undefined && data.use.energy === undefined)) {
+      fail(where, '소모품에 use.hp 또는 use.energy 가 필요하다');
+    }
+  } else {
+    fail(where, `알 수 없는 아이템 종류: ${data.kind}`);
+  }
+
+  if (data.price !== undefined && (typeof data.price !== 'number' || data.price < 0)) {
+    fail(where, `price 가 올바르지 않다: ${String(data.price)}`);
+  }
 }
 const itemIds = new Set(itemsList.map((i) => i.id));
 
@@ -280,6 +296,25 @@ for (const { where, data } of readAll('data/maps')) {
       fail(where, `배치가 참조하는 아이템이 없다: ${String(entry.id)}`);
     }
   }
+
+  // 포탈이 실제로 존재하는 맵·포탈을 가리키는지
+  for (const portal of (data.portals ?? []) as Record<string, any>[]) {
+    const target = mapList.find((m) => m.id === portal.to_map);
+    if (!mapIds.has(String(portal.to_map))) {
+      fail(where, `포탈이 없는 맵을 가리킨다: ${String(portal.to_map)}`);
+      continue;
+    }
+    const back = (target?.data.portals ?? []).some((q: any) => q.id === portal.to_portal);
+    if (!back) {
+      fail(where, `포탈 ${String(portal.id)} 의 도착 포탈이 없다: ${String(portal.to_map)}#${String(portal.to_portal)}`);
+    }
+  }
+
+  for (const npc of (data.npcs ?? []) as Record<string, any>[]) {
+    for (const sid of npc.shop ?? []) {
+      if (!itemIds.has(String(sid))) fail(where, `상점 품목이 없다: ${String(sid)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- 결과
@@ -293,5 +328,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `데이터 검증 통과 — 캐릭터 ${files.length} · 적 ${enemies.length} · 패턴 ${patterns.length} · 무기 ${skills.length} · 장비 ${itemsList.length}`,
+  `데이터 검증 통과 — 캐릭터 ${files.length} · 적 ${enemies.length} · 패턴 ${patterns.length} · 무기 ${skills.length} · 아이템 ${itemsList.length} · 맵 ${mapList.length}`,
 );

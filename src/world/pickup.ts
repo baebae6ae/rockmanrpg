@@ -24,7 +24,7 @@ export class Pickup {
     box.rect(-5, -12, 10, 2).fill({ color: 0x9fe8ff, alpha: 0.65 });
 
     const mark = new Text({
-      text: SLOT_MARK[item.slot],
+      text: item.slot ? SLOT_MARK[item.slot] : '?',
       style: { fontFamily: 'monospace', fontSize: 9, fill: 0xe8f4ff },
     });
     mark.anchor.set(0.5);

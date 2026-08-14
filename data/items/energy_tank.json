@@ -1,0 +1,10 @@
+{
+  "id": "energy_tank",
+  "name": "웨폰 에너지 탱크",
+  "kind": "consumable",
+  "description": "무기 에너지 완충",
+  "price": 80,
+  "use": {
+    "energy": 99
+  }
+}

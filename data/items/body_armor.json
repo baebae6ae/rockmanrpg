@@ -3,6 +3,12 @@
   "name": "보디 파츠",
   "slot": "body",
   "description": "받는 피해가 줄어든다",
-  "stats": { "defense": 5 },
-  "modifiers": { "damage_reduction": 0.25 }
+  "stats": {
+    "defense": 5
+  },
+  "modifiers": {
+    "damage_reduction": 0.25
+  },
+  "kind": "armor",
+  "price": 380
 }

@@ -3,6 +3,12 @@
   "name": "암 파츠",
   "slot": "arm",
   "description": "무기 위력이 오른다",
-  "stats": { "attack": 4 },
-  "modifiers": { "power_bonus": 0.2 }
+  "stats": {
+    "attack": 4
+  },
+  "modifiers": {
+    "power_bonus": 0.2
+  },
+  "kind": "armor",
+  "price": 300
 }

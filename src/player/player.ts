@@ -71,8 +71,8 @@ export class Player implements Damageable {
   private invulnTimer = 0;
   private hurtTimer = 0;
   private deathTimer = 0;
-  private readonly spawnX: number;
-  private readonly spawnY: number;
+  private spawnX: number;
+  private spawnY: number;
 
   readonly view: AnimView;
   spriteSource: 'sprites' | 'generated';
@@ -120,6 +120,16 @@ export class Player implements Damageable {
     if (this.weapons.length < 2) return;
     this.weaponIndex = (this.weaponIndex + 1) % this.weapons.length;
     this.chargeTime = 0;
+  }
+
+  /** 맵을 옮길 때 위치와 부활 지점을 함께 옮긴다 */
+  moveTo(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.spawnX = x;
+    this.spawnY = y;
   }
 
   get alive(): boolean {

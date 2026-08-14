@@ -4,5 +4,9 @@
   "slot": "foot",
   "description": "대시가 빨라진다",
   "stats": {},
-  "modifiers": { "dash_speed": 0.18 }
+  "modifiers": {
+    "dash_speed": 0.18
+  },
+  "kind": "armor",
+  "price": 260
 }

@@ -17,12 +17,15 @@ const ROW_H = 11;
 
 interface Row {
   y: number;
-  kind: 'stat' | 'weapon';
+  kind: 'stat' | 'weapon' | 'item';
   stat?: StatKey;
   skill?: SkillDef;
+  item?: ItemDef;
 }
 
 export class Menu {
+  /** 소모품 사용 요청 — 회복 대상(플레이어)을 아는 쪽에서 처리한다 */
+  onUseItem?: (item: ItemDef) => void;
   readonly view = new Container();
   private readonly body = new Container();
   private rows: Row[] = [];
@@ -77,6 +80,7 @@ export class Menu {
     this.text(`Lv ${p.level}`, 66, 13, 0x9fe8ff);
     this.text(`AP ${p.ap}`, 108, 13, p.ap > 0 ? 0x8ef0d8 : 0x6f7fa8);
     this.text(`SP ${p.sp}`, 150, 13, p.sp > 0 ? 0xffd85c : 0x6f7fa8);
+    this.text(`${p.bolts} 볼트`, 14, 26, 0xffd85c, 8);
 
     const barX = 192;
     const barW = GAME_W - barX - 14;
@@ -88,7 +92,7 @@ export class Menu {
     this.text(`EXP ${p.exp}/${p.expToNext}`, barX, 22, 0x8fa8d8, 8);
 
     // ---------------------------------------------------------- 능력치
-    let y = 40;
+    let y = 48;
     this.text('능력치 — 눌러서 AP 투자', 14, y - 12, 0x8fa8d8, 8);
     for (const stat of STATS) {
       const can = p.ap > 0;
@@ -114,6 +118,25 @@ export class Menu {
       this.text(cost === null ? 'MAX' : `SP ${cost}`, 206, y, cost === null ? 0x6f7fa8 : can ? 0xffd85c : 0x6f7fa8);
       this.text(skill.element, 256, y, 0x8fa8d8, 8);
       this.rows.push({ y, kind: 'weapon', skill });
+      y += ROW_H;
+    }
+
+    // ---------------------------------------------------------- 소지품
+    const owned = Object.values(this.items).filter(
+      (i) => i.kind === 'consumable' && p.countOf(i.id) > 0,
+    );
+    y += 12;
+    this.text('소지품 — 눌러서 사용', 14, y - 12, 0x8fa8d8, 8);
+    if (owned.length === 0) {
+      this.text('없음 — 마을 보급소에서 살 수 있다', 16, y, 0x4a5680, 8);
+      y += 10;
+    }
+    for (const item of owned) {
+      this.rowBox(y, true);
+      this.text(item.name, 16, y, 0xffffff);
+      this.text(`x${p.countOf(item.id)}`, 150, y, 0x9fe8ff);
+      this.text(item.description, 190, y, 0x8fa8d8, 8);
+      this.rows.push({ y, kind: 'item', item });
       y += ROW_H;
     }
 
@@ -148,6 +171,12 @@ export class Menu {
         const ok = this.progress.upgrade(row.skill);
         this.render();
         return ok ? `${row.skill.name} 강화` : null;
+      }
+      if (row.kind === 'item' && row.item) {
+        // 실제 회복은 main 이 처리한다 — 여기서는 사용 요청만 알린다
+        this.onUseItem?.(row.item);
+        this.render();
+        return null;
       }
     }
     return null;

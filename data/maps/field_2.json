@@ -1,0 +1,151 @@
+{
+  "id": "field_2",
+  "name": "폐기물 처리장",
+  "recommended_level": 6,
+  "safe": false,
+  "width": 960,
+  "height": 240,
+  "ground_y": 208,
+  "player_spawn": {
+    "x": 40,
+    "y": 208
+  },
+  "solids": [
+    {
+      "x": 0,
+      "y": 208,
+      "w": 960,
+      "h": 32,
+      "note": "바닥"
+    },
+    {
+      "x": -8,
+      "y": -40,
+      "w": 8,
+      "h": 280
+    },
+    {
+      "x": 960,
+      "y": -40,
+      "w": 8,
+      "h": 280
+    },
+    {
+      "x": -8,
+      "y": -8,
+      "w": 976,
+      "h": 8,
+      "note": "천장"
+    },
+    {
+      "x": 110,
+      "y": 140,
+      "w": 60,
+      "h": 8
+    },
+    {
+      "x": 320,
+      "y": 172,
+      "w": 16,
+      "h": 36,
+      "note": "아레나 구분 벽"
+    },
+    {
+      "x": 400,
+      "y": 132,
+      "w": 60,
+      "h": 8
+    },
+    {
+      "x": 640,
+      "y": 172,
+      "w": 16,
+      "h": 36,
+      "note": "아레나 구분 벽"
+    },
+    {
+      "x": 740,
+      "y": 124,
+      "w": 64,
+      "h": 8
+    },
+    {
+      "x": 870,
+      "y": 150,
+      "w": 56,
+      "h": 8
+    }
+  ],
+  "portals": [
+    {
+      "id": "west",
+      "x": 18,
+      "y": 208,
+      "to_map": "field_1",
+      "to_portal": "east",
+      "label": "도시 외곽"
+    }
+  ],
+  "npcs": [],
+  "spawns": [
+    {
+      "enemy": "hover",
+      "x": 250,
+      "y": 110,
+      "params": {
+        "left": 210,
+        "right": 300
+      }
+    },
+    {
+      "enemy": "walker",
+      "x": 560,
+      "y": 208,
+      "params": {
+        "left": 520,
+        "right": 620
+      }
+    },
+    {
+      "enemy": "hover",
+      "x": 720,
+      "y": 104,
+      "params": {
+        "left": 680,
+        "right": 780
+      }
+    },
+    {
+      "enemy": "sting_chameleon",
+      "x": 190,
+      "y": 208,
+      "params": {
+        "lair_center": 190
+      }
+    },
+    {
+      "enemy": "spark_mandriller",
+      "x": 490,
+      "y": 208,
+      "params": {
+        "lair_center": 490
+      }
+    },
+    {
+      "enemy": "boomer_kuwanger",
+      "x": 830,
+      "y": 208,
+      "params": {
+        "spot_a": 780,
+        "spot_b": 910
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "body_armor",
+      "x": 140,
+      "y": 136
+    }
+  ]
+}

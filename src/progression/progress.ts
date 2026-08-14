@@ -29,10 +29,15 @@ export interface SkillDef {
 export interface ItemDef {
   id: string;
   name: string;
-  slot: Slot;
+  kind: 'armor' | 'consumable';
   description: string;
-  stats: { attack?: number; defense?: number };
-  modifiers: Record<string, number>;
+  price?: number;
+  /** 방어구만 */
+  slot?: Slot;
+  stats?: { attack?: number; defense?: number };
+  modifiers?: Record<string, number>;
+  /** 소모품만 — 사용 시 효과 */
+  use?: { hp?: number; energy?: number };
 }
 
 const SAVE_KEY = 'rockmanrpg.progress.v1';
@@ -55,6 +60,8 @@ interface SaveData {
   exp: number;
   sp: number;
   ap: number;
+  bolts: number;
+  inventory: Record<string, number>;
   stats: Record<string, number>;
   owned: string[];
   levels: Record<string, number>;
@@ -70,6 +77,10 @@ export class Progress {
   ap = 0;
   /** 분배한 능력치 포인트 */
   stats: Record<StatKey, number> = { attack: 0, defense: 0, vitality: 0 };
+  /** 재화 — 적이 떨어뜨리고 상점에서 쓴다 */
+  bolts = 0;
+  /** 소모품 보유량 */
+  readonly inventory = new Map<string, number>();
 
   /** 획득한 무기 (기본 무기는 캐릭터가 항상 가진다) */
   readonly owned = new Set<string>();
@@ -102,6 +113,42 @@ export class Progress {
     }
     if (gained > 0) this.save();
     return gained;
+  }
+
+  // ------------------------------------------------------------ 재화·소지품
+
+  gainBolts(amount: number): void {
+    this.bolts += amount;
+  }
+
+  countOf(id: string): number {
+    return this.inventory.get(id) ?? 0;
+  }
+
+  /** 구매 성공하면 true */
+  buy(item: ItemDef): boolean {
+    const price = item.price ?? 0;
+    if (this.bolts < price) return false;
+
+    if (item.kind === 'armor') {
+      if (!item.slot || this.equipped[item.slot] === item.id) return false;
+      this.bolts -= price;
+      this.equipped[item.slot] = item.id;
+    } else {
+      this.bolts -= price;
+      this.inventory.set(item.id, this.countOf(item.id) + 1);
+    }
+    this.save();
+    return true;
+  }
+
+  /** 소모품 사용. 남은 개수가 없으면 false */
+  consume(id: string): boolean {
+    const left = this.countOf(id);
+    if (left <= 0) return false;
+    this.inventory.set(id, left - 1);
+    this.save();
+    return true;
   }
 
   // ------------------------------------------------------------ 능력치
@@ -200,6 +247,7 @@ export class Progress {
   // ------------------------------------------------------------ 장비
 
   equip(item: ItemDef): void {
+    if (!item.slot) return;
     this.equipped[item.slot] = item.id;
     this.save();
   }
@@ -213,16 +261,16 @@ export class Progress {
   /** 장비의 수정치를 합산한다 (없으면 0) */
   modifier(name: string): number {
     let total = 0;
-    for (const item of this.equippedItems()) total += item.modifiers[name] ?? 0;
+    for (const item of this.equippedItems()) total += item.modifiers?.[name] ?? 0;
     return total;
   }
 
   get bonusAttack(): number {
-    return this.equippedItems().reduce((n, i) => n + (i.stats.attack ?? 0), 0);
+    return this.equippedItems().reduce((n, i) => n + (i.stats?.attack ?? 0), 0);
   }
 
   get bonusDefense(): number {
-    return this.equippedItems().reduce((n, i) => n + (i.stats.defense ?? 0), 0);
+    return this.equippedItems().reduce((n, i) => n + (i.stats?.defense ?? 0), 0);
   }
 
   // ------------------------------------------------------------ 저장
@@ -234,6 +282,8 @@ export class Progress {
         exp: this.exp,
         sp: this.sp,
         ap: this.ap,
+        bolts: this.bolts,
+        inventory: Object.fromEntries(this.inventory),
         stats: { ...this.stats },
         owned: [...this.owned],
         levels: Object.fromEntries(this.levels),
@@ -254,6 +304,8 @@ export class Progress {
       this.exp = data.exp ?? 0;
       this.sp = data.sp ?? 0;
       this.ap = data.ap ?? 0;
+      this.bolts = data.bolts ?? 0;
+      for (const [id, n] of Object.entries(data.inventory ?? {})) this.inventory.set(id, n);
       for (const key of ['attack', 'defense', 'vitality'] as StatKey[]) {
         this.stats[key] = data.stats?.[key] ?? 0;
       }
@@ -273,6 +325,8 @@ export class Progress {
     this.exp = 0;
     this.sp = 0;
     this.ap = 0;
+    this.bolts = 0;
+    this.inventory.clear();
     this.stats = { attack: 0, defense: 0, vitality: 0 };
     this.owned.clear();
     this.levels.clear();

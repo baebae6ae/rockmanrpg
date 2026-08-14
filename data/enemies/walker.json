@@ -32,6 +32,11 @@
       "kind": "energy",
       "chance": 0.3,
       "amount": 8
+    },
+    {
+      "kind": "bolt",
+      "chance": 0.8,
+      "amount": 9
     }
   ]
 }
