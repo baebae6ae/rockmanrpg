@@ -6,7 +6,7 @@
 import { Container, Graphics, Text } from 'pixi.js';
 import { GAME_H, GAME_W } from '../core/config';
 
-export type Button = 'left' | 'right' | 'up' | 'down' | 'jump' | 'shoot' | 'dash';
+export type Button = 'left' | 'right' | 'up' | 'down' | 'jump' | 'shoot' | 'dash' | 'weapon' | 'menu';
 
 const KEY_MAP: Record<string, Button> = {
   ArrowLeft: 'left',
@@ -26,6 +26,10 @@ const KEY_MAP: Record<string, Button> = {
   ShiftLeft: 'dash',
   ShiftRight: 'dash',
   KeyL: 'dash',
+  KeyV: 'weapon',
+  KeyQ: 'weapon',
+  Escape: 'menu',
+  KeyM: 'menu',
 };
 
 interface PadButton {
@@ -39,14 +43,24 @@ interface PadButton {
 const DPAD = { x: 40, y: 196, r: 30, dead: 7 };
 
 const PAD_BUTTONS: PadButton[] = [
-  { button: 'jump', x: 288, y: 202, r: 17, label: 'JUMP' },
-  { button: 'shoot', x: 248, y: 188, r: 15, label: 'FIRE' },
-  { button: 'dash', x: 282, y: 160, r: 14, label: 'DASH' },
+  { button: 'jump', x: 288, y: 204, r: 17, label: 'JUMP' },
+  { button: 'shoot', x: 246, y: 192, r: 15, label: 'FIRE' },
+  { button: 'dash', x: 284, y: 164, r: 14, label: 'DASH' },
+  { button: 'weapon', x: 232, y: 154, r: 13, label: 'WPN' },
+  { button: 'menu', x: 160, y: 210, r: 12, label: 'MENU' },
 ];
 
 export class Input {
-  private readonly held = new Set<Button>();
-  private readonly prev = new Set<Button>();
+  /** 키보드와 터치를 따로 들고, 둘의 합집합을 실제 입력으로 본다 */
+  private readonly keyHeld = new Set<Button>();
+  private readonly touchHeld = new Set<Button>();
+  private held = new Set<Button>();
+  /**
+   * 눌림·뗌은 프레임 비교가 아니라 이벤트 시점에 기록한다.
+   * 프레임보다 짧은 탭이 통째로 묻히는 것을 막기 위함.
+   */
+  private readonly pressedNow = new Set<Button>();
+  private readonly releasedNow = new Set<Button>();
   /** 포인터별로 어떤 버튼을 누르고 있는지 */
   private readonly touches = new Map<number, Set<Button>>();
   private touchVisible = false;
@@ -55,7 +69,11 @@ export class Input {
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('blur', () => this.held.clear());
+    window.addEventListener('blur', () => {
+      this.keyHeld.clear();
+      this.touchHeld.clear();
+      this.sync();
+    });
 
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointermove', this.onPointerMove);
@@ -70,11 +88,19 @@ export class Input {
 
   /** 이번 프레임에 새로 눌렸는지 */
   pressed(button: Button): boolean {
-    return this.held.has(button) && !this.prev.has(button);
+    return this.pressedNow.has(button);
   }
 
   released(button: Button): boolean {
-    return !this.held.has(button) && this.prev.has(button);
+    return this.releasedNow.has(button);
+  }
+
+  /** 키보드·터치 상태를 합쳐 눌림/뗌 전이를 기록한다 */
+  private sync(): void {
+    const next = new Set<Button>([...this.keyHeld, ...this.touchHeld]);
+    for (const b of next) if (!this.held.has(b)) this.pressedNow.add(b);
+    for (const b of this.held) if (!next.has(b)) this.releasedNow.add(b);
+    this.held = next;
   }
 
   /** -1 / 0 / 1 */
@@ -83,8 +109,8 @@ export class Input {
   }
 
   endFrame(): void {
-    this.prev.clear();
-    for (const b of this.held) this.prev.add(b);
+    this.pressedNow.clear();
+    this.releasedNow.clear();
   }
 
   // ------------------------------------------------------------ 키보드
@@ -93,14 +119,17 @@ export class Input {
     const button = KEY_MAP[e.code];
     if (!button) return;
     e.preventDefault();
-    this.held.add(button);
+    if (e.repeat) return;
+    this.keyHeld.add(button);
+    this.sync();
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
     const button = KEY_MAP[e.code];
     if (!button) return;
     e.preventDefault();
-    this.held.delete(button);
+    this.keyHeld.delete(button);
+    this.sync();
   };
 
   // ------------------------------------------------------------ 터치
@@ -133,18 +162,10 @@ export class Input {
   }
 
   private refreshHeldFromTouches(): void {
-    // 터치로 눌린 버튼을 모두 해제한 뒤 다시 채운다 (키보드 입력은 건드리지 않음)
-    const fromTouch = new Set<Button>();
-    for (const set of this.touches.values()) for (const b of set) fromTouch.add(b);
-
-    for (const b of ['left', 'right', 'up', 'down', 'jump', 'shoot', 'dash'] as Button[]) {
-      if (fromTouch.has(b)) this.held.add(b);
-      else if (this.touchOwned.has(b)) this.held.delete(b);
-    }
-    this.touchOwned = fromTouch;
+    this.touchHeld.clear();
+    for (const set of this.touches.values()) for (const b of set) this.touchHeld.add(b);
+    this.sync();
   }
-
-  private touchOwned = new Set<Button>();
 
   private onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType === 'mouse') return;

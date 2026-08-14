@@ -11,7 +11,9 @@ import { PHYSICS } from '../core/config';
 import { overlaps, type Room } from '../world/room';
 import type { ProjectileSystem } from '../combat/projectile';
 import { computeDamage } from '../combat/elements';
+import { fireSkill } from '../combat/skill';
 import type { Damageable } from '../combat/types';
+import type { Progress, SkillDef } from '../progression/progress';
 import type { Input } from '../input/input';
 
 export interface CharacterDef {
@@ -29,14 +31,8 @@ export interface CharacterDef {
     can_slide: boolean;
   };
   base_stats: { hp: number; attack: number; defense?: number };
-  shot: {
-    speed: number;
-    color: string;
-    radius: number;
-    lifetime: number;
-    power: number;
-    element: string;
-  };
+  growth: { hp: number; attack: number; defense: number };
+  starting_skills: string[];
 }
 
 export class Player implements Damageable {
@@ -64,8 +60,11 @@ export class Player implements Damageable {
   private sliding = false;
 
   hp: number;
-  readonly maxHp: number;
   readonly element = 'neutral';
+  /** 이 캐릭터가 쓸 수 있는 무기 — 기본 무기 + 획득한 특수무기 */
+  weapons: SkillDef[] = [];
+  weaponIndex = 0;
+  private cooldown = 0;
   private invulnTimer = 0;
   private hurtTimer = 0;
   private deathTimer = 0;
@@ -79,13 +78,29 @@ export class Player implements Damageable {
     readonly def: CharacterDef,
     view: AnimView,
     source: 'sprites' | 'generated',
+    readonly progress: Progress,
   ) {
     this.view = view;
     this.spriteSource = source;
-    this.hp = def.base_stats.hp;
-    this.maxHp = def.base_stats.hp;
+    this.hp = this.maxHp;
     this.spawnX = this.x;
     this.spawnY = this.y;
+  }
+
+  /** 레벨 성장과 장비를 반영한 최대 체력 */
+  get maxHp(): number {
+    const grown = this.def.base_stats.hp + this.def.growth.hp * (this.progress.level - 1);
+    return Math.round(grown + this.progress.bonusDefense * 2);
+  }
+
+  get weapon(): SkillDef | undefined {
+    return this.weapons[this.weaponIndex];
+  }
+
+  cycleWeapon(): void {
+    if (this.weapons.length < 2) return;
+    this.weaponIndex = (this.weaponIndex + 1) % this.weapons.length;
+    this.chargeTime = 0;
   }
 
   get alive(): boolean {
@@ -104,7 +119,9 @@ export class Player implements Damageable {
   takeDamage(power: number, element: string, fromX: number): void {
     if (this.invulnTimer > 0 || this.deathTimer > 0 || !this.alive) return;
 
-    this.hp = Math.max(0, this.hp - computeDamage(power, element, this.element));
+    const raw = computeDamage(power, element, this.element);
+    const reduced = Math.max(1, Math.round(raw * (1 - this.progress.modifier('damage_reduction'))));
+    this.hp = Math.max(0, this.hp - reduced);
     this.invulnTimer = 1;
     this.hurtTimer = 0.34;
     this.dashTimer = 0;
@@ -128,11 +145,31 @@ export class Player implements Damageable {
     this.view.alpha = 1;
   }
 
-  static async create(def: CharacterDef, layer: Container): Promise<Player> {
+  static async create(
+    def: CharacterDef,
+    layer: Container,
+    progress: Progress,
+    skills: Record<string, SkillDef>,
+  ): Promise<Player> {
     const sheet = await loadSheet('characters', def.id);
     const view = new AnimView(sheet);
     layer.addChild(view);
-    return new Player(def, view, sheet.source);
+    const player = new Player(def, view, sheet.source, progress);
+    player.refreshWeapons(skills);
+    return player;
+  }
+
+  /** 기본 무기 뒤에 획득한 특수무기를 붙인다 */
+  refreshWeapons(skills: Record<string, SkillDef>): void {
+    const list: SkillDef[] = [];
+    for (const id of this.def.starting_skills) {
+      if (skills[id]) list.push(skills[id]);
+    }
+    for (const id of this.progress.owned) {
+      if (skills[id] && !list.some((s) => s.id === id)) list.push(skills[id]);
+    }
+    this.weapons = list;
+    this.weaponIndex = Math.min(this.weaponIndex, Math.max(0, list.length - 1));
   }
 
   get state(): string {
@@ -251,9 +288,9 @@ export class Player implements Damageable {
     } else if (this.lock > 0) {
       // 벽차기 직후 짧은 구간만 반동 속도를 유지한다
     } else if (this.dashTimer > 0) {
-      this.vx = this.facing * PHYSICS.dashSpeed;
+      this.vx = this.facing * this.dashSpeed;
     } else if (this.dashJump && !this.grounded) {
-      this.vx = this.facing * PHYSICS.dashSpeed;
+      this.vx = this.facing * this.dashSpeed;
     } else {
       this.vx = axis * PHYSICS.runSpeed;
     }
@@ -280,7 +317,7 @@ export class Player implements Damageable {
 
         this.vy = -PHYSICS.wallKickY;
         this.facing = -this.wallDir;
-        this.vx = this.facing * (dashKick ? PHYSICS.dashSpeed : PHYSICS.wallKickX);
+        this.vx = this.facing * (dashKick ? this.dashSpeed : PHYSICS.wallKickX);
         this.lock = dashKick ? PHYSICS.wallKickLock * 1.6 : PHYSICS.wallKickLock;
         this.buffer = 0;
         this.airDashUsed = false;
@@ -337,37 +374,48 @@ export class Player implements Damageable {
     this.x = Math.max(this.halfWidth, Math.min(room.width - this.halfWidth, this.x));
 
     // ---------------------------------------------------------- 사격
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    if (input.pressed('weapon') && !stunned) this.cycleWeapon();
+
     if (stunned) this.chargeTime = 0;
     else if (input.down('shoot')) this.chargeTime += dt;
-    if (input.pressed('shoot') && !stunned) {
-      const charged = false;
-      this.fire(shots, charged);
-    }
+
+    if (input.pressed('shoot') && !stunned) this.fire(shots, false);
     if (input.released('shoot') && !stunned) {
-      if (this.chargeTime > 0.55) this.fire(shots, true);
+      if (this.chargeTime > this.chargeThreshold) this.fire(shots, true);
       this.chargeTime = 0;
     }
 
     this.applyAnimation(dt);
   }
 
+  /** 장비로 짧아지는 차지 시간 */
+  get chargeThreshold(): number {
+    return 0.55 * (1 - this.progress.modifier('charge_rate'));
+  }
+
+  get dashSpeed(): number {
+    return PHYSICS.dashSpeed * (1 + this.progress.modifier('dash_speed'));
+  }
+
   private fire(shots: ProjectileSystem, charged: boolean): void {
-    this.attackTimer = 0.22;
-    const s = this.def.shot;
-    shots.spawn({
-      x: this.x + this.facing * 11,
-      y: this.y - 19,
-      dx: this.facing,
-      dy: 0,
-      speed: s.speed,
-      color: Number(s.color),
-      radius: charged ? s.radius * 2.4 : s.radius,
-      lifetime: s.lifetime,
-      team: 'player',
-      power: charged ? s.power * 3 : s.power,
-      element: s.element,
-      pierce: charged,
+    const skill = this.weapon;
+    if (!skill || this.cooldown > 0) return;
+    // 차지샷은 차지가 가능한 무기에서만
+    const useCharge = charged && !!skill.charged;
+
+    const ok = fireSkill(skill, {
+      x: this.x,
+      y: this.y,
+      facing: this.facing,
+      shots,
+      progress: this.progress,
+      charged: useCharge,
     });
+    if (!ok) return;
+
+    this.attackTimer = 0.22;
+    this.cooldown = skill.cooldown;
   }
 
   private applyAnimation(dt: number): void {
@@ -381,7 +429,7 @@ export class Player implements Damageable {
     } else if (this.attackTimer > 0) tag = 'attack_main';
     else if (this.landTimer > 0) tag = 'jump_land';
     else if (Math.abs(this.vx) > 8) tag = 'run';
-    else if (this.chargeTime > 0.55) tag = 'charge_loop';
+    else if (this.chargeTime > this.chargeThreshold && this.weapon?.charged) tag = 'charge_loop';
     else tag = 'idle';
 
     this.view.play(tag);

@@ -204,6 +204,67 @@ for (const { where, data } of readAll('data/maps')) {
   }
 }
 
+// ---------------------------------------------------------------- 무기·장비
+
+const SLOTS = new Set(['head', 'body', 'arm', 'foot']);
+const ELEMENTS = new Set(
+  ((readJson(resolve(ROOT, 'data/elements.json')) as Record<string, any>)?.elements ?? []) as string[],
+);
+
+const skills = readAll('data/skills');
+for (const { id, where, data } of skills) {
+  if (data.id !== id) fail(where, `id 가 파일명과 다르다 (${data.id} ≠ ${id})`);
+
+  for (const key of ['name', 'element', 'cost', 'cooldown', 'unlock', 'upgrade', 'effects']) {
+    if (data[key] === undefined) fail(where, `필수 필드 누락: ${key}`);
+  }
+
+  if (data.element && ELEMENTS.size > 0 && !ELEMENTS.has(data.element)) {
+    fail(where, `elements.json 에 없는 속성: ${data.element}`);
+  }
+
+  const up = data.upgrade;
+  if (up) {
+    if (!Array.isArray(up.sp_cost)) fail(where, 'upgrade.sp_cost 는 배열이어야 한다');
+    else if (up.sp_cost.length < (up.max_level ?? 1) - 1) {
+      fail(where, `upgrade.sp_cost 가 max_level 에 비해 짧다 (${up.sp_cost.length} < ${up.max_level - 1})`);
+    }
+  }
+
+  if (Array.isArray(data.effects) && !data.effects.some((e: any) => e.type === 'damage')) {
+    warn(where, 'damage 효과가 없다 — 위력이 기본값으로 처리된다');
+  }
+
+  if (data.unlock?.source === 'boss' && !enemyIds.has(String(data.unlock.boss_id))) {
+    fail(where, `해금 조건이 참조하는 보스가 없다: ${String(data.unlock.boss_id)}`);
+  }
+}
+const skillIds = new Set(skills.map((s) => s.id));
+
+const itemsList = readAll('data/items');
+for (const { id, where, data } of itemsList) {
+  if (data.id !== id) fail(where, `id 가 파일명과 다르다 (${data.id} ≠ ${id})`);
+  if (!SLOTS.has(data.slot)) fail(where, `알 수 없는 장비 슬롯: ${data.slot}`);
+  if (!data.name) fail(where, '필수 필드 누락: name');
+}
+const itemIds = new Set(itemsList.map((i) => i.id));
+
+// 캐릭터의 기본 무기가 실제로 있는지
+for (const file of files) {
+  const def = readJson(resolve(charDir, file)) as Record<string, any> | null;
+  for (const sid of def?.starting_skills ?? []) {
+    if (!skillIds.has(sid)) fail(`data/characters/${file}`, `기본 무기가 없다: ${sid}`);
+  }
+}
+
+for (const { where, data } of readAll('data/maps')) {
+  for (const entry of (data.items ?? []) as Record<string, unknown>[]) {
+    if (!itemIds.has(String(entry.id))) {
+      fail(where, `배치가 참조하는 아이템이 없다: ${String(entry.id)}`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------- 결과
 
 for (const w of warnings) console.log(w);
@@ -215,5 +276,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `데이터 검증 통과 — 캐릭터 ${files.length} · 적 ${enemies.length} · 패턴 ${patterns.length}`,
+  `데이터 검증 통과 — 캐릭터 ${files.length} · 적 ${enemies.length} · 패턴 ${patterns.length} · 무기 ${skills.length} · 장비 ${itemsList.length}`,
 );

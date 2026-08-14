@@ -1,0 +1,8 @@
+{
+  "id": "head_helmet",
+  "name": "헤드 파츠",
+  "slot": "head",
+  "description": "차지 시간이 짧아진다",
+  "stats": { "defense": 1 },
+  "modifiers": { "charge_rate": 0.35 }
+}

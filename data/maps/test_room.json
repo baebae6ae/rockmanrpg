@@ -2,9 +2,60 @@
   "id": "test_room",
   "name": "테스트 룸",
   "spawns": [
-    { "enemy": "walker", "x": 170, "y": 208, "params": { "left": 110, "right": 250 } },
-    { "enemy": "hover", "x": 250, "y": 116, "params": { "left": 200, "right": 320 } },
-    { "enemy": "walker", "x": 310, "y": 170, "params": { "left": 288, "right": 332 } },
-    { "enemy": "sting_chameleon", "x": 700, "y": 208, "params": {} }
+    {
+      "enemy": "walker",
+      "x": 170,
+      "y": 208,
+      "params": {
+        "left": 110,
+        "right": 250
+      }
+    },
+    {
+      "enemy": "hover",
+      "x": 250,
+      "y": 116,
+      "params": {
+        "left": 200,
+        "right": 320
+      }
+    },
+    {
+      "enemy": "walker",
+      "x": 310,
+      "y": 170,
+      "params": {
+        "left": 288,
+        "right": 332
+      }
+    },
+    {
+      "enemy": "sting_chameleon",
+      "x": 700,
+      "y": 208,
+      "params": {}
+    }
+  ],
+  "items": [
+    {
+      "id": "arm_parts",
+      "x": 202,
+      "y": 128
+    },
+    {
+      "id": "foot_parts",
+      "x": 308,
+      "y": 166
+    },
+    {
+      "id": "head_helmet",
+      "x": 497,
+      "y": 52
+    },
+    {
+      "id": "body_armor",
+      "x": 570,
+      "y": 112
+    }
   ]
 }

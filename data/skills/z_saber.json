@@ -1,0 +1,23 @@
+{
+  "id": "z_saber",
+  "name": "Z 세이버",
+  "element": "cutter",
+  "cost": 0,
+  "cooldown": 0.22,
+  "animation_tag": "attack_main",
+  "unlock": { "source": "default", "character": "zero" },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [1, 2, 3, 5, 8],
+    "per_level": { "power": 0.2, "cost": 0 }
+  },
+  "effects": [
+    { "type": "projectile", "speed": 300, "radius": 3, "color": 9367768, "lifetime": 0.32, "count": 1 },
+    { "type": "damage", "power": 14 }
+  ],
+  "charged": {
+    "radius_scale": 2.2,
+    "power_scale": 2.6,
+    "pierce": true
+  }
+}

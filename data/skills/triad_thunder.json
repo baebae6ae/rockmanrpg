@@ -1,0 +1,27 @@
+{
+  "id": "triad_thunder",
+  "name": "트라이어드 선더",
+  "element": "electric",
+  "cost": 4,
+  "cooldown": 0.42,
+  "animation_tag": "attack_main",
+  "unlock": { "source": "boss", "boss_id": "sting_chameleon" },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [1, 2, 3, 5, 8],
+    "per_level": { "power": 0.16, "cost": -0.08 }
+  },
+  "effects": [
+    {
+      "type": "projectile",
+      "speed": 210,
+      "radius": 3,
+      "color": 16777130,
+      "lifetime": 1.0,
+      "count": 3,
+      "spread": 26,
+      "pierce": true
+    },
+    { "type": "damage", "power": 11 }
+  ]
+}
