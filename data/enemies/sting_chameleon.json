@@ -4,14 +4,23 @@
   "series": "x",
   "tier": "boss",
   "sprite_scale": 1,
-
-  "hitbox": { "w": 24, "h": 36 },
-  "stats": { "hp": 240, "attack": 14, "exp": 400 },
-
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 240,
+    "attack": 14,
+    "exp": 400
+  },
   "element": "wood",
-  "weakness": [{ "element": "electric", "multiplier": 2.5 }],
+  "weakness": [
+    {
+      "element": "electric",
+      "multiplier": 2.5
+    }
+  ],
   "contact_damage": 10,
-
   "pattern": "boss_charger_a",
   "pattern_params": {
     "charge_speed": 185,
@@ -20,5 +29,12 @@
     "melee_power": 15,
     "element": "wood",
     "lair_center": 690
-  }
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 40
+    }
+  ]
 }

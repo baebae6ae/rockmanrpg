@@ -1,29 +1,32 @@
 /**
- * 상태·강화 메뉴 — 레벨, SP, 무기 강화, 장비를 보여준다 (docs/DESIGN.md §8.1)
+ * 상태·강화 메뉴 — 레벨, 능력치 분배, 무기 강화, 장비 (docs/DESIGN.md §8)
  *
- * 무기 목록은 보유한 무기에서 그대로 파생되므로, 무기가 늘어나도
+ * 목록은 보유한 무기와 능력치 정의에서 그대로 파생되므로, 항목이 늘어나도
  * 이 파일은 그대로다.
  */
 
 import { Container, Graphics, Text } from 'pixi.js';
 import { GAME_H, GAME_W } from '../core/config';
-import type { ItemDef, Progress, SkillDef, Slot } from '../progression/progress';
+import { STAT_NAME, type ItemDef, type Progress, type SkillDef, type Slot, type StatKey } from '../progression/progress';
 
 const SLOTS: Slot[] = ['head', 'body', 'arm', 'foot'];
 const SLOT_NAME: Record<Slot, string> = { head: '헤드', body: '보디', arm: '암', foot: '풋' };
+const STATS: StatKey[] = ['attack', 'defense', 'vitality'];
 
-const ROW_H = 13;
-const LIST_TOP = 62;
+const ROW_H = 11;
 
 interface Row {
   y: number;
-  skill: SkillDef;
+  kind: 'stat' | 'weapon';
+  stat?: StatKey;
+  skill?: SkillDef;
 }
 
 export class Menu {
   readonly view = new Container();
   private readonly body = new Container();
   private rows: Row[] = [];
+  private lastWeapons: SkillDef[] = [];
   open = false;
 
   constructor(
@@ -34,7 +37,7 @@ export class Menu {
     dim.rect(0, 0, GAME_W, GAME_H).fill({ color: 0x080b16 });
 
     const frame = new Graphics();
-    frame.rect(10, 10, GAME_W - 20, GAME_H - 20).stroke({ color: 0x5a6ea8, width: 1 });
+    frame.rect(6, 6, GAME_W - 12, GAME_H - 12).stroke({ color: 0x5a6ea8, width: 1 });
 
     this.view.addChild(dim, frame, this.body);
     this.view.visible = false;
@@ -51,11 +54,16 @@ export class Menu {
     this.view.visible = false;
   }
 
-  private text(str: string, x: number, y: number, color = 0xcfe0ff, size = 9): Text {
+  private text(str: string, x: number, y: number, color = 0xcfe0ff, size = 9): void {
     const t = new Text({ text: str, style: { fontFamily: 'monospace', fontSize: size, fill: color } });
     t.position.set(x, y);
     this.body.addChild(t);
-    return t;
+  }
+
+  private rowBox(y: number, active: boolean): void {
+    const g = new Graphics();
+    g.rect(12, y - 1, GAME_W - 24, ROW_H - 1).fill({ color: active ? 0x1e2c52 : 0x141a30 });
+    this.body.addChild(g);
   }
 
   render(weapons: SkillDef[] = this.lastWeapons): void {
@@ -65,77 +73,83 @@ export class Menu {
 
     const p = this.progress;
 
-    this.text('상 태', 18, 16, 0xffffff, 11);
-    this.text(`Lv ${p.level}`, 18, 32, 0x9fe8ff);
-    this.text(`SP ${p.sp}`, 70, 32, 0xffd85c);
+    this.text('상 태', 14, 11, 0xffffff, 11);
+    this.text(`Lv ${p.level}`, 66, 13, 0x9fe8ff);
+    this.text(`AP ${p.ap}`, 108, 13, p.ap > 0 ? 0x8ef0d8 : 0x6f7fa8);
+    this.text(`SP ${p.sp}`, 150, 13, p.sp > 0 ? 0xffd85c : 0x6f7fa8);
 
-    // 경험치 게이지
-    const barX = 118;
-    const barW = GAME_W - barX - 22;
+    const barX = 192;
+    const barW = GAME_W - barX - 14;
     const g = new Graphics();
-    g.rect(barX, 33, barW, 6).fill({ color: 0x1b2447 });
-    g.rect(barX, 33, Math.round((barW * p.exp) / p.expToNext), 6).fill({ color: 0x7fe4ff });
-    g.rect(barX, 33, barW, 6).stroke({ color: 0x5a6ea8, width: 1 });
+    g.rect(barX, 14, barW, 6).fill({ color: 0x1b2447 });
+    g.rect(barX, 14, Math.round((barW * p.exp) / p.expToNext), 6).fill({ color: 0x7fe4ff });
+    g.rect(barX, 14, barW, 6).stroke({ color: 0x5a6ea8, width: 1 });
     this.body.addChild(g);
-    this.text(`EXP ${p.exp}/${p.expToNext}`, barX, 42, 0x8fa8d8, 8);
+    this.text(`EXP ${p.exp}/${p.expToNext}`, barX, 22, 0x8fa8d8, 8);
 
-    this.text('무기 — 눌러서 강화', 18, LIST_TOP - 12, 0x8fa8d8, 8);
-
-    let y = LIST_TOP;
-    for (const skill of weapons) {
-      const level = p.skillLevel(skill.id);
-      const cost = p.upgradeCost(skill);
-      const affordable = cost !== null && p.sp >= cost;
-
-      const row = new Graphics();
-      row.rect(16, y - 2, GAME_W - 32, ROW_H - 1).fill({
-        color: affordable ? 0x1e2c52 : 0x141a30,
-        alpha: 0.9,
-      });
-      this.body.addChild(row);
-
-      this.text(skill.name, 20, y, affordable ? 0xffffff : 0xa8b6d8);
-      this.text(`Lv ${level}/${skill.upgrade.max_level}`, 150, y, 0x9fe8ff);
-      this.text(
-        cost === null ? 'MAX' : `SP ${cost}`,
-        212,
-        y,
-        cost === null ? 0x6f7fa8 : affordable ? 0xffd85c : 0x6f7fa8,
-      );
-      this.text(skill.element, 258, y, 0x8fa8d8, 8);
-
-      this.rows.push({ y, skill });
+    // ---------------------------------------------------------- 능력치
+    let y = 40;
+    this.text('능력치 — 눌러서 AP 투자', 14, y - 12, 0x8fa8d8, 8);
+    for (const stat of STATS) {
+      const can = p.ap > 0;
+      this.rowBox(y, can);
+      this.text(STAT_NAME[stat], 16, y, can ? 0xffffff : 0xa8b6d8);
+      this.text(`+${p.stats[stat]}`, 60, y, 0x9fe8ff);
+      this.text(can ? 'AP 1' : '-', 260, y, can ? 0x8ef0d8 : 0x4a5680, 8);
+      this.rows.push({ y, kind: 'stat', stat });
       y += ROW_H;
     }
 
-    // 장비
-    y += 6;
-    this.text('장비', 18, y, 0x8fa8d8, 8);
-    y += 11;
+    // ---------------------------------------------------------- 무기
+    y += 12;
+    this.text('무기 — 눌러서 강화', 14, y - 12, 0x8fa8d8, 8);
+    for (const skill of weapons) {
+      const level = p.skillLevel(skill.id);
+      const cost = p.upgradeCost(skill);
+      const can = cost !== null && p.sp >= cost;
+
+      this.rowBox(y, can);
+      this.text(skill.name, 16, y, can ? 0xffffff : 0xa8b6d8);
+      this.text(`Lv${level}/${skill.upgrade.max_level}`, 150, y, 0x9fe8ff);
+      this.text(cost === null ? 'MAX' : `SP ${cost}`, 206, y, cost === null ? 0x6f7fa8 : can ? 0xffd85c : 0x6f7fa8);
+      this.text(skill.element, 256, y, 0x8fa8d8, 8);
+      this.rows.push({ y, kind: 'weapon', skill });
+      y += ROW_H;
+    }
+
+    // ---------------------------------------------------------- 장비
+    y += 12;
+    this.text('장비', 14, y - 12, 0x8fa8d8, 8);
     for (const slot of SLOTS) {
       const id = p.equipped[slot];
       const item = id ? this.items[id] : null;
-      this.text(SLOT_NAME[slot], 20, y, 0x8fa8d8);
-      this.text(item ? item.name : '—', 60, y, item ? 0xffffff : 0x4a5680);
-      if (item) this.text(item.description, 140, y, 0x8fa8d8, 8);
-      y += 11;
+      this.text(SLOT_NAME[slot], 16, y, 0x8fa8d8, 8);
+      this.text(item ? item.name : '—', 52, y, item ? 0xffffff : 0x4a5680, 8);
+      if (item) this.text(item.description, 128, y, 0x8fa8d8, 8);
+      y += 10;
     }
 
-    this.text('MENU / M / ESC → 닫기', 18, GAME_H - 24, 0x6f7fa8, 8);
+    this.text('MENU / M / ESC → 닫기', 14, GAME_H - 16, 0x6f7fa8, 8);
   }
 
-  private lastWeapons: SkillDef[] = [];
+  /** 게임 좌표 기준 탭 처리. 무언가 소비했으면 안내 문구를 돌려준다 */
+  handleTap(gx: number, gy: number): string | null {
+    if (!this.open || gx < 12 || gx > GAME_W - 12) return null;
 
-  /** 게임 좌표 기준 탭 처리. 강화가 일어나면 true */
-  handleTap(gx: number, gy: number): boolean {
-    if (!this.open) return false;
     for (const row of this.rows) {
-      if (gx < 16 || gx > GAME_W - 16) continue;
-      if (gy < row.y - 2 || gy > row.y - 2 + ROW_H - 1) continue;
-      const ok = this.progress.upgrade(row.skill);
-      this.render();
-      return ok;
+      if (gy < row.y - 1 || gy > row.y - 1 + ROW_H - 1) continue;
+
+      if (row.kind === 'stat' && row.stat) {
+        const ok = this.progress.allocate(row.stat);
+        this.render();
+        return ok ? `${STAT_NAME[row.stat]} 상승` : null;
+      }
+      if (row.kind === 'weapon' && row.skill) {
+        const ok = this.progress.upgrade(row.skill);
+        this.render();
+        return ok ? `${row.skill.name} 강화` : null;
+      }
     }
-    return false;
+    return null;
   }
 }

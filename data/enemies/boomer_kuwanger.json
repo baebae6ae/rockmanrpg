@@ -4,14 +4,23 @@
   "series": "x",
   "tier": "boss",
   "sprite_scale": 1,
-
-  "hitbox": { "w": 24, "h": 36 },
-  "stats": { "hp": 280, "attack": 16, "exp": 520 },
-
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 280,
+    "attack": 16,
+    "exp": 520
+  },
   "element": "cutter",
-  "weakness": [{ "element": "electric", "multiplier": 2.5 }],
+  "weakness": [
+    {
+      "element": "electric",
+      "multiplier": 2.5
+    }
+  ],
   "contact_damage": 12,
-
   "pattern": "boss_teleporter",
   "pattern_params": {
     "charge_speed": 230,
@@ -21,5 +30,12 @@
     "element": "cutter",
     "spot_a": 990,
     "spot_b": 1090
-  }
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 40
+    }
+  ]
 }

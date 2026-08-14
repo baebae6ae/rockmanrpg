@@ -7,7 +7,8 @@
 
 import { Container } from 'pixi.js';
 import { AnimView, loadSheet } from '../anim/sheet';
-import { computeDamage } from '../combat/elements';
+import { computeDamage, multiplier } from '../combat/elements';
+import { popText } from '../ui/floating_text';
 import type { ProjectileSystem } from '../combat/projectile';
 import { boxOf, type Damageable } from '../combat/types';
 import { PatternRunner, type PatternContext, type PatternDef, type PatternHost } from '../pattern/interpreter';
@@ -28,6 +29,9 @@ export interface EnemyDef {
   contact_damage?: number;
   pattern: string;
   pattern_params?: Record<string, unknown>;
+  /** 처치 후 되살아나기까지의 시간(초). 없거나 0 이면 되살아나지 않는다 (보스) */
+  respawn?: number;
+  drops?: { kind: 'health' | 'energy'; chance: number; amount: number }[];
 }
 
 const ENEMY_GRAVITY = 780;
@@ -48,7 +52,12 @@ export class Enemy implements PatternHost, Damageable {
 
   private hurtTimer = 0;
   private deathTimer = 0;
-  private readonly runner: PatternRunner;
+  private respawnTimer = 0;
+  /** 보상을 이미 지급했는지 — 리스폰 시 초기화된다 */
+  rewarded = false;
+  private runner: PatternRunner;
+  private readonly spawnX: number;
+  private readonly spawnY: number;
   private meleeBox: { w: number; h: number; time: number; power: number } | null = null;
   private meleeHitDone = false;
 
@@ -57,7 +66,7 @@ export class Enemy implements PatternHost, Damageable {
   private constructor(
     readonly def: EnemyDef,
     view: AnimView,
-    pattern: PatternDef,
+    private readonly pattern: PatternDef,
     x: number,
     y: number,
     private readonly shots: ProjectileSystem,
@@ -65,9 +74,28 @@ export class Enemy implements PatternHost, Damageable {
     this.view = view;
     this.x = x;
     this.y = y;
+    this.spawnX = x;
+    this.spawnY = y;
     this.hp = def.stats.hp;
     this.maxHp = def.stats.hp;
     this.runner = new PatternRunner(this, pattern, def.pattern_params ?? {});
+  }
+
+  /** 사냥터가 성립하려면 잡몹이 다시 나와야 한다 */
+  private revive(): void {
+    this.hp = this.maxHp;
+    this.x = this.spawnX;
+    this.y = this.spawnY;
+    this.vx = 0;
+    this.vy = 0;
+    this.alive = true;
+    this.rewarded = false;
+    this.invulnerable = false;
+    this.hurtTimer = 0;
+    this.view.visible = true;
+    this.view.alpha = 1;
+    this.runner = new PatternRunner(this, this.pattern, this.def.pattern_params ?? {});
+    this.view.play('idle');
   }
 
   static async create(
@@ -140,6 +168,11 @@ export class Enemy implements PatternHost, Damageable {
     this.view.play('hurt');
     this.vx = Math.sign(this.x - fromX) * 40;
 
+    // 약점이면 크게, 저항이면 작게 — 상성이 통했는지 눈으로 보여야 한다
+    const ratio = explicit ? explicit.multiplier : multiplier(element, this.def.element);
+    const kind = ratio > 1 ? 'weak' : ratio < 1 ? 'resist' : 'hit';
+    popText(this.x, this.y - this.hitboxH - 2, `${damage}`, kind);
+
     if (this.hp <= 0) {
       this.hp = 0;
       this.deathTimer = 0.6;
@@ -151,7 +184,13 @@ export class Enemy implements PatternHost, Damageable {
   // ------------------------------------------------------------ 갱신
 
   update(dt: number, room: Room, ctx: PatternContext, player: Damageable): void {
-    if (!this.alive) return;
+    if (!this.alive) {
+      if (this.respawnTimer > 0) {
+        this.respawnTimer -= dt;
+        if (this.respawnTimer <= 0) this.revive();
+      }
+      return;
+    }
 
     if (this.deathTimer > 0) {
       this.deathTimer -= dt;
@@ -162,6 +201,7 @@ export class Enemy implements PatternHost, Damageable {
       if (this.deathTimer <= 0) {
         this.alive = false;
         this.view.visible = false;
+        this.respawnTimer = this.def.respawn ?? 0;
       }
       return;
     }

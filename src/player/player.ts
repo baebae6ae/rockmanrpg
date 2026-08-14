@@ -11,6 +11,7 @@ import { PHYSICS } from '../core/config';
 import { overlaps, type Room } from '../world/room';
 import type { ProjectileSystem } from '../combat/projectile';
 import { computeDamage } from '../combat/elements';
+import { popText } from '../ui/floating_text';
 import { fireSkill } from '../combat/skill';
 import type { Damageable } from '../combat/types';
 import type { Progress, SkillDef } from '../progression/progress';
@@ -92,10 +93,23 @@ export class Player implements Damageable {
     this.spawnY = spawn.y;
   }
 
-  /** 레벨 성장과 장비를 반영한 최대 체력 */
+  /** 레벨 성장·장비·분배 포인트를 반영한 최대 체력 */
   get maxHp(): number {
     const grown = this.def.base_stats.hp + this.def.growth.hp * (this.progress.level - 1);
-    return Math.round(grown + this.progress.bonusDefense * 2);
+    return Math.round(grown + this.progress.bonusDefense * 2 + this.progress.stats.vitality * 6);
+  }
+
+  /** 무기 위력에 더해지는 공격력 */
+  get attackStat(): number {
+    const grown = this.def.base_stats.attack + this.def.growth.attack * (this.progress.level - 1);
+    return Math.round(grown + this.progress.bonusAttack + this.progress.stats.attack * 2);
+  }
+
+  /** 받는 피해를 줄이는 방어력 */
+  get defenseStat(): number {
+    const base = this.def.base_stats.defense ?? 0;
+    const grown = base + this.def.growth.defense * (this.progress.level - 1);
+    return Math.round(grown + this.progress.bonusDefense + this.progress.stats.defense * 2);
   }
 
   get weapon(): SkillDef | undefined {
@@ -125,8 +139,11 @@ export class Player implements Damageable {
     if (this.invulnTimer > 0 || this.deathTimer > 0 || !this.alive) return;
 
     const raw = computeDamage(power, element, this.element);
-    const reduced = Math.max(1, Math.round(raw * (1 - this.progress.modifier('damage_reduction'))));
+    // 방어력은 뺄셈으로, 장비 보정은 곱셈으로 적용한다
+    const afterDefense = Math.max(1, raw - this.defenseStat * 0.35);
+    const reduced = Math.max(1, Math.round(afterDefense * (1 - this.progress.modifier('damage_reduction'))));
     this.hp = Math.max(0, this.hp - reduced);
+    popText(this.x, this.y - this.def.hitbox.h - 2, `${reduced}`, 'player');
     this.invulnTimer = 1;
     this.hurtTimer = 0.34;
     this.dashTimer = 0;
@@ -433,6 +450,7 @@ export class Player implements Damageable {
     const useCharge = charged && !!skill.charged;
 
     const ok = fireSkill(skill, {
+      attackBonus: this.attackStat,
       x: this.x,
       // 총구 높이는 캐릭터 키를 따른다 — 클래식 계열은 X 계열보다 낮다
       y: this.y - this.def.hitbox.h * 0.63,

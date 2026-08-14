@@ -38,10 +38,24 @@ export interface ItemDef {
 const SAVE_KEY = 'rockmanrpg.progress.v1';
 const MAX_ENERGY = 28;
 
+export type StatKey = 'attack' | 'defense' | 'vitality';
+
+export const STAT_NAME: Record<StatKey, string> = {
+  attack: '공격',
+  defense: '방어',
+  vitality: '체력',
+};
+
+/** 레벨업마다 주는 포인트 */
+const SP_PER_LEVEL = 1;
+const AP_PER_LEVEL = 3;
+
 interface SaveData {
   level: number;
   exp: number;
   sp: number;
+  ap: number;
+  stats: Record<string, number>;
   owned: string[];
   levels: Record<string, number>;
   equipped: Record<string, string | null>;
@@ -50,7 +64,12 @@ interface SaveData {
 export class Progress {
   level = 1;
   exp = 0;
+  /** 무기 강화용 */
   sp = 0;
+  /** 능력치 분배용 */
+  ap = 0;
+  /** 분배한 능력치 포인트 */
+  stats: Record<StatKey, number> = { attack: 0, defense: 0, vitality: 0 };
 
   /** 획득한 무기 (기본 무기는 캐릭터가 항상 가진다) */
   readonly owned = new Set<string>();
@@ -77,11 +96,22 @@ export class Progress {
     while (this.exp >= this.expToNext) {
       this.exp -= this.expToNext;
       this.level++;
-      this.sp += 1;
+      this.sp += SP_PER_LEVEL;
+      this.ap += AP_PER_LEVEL;
       gained++;
     }
     if (gained > 0) this.save();
     return gained;
+  }
+
+  // ------------------------------------------------------------ 능력치
+
+  allocate(stat: StatKey): boolean {
+    if (this.ap <= 0) return false;
+    this.ap--;
+    this.stats[stat]++;
+    this.save();
+    return true;
   }
 
   // ------------------------------------------------------------ 무기
@@ -203,6 +233,8 @@ export class Progress {
         level: this.level,
         exp: this.exp,
         sp: this.sp,
+        ap: this.ap,
+        stats: { ...this.stats },
         owned: [...this.owned],
         levels: Object.fromEntries(this.levels),
         equipped: { ...this.equipped },
@@ -221,6 +253,10 @@ export class Progress {
       this.level = data.level ?? 1;
       this.exp = data.exp ?? 0;
       this.sp = data.sp ?? 0;
+      this.ap = data.ap ?? 0;
+      for (const key of ['attack', 'defense', 'vitality'] as StatKey[]) {
+        this.stats[key] = data.stats?.[key] ?? 0;
+      }
       for (const id of data.owned ?? []) this.owned.add(id);
       for (const [id, lv] of Object.entries(data.levels ?? {})) this.levels.set(id, lv);
       for (const [slot, id] of Object.entries(data.equipped ?? {})) {
@@ -236,6 +272,8 @@ export class Progress {
     this.level = 1;
     this.exp = 0;
     this.sp = 0;
+    this.ap = 0;
+    this.stats = { attack: 0, defense: 0, vitality: 0 };
     this.owned.clear();
     this.levels.clear();
     this.energy.clear();

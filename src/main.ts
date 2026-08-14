@@ -9,6 +9,8 @@ import { Progress, type ItemDef, type SkillDef } from './progression/progress';
 import { HealthBar } from './ui/healthbar';
 import { Menu } from './ui/menu';
 import { Pickup } from './world/pickup';
+import { Drop } from './world/drop';
+import { mountFloatingText, popText, updateFloatingText } from './ui/floating_text';
 import { PARALLAX, Room, type MapDef } from './world/room';
 
 // 콘텐츠는 전부 데이터에서 온다 — 이 파일에 캐릭터·적·무기별 분기는 없다.
@@ -72,7 +74,10 @@ async function boot(): Promise<void> {
   const pickupLayer = new Container();
   const shotLayer = new Container();
   const actorLayer = new Container();
-  world.addChild(pickupLayer, shotLayer, actorLayer);
+  const effectLayer = new Container();
+  world.addChild(pickupLayer, shotLayer, actorLayer, effectLayer);
+  // 데미지 숫자는 월드 좌표계에 있어야 카메라를 따라간다
+  mountFloatingText(effectLayer);
 
   const shots = new ProjectileSystem(shotLayer);
   const input = new Input(canvas);
@@ -192,7 +197,8 @@ async function boot(): Promise<void> {
     const gy = ((e.clientY - rect.top) / rect.height) * GAME_H;
 
     if (menu.open) {
-      if (menu.handleTap(gx, gy)) say('강화 완료');
+      const result = menu.handleTap(gx, gy);
+      if (result) say(result);
       return;
     }
     // HUD 우측 상단을 누르면 캐릭터 교체 (모바일)
@@ -216,6 +222,9 @@ async function boot(): Promise<void> {
     level: progress.level,
     exp: progress.exp,
     sp: progress.sp,
+    ap: progress.ap,
+    stats: { ...progress.stats },
+    attackStat: player.attackStat,
     owned: [...progress.owned],
     equipped: { ...progress.equipped },
     enemiesAlive: enemies.filter((e) => e.alive).length,
@@ -226,15 +235,25 @@ async function boot(): Promise<void> {
   });
 
   // ------------------------------------------------------------ 보상
-  const rewarded = new Set<Enemy>();
+  const drops: Drop[] = [];
+
   const grantRewards = (): void => {
     for (const e of enemies) {
-      if (e.hp > 0 || rewarded.has(e)) continue;
-      rewarded.add(e);
+      if (e.hp > 0 || e.rewarded) continue;
+      e.rewarded = true;
+
+      popText(e.x, e.y - e.hitboxH - 12, `+${e.def.stats.exp} EXP`, 'gain');
+
+      // 회복 아이템 드랍 — 사냥을 이어갈 수 있게 한다
+      for (const d of e.def.drops ?? []) {
+        if (Math.random() > d.chance) continue;
+        const drop = new Drop(d.kind, d.amount, e.x + (Math.random() - 0.5) * 10, e.y - 8);
+        drops.push(drop);
+        pickupLayer.addChild(drop.view);
+      }
 
       const gained = progress.gainExp(e.def.stats.exp);
-      progress.refillEnergy(6);
-      if (gained > 0) say(`레벨 업!  Lv ${progress.level}   SP +${gained}`);
+      if (gained > 0) say(`레벨 업!  Lv ${progress.level}   AP +${gained * 3}  SP +${gained}`);
 
       // 보스 격파 → 특수무기 획득. 어떤 무기인지는 스킬 데이터가 정한다.
       const drop = Object.values(skillDefs).find(
@@ -264,6 +283,7 @@ async function boot(): Promise<void> {
     // 메뉴가 열려 있으면 게임은 멈춘다
     if (!menu.open) {
       progress.regen(dt);
+      updateFloatingText(dt);
       player.update(dt, input, room, shots);
 
       const ctx = { target: { x: player.x, y: player.y - player.hitboxH / 2 }, room };
@@ -279,6 +299,25 @@ async function boot(): Promise<void> {
           p.take();
           progress.equip(p.item);
           say(`${p.item.name} 장착 — ${p.item.description}`);
+        }
+      }
+
+      for (let i = drops.length - 1; i >= 0; i--) {
+        const d = drops[i];
+        d.update(dt, room);
+        if (!d.taken && d.touches(player.x, player.y, player.hitboxW, player.hitboxH)) {
+          d.take();
+          if (d.kind === 'health') {
+            player.hp = Math.min(player.maxHp, player.hp + d.amount);
+            popText(player.x, player.y - player.hitboxH - 4, `+${d.amount}`, 'gain');
+          } else {
+            progress.refillEnergy(d.amount);
+            popText(player.x, player.y - player.hitboxH - 4, `+${d.amount} WE`, 'gain');
+          }
+        }
+        if (d.taken) {
+          d.view.destroy();
+          drops.splice(i, 1);
         }
       }
     }
@@ -302,9 +341,12 @@ async function boot(): Promise<void> {
     if (boss) bossBar.set(boss.hp / boss.maxHp);
 
     nameLabel.text = player.def.name;
-    levelLabel.text = `Lv ${progress.level}  SP ${progress.sp}`;
+    const points = [progress.ap > 0 ? `AP ${progress.ap}` : '', progress.sp > 0 ? `SP ${progress.sp}` : '']
+      .filter(Boolean)
+      .join(' ');
+    levelLabel.text = `Lv ${progress.level}${points ? `  ${points}` : ''}`;
     weaponLabel.text = weapon
-      ? `▶ ${weapon.name}  Lv${progress.skillLevel(weapon.id)}  ${weapon.element}`
+      ? `▶ ${weapon.name} Lv${progress.skillLevel(weapon.id)}  ATK ${player.attackStat}`
       : '무기 없음';
 
     input.endFrame();

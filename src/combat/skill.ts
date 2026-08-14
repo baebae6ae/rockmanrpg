@@ -25,6 +25,8 @@ export interface FireContext {
   shots: ProjectileSystem;
   progress: Progress;
   charged: boolean;
+  /** 캐릭터의 공격력 — 무기 위력에 더해진다 */
+  attackBonus: number;
 }
 
 /** 발동에 성공하면 true. 에너지가 모자라면 false. */
@@ -44,7 +46,9 @@ export function fireSkill(skill: SkillDef, ctx: FireContext): boolean {
   let pierce = projectile?.pierce === true;
 
   // 장비 보정과 강화 레벨을 위력에 반영한다
+  // 무기 위력(강화 반영) + 캐릭터 공격력. 레벨과 분배 포인트가 여기서 체감된다.
   let power = num(damage, 'power', 6) * ctx.progress.powerScale(skill);
+  power += ctx.attackBonus * 0.55;
   power *= 1 + ctx.progress.modifier('power_bonus');
 
   if (ctx.charged && skill.charged) {

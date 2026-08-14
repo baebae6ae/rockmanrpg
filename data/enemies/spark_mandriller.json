@@ -4,14 +4,23 @@
   "series": "x",
   "tier": "boss",
   "sprite_scale": 1,
-
-  "hitbox": { "w": 24, "h": 36 },
-  "stats": { "hp": 260, "attack": 15, "exp": 450 },
-
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 260,
+    "attack": 15,
+    "exp": 450
+  },
   "element": "electric",
-  "weakness": [{ "element": "cutter", "multiplier": 2.5 }],
+  "weakness": [
+    {
+      "element": "cutter",
+      "multiplier": 2.5
+    }
+  ],
   "contact_damage": 11,
-
   "pattern": "boss_charger_a",
   "pattern_params": {
     "charge_speed": 215,
@@ -20,5 +29,12 @@
     "melee_power": 17,
     "element": "electric",
     "lair_center": 880
-  }
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 40
+    }
+  ]
 }

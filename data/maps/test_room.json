@@ -177,6 +177,51 @@
       }
     },
     {
+      "enemy": "walker",
+      "x": 500,
+      "y": 208,
+      "params": {
+        "left": 470,
+        "right": 590
+      }
+    },
+    {
+      "enemy": "hover",
+      "x": 560,
+      "y": 100,
+      "params": {
+        "left": 480,
+        "right": 600
+      }
+    },
+    {
+      "enemy": "walker",
+      "x": 690,
+      "y": 208,
+      "params": {
+        "left": 640,
+        "right": 740
+      }
+    },
+    {
+      "enemy": "hover",
+      "x": 950,
+      "y": 108,
+      "params": {
+        "left": 900,
+        "right": 1010
+      }
+    },
+    {
+      "enemy": "walker",
+      "x": 1260,
+      "y": 208,
+      "params": {
+        "left": 1220,
+        "right": 1300
+      }
+    },
+    {
       "enemy": "sting_chameleon",
       "x": 770,
       "y": 208,
