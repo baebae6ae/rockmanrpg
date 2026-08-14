@@ -31,8 +31,10 @@
 
 ## 에셋
 
-원작 스프라이트는 캡콤의 저작물이며 이 저장소에 포함되지 않는다 (`assets/sprites/`는 `.gitignore`).
-수집 규격은 [`docs/DESIGN.md` §5 스프라이트 시트 규격](docs/DESIGN.md#5-스프라이트-시트-규격)을 따른다.
+정규화된 스프라이트(`assets/sprites/`)는 CI 빌드에 필요하므로 저장소에 커밋한다.
+원본 리핑 시트(`assets/raw/`)와 생성된 임시 도트(`assets/generated/`)는 제외한다.
+
+수집·정규화 규격은 [`docs/DESIGN.md` §5 스프라이트 시트 규격](docs/DESIGN.md#5-스프라이트-시트-규격)을 따른다.
 
 비상업 팬 제작물이며, 캡콤과 아무런 관련이 없다.
 Rockman / Mega Man 및 관련 캐릭터는 캡콤의 상표다.

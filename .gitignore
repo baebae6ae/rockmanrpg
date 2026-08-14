@@ -1,10 +1,10 @@
-# --- 에셋 (저장소 외부 관리) ---
-# 원작 스프라이트는 버전 관리하지 않는다. 규격은 docs/DESIGN.md §5 참고.
-assets/sprites/
-assets/raw/
-assets/audio/
+# --- 에셋 ---
+# assets/sprites/ 는 커밋한다. CI 빌드에 필요하므로 저장소에 있어야 한다.
 
-# 스크립트로 재생성 가능한 임시 도트 (tools/gen_placeholder.py)
+# 원본 리핑 시트 — 임포트 전 중간 산물, 필요하면 다시 받는다
+assets/raw/
+
+# 임시 도트 — 빌드 시 tools/gen-placeholder.ts 가 재생성한다
 assets/generated/
 
 # --- Node / 빌드 ---
