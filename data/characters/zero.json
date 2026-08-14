@@ -1,0 +1,26 @@
+{
+  "id": "zero",
+  "name": "제로",
+  "series": "x",
+  "sprite_scale": 1,
+  "archetype": "saber",
+
+  "hitbox": { "w": 14, "h": 30 },
+
+  "base_stats": { "hp": 90, "attack": 14, "defense": 4 },
+  "growth": { "hp": 7, "attack": 2.0, "defense": 0.6 },
+
+  "movement": {
+    "can_dash": true,
+    "can_air_dash": true,
+    "can_wall_kick": true,
+    "can_double_jump": true,
+    "can_climb_ladder": true,
+    "can_slide": false
+  },
+
+  "shot": { "speed": 300, "color": "0x8ef0d8", "radius": 3, "lifetime": 0.35 },
+
+  "equipment_slots": ["head", "body", "arm", "foot"],
+  "starting_skills": ["z_saber"]
+}

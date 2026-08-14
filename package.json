@@ -1,0 +1,27 @@
+{
+  "name": "rockmanrpg",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen:placeholder": "tsx tools/gen-placeholder.ts",
+    "validate": "tsx tools/validate-data.ts",
+    "dev": "npm run gen:placeholder && vite",
+    "build": "npm run gen:placeholder && npm run validate && vite build",
+    "build:artifact": "npm run gen:placeholder && vite build --mode artifact",
+    "build:artifact-page": "npm run build:artifact && tsx tools/to-artifact-page.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pixi.js": "^8.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.1.0"
+  }
+}

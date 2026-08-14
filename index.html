@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>록맨 RPG</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0a12;
+        /* 터치 조작 중 스크롤·확대·길게눌러 선택 방지 */
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      #stage {
+        display: block;
+        width: 100%;
+        height: 100%;
+        /* 픽셀 아트는 확대 시 보간하지 않는다 */
+        image-rendering: pixelated;
+        /* 캔버스가 화면에 떠 있지 않고 하나의 화면(screen)으로 읽히게 */
+        outline: 1px solid #232c4e;
+        box-shadow:
+          0 0 0 4px #0d1124,
+          0 18px 60px -20px #000;
+      }
+      #boot {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        font: 14px/1.6 ui-monospace, monospace;
+        color: #6f7fa8;
+        letter-spacing: 0.08em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot">LOADING…</div>
+    <canvas id="stage"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
