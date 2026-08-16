@@ -286,7 +286,7 @@ async function boot(): Promise<void> {
       if (result) say(result);
       return;
     }
-    if (gy < 22 && gx > GAME_W / 2) void swap();
+    if (gy < 22) void swap();
   });
 
   document.getElementById('boot')?.remove();
@@ -467,7 +467,7 @@ async function boot(): Promise<void> {
     bossBar.visible = !!boss;
     if (boss) bossBar.set(boss.hp / boss.maxHp);
 
-    nameLabel.text = p.def.name;
+    nameLabel.text = characterDefs.length > 1 ? `${p.def.name}  ⇄` : p.def.name;
     const points = [progress.ap > 0 ? `AP ${progress.ap}` : '', progress.sp > 0 ? `SP ${progress.sp}` : '']
       .filter(Boolean)
       .join(' ');
