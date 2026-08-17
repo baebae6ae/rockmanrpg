@@ -10,6 +10,15 @@
     "x": 40,
     "y": 208
   },
+  "palette": {
+    "skyTop": 4161494,
+    "skyHorizon": 11065087,
+    "stars": false,
+    "glowColor": 16771522,
+    "glowAlpha": 0.22,
+    "tint": 9416299,
+    "tintAmount": 0.32
+  },
   "solids": [
     {
       "x": 0,
