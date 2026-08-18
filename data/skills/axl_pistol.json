@@ -1,0 +1,18 @@
+{
+  "id": "axl_pistol",
+  "name": "듀얼 피스톨",
+  "element": "neutral",
+  "cost": 0,
+  "cooldown": 0.1,
+  "animation_tag": "attack_main",
+  "unlock": { "source": "default", "character": "axl" },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [1, 2, 3, 5, 8],
+    "per_level": { "power": 0.12, "cost": 0 }
+  },
+  "effects": [
+    { "type": "projectile", "speed": 310, "radius": 2, "color": 16757575, "lifetime": 0.85, "count": 2, "spread": 7 },
+    { "type": "damage", "power": 3 }
+  ]
+}

@@ -90,6 +90,48 @@ const PALETTES: Record<string, Palette> = {
     weapon: '#c0a0ff',
     glow: '#ffd020',
   },
+  // ZX 계열 — 모델 Z/모델 X를 다루는 두 주인공
+  vent: {
+    main: '#3a5fc8',
+    light: '#8fa8ff',
+    dark: '#1c2f70',
+    skin: '#f6c9a0',
+    eye: '#132048',
+    accent: '#ffcf4a',
+    weapon: '#8ef0a0',
+    glow: '#8ef0a0',
+  },
+  aile: {
+    main: '#c85a9e',
+    light: '#ffb0dc',
+    dark: '#701048',
+    skin: '#f6c9a0',
+    eye: '#4a1030',
+    accent: '#ffe066',
+    weapon: '#9fe8ff',
+    glow: '#c9f0ff',
+  },
+  // 제로 시리즈 — 검은 장갑으로 재설계된 후기 제로
+  zero_z: {
+    main: '#232323',
+    light: '#5a5a5a',
+    dark: '#0a0a0a',
+    skin: '#f6c9a0',
+    eye: '#200000',
+    accent: '#ff3030',
+    weapon: '#ff6a3c',
+    glow: '#ff6a3c',
+  },
+  axl: {
+    main: '#c9a227',
+    light: '#ffe066',
+    dark: '#7a5e10',
+    skin: '#f6c9a0',
+    eye: '#402000',
+    accent: '#ff5050',
+    weapon: '#ffb347',
+    glow: '#ffb347',
+  },
 };
 
 interface CharacterSpec {
@@ -104,6 +146,10 @@ const CHARACTERS: CharacterSpec[] = [
   { id: 'rockman', style: 'classic' },
   { id: 'blues', style: 'classic' },
   { id: 'forte', style: 'classic' },
+  { id: 'vent', style: 'x' },
+  { id: 'aile', style: 'x' },
+  { id: 'zero_z', style: 'x' },
+  { id: 'axl', style: 'x' },
 ];
 
 // ---------------------------------------------------------------- 픽셀 버퍼

@@ -1,0 +1,23 @@
+{
+  "id": "vent",
+  "name": "벤트",
+  "series": "zx",
+  "archetype": "saber",
+
+  "hitbox": { "w": 14, "h": 29 },
+
+  "base_stats": { "hp": 95, "attack": 13, "defense": 4 },
+  "growth": { "hp": 7, "attack": 1.9, "defense": 0.6 },
+
+  "movement": {
+    "can_dash": true,
+    "can_air_dash": true,
+    "can_wall_kick": true,
+    "can_double_jump": false,
+    "can_climb_ladder": true,
+    "can_slide": false
+  },
+
+  "equipment_slots": ["head", "body", "arm", "foot"],
+  "starting_skills": ["model_z_saber"]
+}
