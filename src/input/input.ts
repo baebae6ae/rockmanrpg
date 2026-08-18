@@ -93,17 +93,30 @@ export class Input {
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('blur', () => {
+    const releaseAll = (): void => {
       this.keyHeld.clear();
       this.touchHeld.clear();
       this.touches.clear();
       this.sync();
+    };
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) releaseAll();
     });
 
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointercancel', this.onPointerUp);
+    // 손가락이 캔버스 경계 밖으로 나가면 캡처가 없는 한 move/up 이벤트가
+    // 더 이상 캔버스로 오지 않는다 — 그러면 놓친 손가락이 마지막 방향에
+    // 영구히 붙박여 조작이 막힌다. 캡처로 경계 밖까지 계속 추적한다.
+    canvas.addEventListener('lostpointercapture', this.onPointerUp);
+    // 캔버스로 이벤트가 안 온 경우를 대비한 이중 안전망 — 포인터 이벤트는
+    // 버블링되므로, 어떤 이유로든 원래 타깃으로 안 잡히더라도 window까지는
+    // 올라온다. 이미 지워진 손가락이면 onPointerUp이 조용히 무시한다.
+    window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerUp);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
@@ -224,6 +237,9 @@ export class Input {
     } else {
       return;
     }
+    // 손가락이 캔버스 밖으로 나가도 move/up 이벤트를 계속 이 손가락에
+    // 묶어 받기 위함 — 안 하면 경계 밖에서 뗐을 때 입력이 붙박인다.
+    this.canvas.setPointerCapture(e.pointerId);
     this.refresh();
   };
 
