@@ -4,6 +4,7 @@ import { Input } from './input/input';
 import { Player, type CharacterDef } from './player/player';
 import { Enemy, type EnemyDef } from './enemy/enemy';
 import { ProjectileSystem } from './combat/projectile';
+import { MeleeSystem } from './combat/melee';
 import type { PatternDef } from './pattern/interpreter';
 import { Progress, type ItemDef, type SkillDef } from './progression/progress';
 import { HealthBar } from './ui/healthbar';
@@ -46,6 +47,7 @@ interface Stage {
   world: Container;
   actorLayer: Container;
   shots: ProjectileSystem;
+  melee: MeleeSystem;
   enemies: Enemy[];
   pickups: Pickup[];
   drops: Drop[];
@@ -144,6 +146,7 @@ async function boot(): Promise<void> {
     if (!stage) return;
     clearFloatingText();
     stage.shots.clear();
+    stage.melee.clear();
     // 플레이어 뷰는 다음 스테이지에서 재사용하므로 먼저 떼어낸다
     if (player) stage.actorLayer.removeChild(player.view);
     scene.removeChild(stage.far, stage.mid, stage.world);
@@ -178,6 +181,7 @@ async function boot(): Promise<void> {
     mountFloatingText(effectLayer);
 
     const shots = new ProjectileSystem(shotLayer);
+    const melee = new MeleeSystem(effectLayer);
 
     const portals = (def.portals ?? []).map((p) => {
       const portal = new Portal(p);
@@ -213,7 +217,7 @@ async function boot(): Promise<void> {
       pickupLayer.addChild(pickup.view);
     }
 
-    stage = { def, room, far, mid, world, actorLayer, shots, enemies, pickups, drops: [], portals, npcs };
+    stage = { def, room, far, mid, world, actorLayer, shots, melee, enemies, pickups, drops: [], portals, npcs };
 
     // 입장 위치 — 들어온 포탈 앞에 세운다
     const entry = entryPortal ? portals.find((p) => p.def.id === entryPortal) : undefined;
@@ -371,13 +375,16 @@ async function boot(): Promise<void> {
     if (!paused) {
       progress.regen(dt);
       updateFloatingText(dt);
-      p.update(dt, input, current.room, current.shots);
+
+      // 세이버류는 발동 즉시 판정하므로, 그 시점의 살아있는 적 목록이 미리 있어야 한다
+      const living = current.enemies.filter((e) => e.alive && !e.dying);
+      p.update(dt, input, current.room, current.shots, current.melee, living);
+      current.melee.update(dt);
 
       const ctx = { target: { x: p.x, y: p.y - p.hitboxH / 2 }, room: current.room };
       for (const e of current.enemies) e.update(dt, current.room, ctx, p);
       grantRewards();
 
-      const living = current.enemies.filter((e) => e.alive && !e.dying);
       current.shots.update(dt, current.room, { enemies: living, players: [p] });
 
       for (const pk of current.pickups) {

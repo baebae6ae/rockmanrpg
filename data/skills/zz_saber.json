@@ -12,7 +12,7 @@
     "per_level": { "power": 0.22, "cost": 0 }
   },
   "effects": [
-    { "type": "projectile", "speed": 320, "radius": 3, "color": 16738876, "lifetime": 0.3, "count": 1 },
+    { "type": "melee_hitbox", "reach": 26, "height": 24, "color": 16738876 },
     { "type": "damage", "power": 16 }
   ],
   "charged": {

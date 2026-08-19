@@ -323,6 +323,12 @@ assets/sprites/enemies/<enemy_id>/
 
 주요 프리미티브: `projectile`, `melee_hitbox`, `damage`, `heal`, `status`(빙결/감전/화상/독), `buff`, `knockback`, `dash_move`, `summon`, `area`, `pierce`, `multi_hit`, `charge_variant`
 
+**`melee_hitbox`** — 세이버류 무기가 쓴다. `projectile`과 달리 총알이 날아가지 않는다. 발동 즉시 캐릭터 앞에 `reach`×`height` 판정 상자를 한 번만 검사해서, 그 순간 겹쳐 있는 대상을 전부 벤다(관통 여부를 따질 필요가 없다 — 애초에 한 번만 검사하니까). `color`로 베기 이펙트 색만 정하고, 나머지 위력·차지 배율은 `damage`/`charged`를 `projectile`과 동일하게 공유한다. `player/player.ts`가 `x_buster`·`z_saber`를 코드로 구분하지 않듯, `skill.ts`의 `fireSkill()`도 `effects`에 `projectile`이 있는지 `melee_hitbox`가 있는지만 보고 갈라진다 — 무기 데이터만 바꾸면 버스터도 세이버도 나올 수 있다.
+
+```jsonc
+{ "type": "melee_hitbox", "reach": 24, "height": 24, "color": 9367768 }
+```
+
 ### 6.3 적 / 보스
 
 ```jsonc

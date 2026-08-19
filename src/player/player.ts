@@ -10,6 +10,7 @@ import { AnimView, loadSheet } from '../anim/sheet';
 import { PHYSICS } from '../core/config';
 import { overlaps, type Room } from '../world/room';
 import type { ProjectileSystem } from '../combat/projectile';
+import type { MeleeSystem } from '../combat/melee';
 import { computeDamage } from '../combat/elements';
 import { popText } from '../ui/floating_text';
 import { fireSkill } from '../combat/skill';
@@ -263,7 +264,14 @@ export class Player implements Damageable {
     return x;
   }
 
-  update(dt: number, input: Input, room: Room, shots: ProjectileSystem): void {
+  update(
+    dt: number,
+    input: Input,
+    room: Room,
+    shots: ProjectileSystem,
+    melee: MeleeSystem,
+    meleeTargets: Damageable[],
+  ): void {
     const move = this.def.movement;
 
     this.invulnTimer = Math.max(0, this.invulnTimer - dt);
@@ -435,9 +443,9 @@ export class Player implements Damageable {
     if (stunned) this.chargeTime = 0;
     else if (input.down('shoot')) this.chargeTime += dt;
 
-    if (input.pressed('shoot') && !stunned) this.fire(shots, false);
+    if (input.pressed('shoot') && !stunned) this.fire(shots, melee, meleeTargets, false);
     if (input.released('shoot') && !stunned) {
-      if (this.chargeTime > this.chargeThreshold) this.fire(shots, true);
+      if (this.chargeTime > this.chargeThreshold) this.fire(shots, melee, meleeTargets, true);
       this.chargeTime = 0;
     }
 
@@ -453,7 +461,7 @@ export class Player implements Damageable {
     return PHYSICS.dashSpeed * (1 + this.progress.modifier('dash_speed'));
   }
 
-  private fire(shots: ProjectileSystem, charged: boolean): void {
+  private fire(shots: ProjectileSystem, melee: MeleeSystem, meleeTargets: Damageable[], charged: boolean): void {
     const skill = this.weapon;
     if (!skill || this.cooldown > 0) return;
     // 차지샷은 차지가 가능한 무기에서만
@@ -466,6 +474,8 @@ export class Player implements Damageable {
       y: this.y - this.def.hitbox.h * 0.63,
       facing: this.facing,
       shots,
+      melee,
+      meleeTargets,
       progress: this.progress,
       charged: useCharge,
     });
