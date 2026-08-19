@@ -115,6 +115,11 @@
       }
     },
     {
+      "enemy": "wall_turret",
+      "x": 270,
+      "y": 208
+    },
+    {
       "enemy": "walker",
       "x": 560,
       "y": 208,
@@ -130,6 +135,14 @@
       "params": {
         "left": 680,
         "right": 780
+      }
+    },
+    {
+      "enemy": "sniper_drone",
+      "x": 730,
+      "y": 95,
+      "params": {
+        "reposition": 730
       }
     },
     {

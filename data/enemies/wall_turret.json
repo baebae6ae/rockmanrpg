@@ -1,0 +1,43 @@
+{
+  "id": "wall_turret",
+  "name": "벽면 포탑",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 18,
+    "h": 20
+  },
+  "stats": {
+    "hp": 40,
+    "attack": 8,
+    "exp": 16
+  },
+  "element": "fire",
+  "contact_damage": 4,
+  "pattern": "mob_turret",
+  "pattern_params": {
+    "shot_speed": 150,
+    "shot_power": 9,
+    "element": "fire",
+    "color": 16738876
+  },
+  "respawn": 7,
+  "drops": [
+    {
+      "kind": "energy",
+      "chance": 0.4,
+      "amount": 10
+    },
+    {
+      "kind": "health",
+      "chance": 0.2,
+      "amount": 10
+    },
+    {
+      "kind": "bolt",
+      "chance": 0.85,
+      "amount": 11
+    }
+  ]
+}

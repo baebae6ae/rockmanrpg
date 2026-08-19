@@ -146,6 +146,15 @@
   "npcs": [],
   "spawns": [
     {
+      "enemy": "crawler",
+      "x": 80,
+      "y": 208,
+      "params": {
+        "left": 55,
+        "right": 125
+      }
+    },
+    {
       "enemy": "walker",
       "x": 170,
       "y": 208,
@@ -170,6 +179,15 @@
       "params": {
         "left": 288,
         "right": 332
+      }
+    },
+    {
+      "enemy": "hopper",
+      "x": 410,
+      "y": 208,
+      "params": {
+        "left": 385,
+        "right": 445
       }
     },
     {

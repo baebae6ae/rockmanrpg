@@ -1,0 +1,42 @@
+{
+  "id": "crawler",
+  "name": "스퀴터 크롤러",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 16,
+    "h": 22
+  },
+  "stats": {
+    "hp": 28,
+    "attack": 7,
+    "exp": 14
+  },
+  "element": "poison",
+  "contact_damage": 8,
+  "pattern": "mob_charger",
+  "pattern_params": {
+    "speed": 75,
+    "melee_power": 9,
+    "element": "poison"
+  },
+  "respawn": 6,
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 0.3,
+      "amount": 10
+    },
+    {
+      "kind": "energy",
+      "chance": 0.25,
+      "amount": 8
+    },
+    {
+      "kind": "bolt",
+      "chance": 0.8,
+      "amount": 8
+    }
+  ]
+}

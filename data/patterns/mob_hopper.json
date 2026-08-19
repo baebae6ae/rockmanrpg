@@ -1,0 +1,17 @@
+{
+  "id": "mob_hopper",
+  "sequence": [
+    { "op": "move_to", "x": "$left", "speed": "$speed", "timeout": 5 },
+    { "op": "face_player" },
+    { "op": "jump", "vy": 170, "vx": 0, "timeout": 2 },
+    { "op": "shoot_aimed", "count": 1, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.4 },
+
+    { "op": "move_to", "x": "$right", "speed": "$speed", "timeout": 5 },
+    { "op": "face_player" },
+    { "op": "jump", "vy": 170, "vx": 0, "timeout": 2 },
+    { "op": "shoot_aimed", "count": 1, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.4 },
+    { "op": "loop", "count": -1 }
+  ]
+}

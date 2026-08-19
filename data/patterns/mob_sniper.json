@@ -1,0 +1,12 @@
+{
+  "id": "mob_sniper",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "idle", "duration": 0.5 },
+    { "op": "shoot_aimed", "count": 1, "speed": "$snipe_speed", "power": "$snipe_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.9 },
+    { "op": "move_to", "x": "$reposition", "speed": "$speed", "timeout": 2 },
+    { "op": "wait", "duration": 0.3 },
+    { "op": "loop", "count": -1 }
+  ]
+}

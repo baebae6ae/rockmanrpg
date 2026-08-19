@@ -1,0 +1,17 @@
+{
+  "id": "mob_charger",
+  "sequence": [
+    { "op": "move_to", "x": "$left", "speed": "$speed", "timeout": 5 },
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "idle", "duration": 0.12 },
+    { "op": "melee", "w": 16, "h": 10, "duration": 0.15, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.3 },
+
+    { "op": "move_to", "x": "$right", "speed": "$speed", "timeout": 5 },
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "idle", "duration": 0.12 },
+    { "op": "melee", "w": 16, "h": 10, "duration": 0.15, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.3 },
+    { "op": "loop", "count": -1 }
+  ]
+}

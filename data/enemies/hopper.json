@@ -1,0 +1,44 @@
+{
+  "id": "hopper",
+  "name": "호퍼 미니언",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 14,
+    "h": 20
+  },
+  "stats": {
+    "hp": 22,
+    "attack": 6,
+    "exp": 13
+  },
+  "element": "wind",
+  "contact_damage": 5,
+  "pattern": "mob_hopper",
+  "pattern_params": {
+    "speed": 60,
+    "shot_speed": 140,
+    "shot_power": 6,
+    "element": "wind",
+    "color": 13168800
+  },
+  "respawn": 6,
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 0.35,
+      "amount": 10
+    },
+    {
+      "kind": "energy",
+      "chance": 0.25,
+      "amount": 8
+    },
+    {
+      "kind": "bolt",
+      "chance": 0.8,
+      "amount": 9
+    }
+  ]
+}

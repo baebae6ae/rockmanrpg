@@ -775,6 +775,22 @@ const ENEMY_PALETTES: Record<string, Palette> = {
     main: '#4a5f8c', light: '#96b0e0', dark: '#22304f',
     skin: '#96b0e0', eye: '#101a30', accent: '#cfe0ff', weapon: '#96b0e0', glow: '#7fd8ff',
   },
+  crawler: {
+    main: '#5a2e6a', light: '#a870c0', dark: '#28123a',
+    skin: '#a870c0', eye: '#1a0824', accent: '#a8ff5c', weapon: '#a870c0', glow: '#c8ff70',
+  },
+  wall_turret: {
+    main: '#6a3a2a', light: '#c07850', dark: '#301810',
+    skin: '#c07850', eye: '#200a04', accent: '#ffcf4a', weapon: '#ff6a3c', glow: '#ff9050',
+  },
+  hopper: {
+    main: '#3a7a4a', light: '#8ee6a0', dark: '#1a3a22',
+    skin: '#8ee6a0', eye: '#0e1e12', accent: '#dfffe0', weapon: '#8ee6a0', glow: '#c8f0a0',
+  },
+  sniper_drone: {
+    main: '#3a6a7a', light: '#8ee0f0', dark: '#1a333a',
+    skin: '#8ee0f0', eye: '#0c1c20', accent: '#ffffff', weapon: '#d8faff', glow: '#d8faff',
+  },
   sting_chameleon: {
     main: '#3f9c58', light: '#8ee59a', dark: '#1d4d2c',
     skin: '#e8d9a8', eye: '#12301c', accent: '#ffd85c', weapon: '#b6ff8e', glow: '#b6ff8e',
@@ -860,14 +876,93 @@ function drawHover(f: Frame, p: Palette, phase: number): void {
   f.rect(10, cy + 1 - fin, 4, 2, p.accent);
 }
 
+/** 지상 돌진형 잡몹 — 낮게 웅크린 채 빠르게 달려드는 벌레형 */
+function drawCrawler(f: Frame, p: Palette, phase: number): void {
+  const scurry = Math.round(Math.sin(phase * Math.PI * 4) * 2);
+  const by = 2;
+
+  const legPhase = Math.round(Math.sin(phase * Math.PI * 6) * 1);
+  f.rect(-7, 0, 2, 3 + legPhase, p.dark);
+  f.rect(-3, 0, 2, 3 - legPhase, p.dark);
+  f.rect(1, 0, 2, 3 + legPhase, p.dark);
+  f.rect(5, 0, 2, 3 - legPhase, p.dark);
+
+  f.rect(-8 + scurry, by, 16, 6, p.main);
+  f.rect(-8 + scurry, by, 16, 1, p.light);
+  f.rect(-8 + scurry, by + 5, 16, 1, p.dark);
+
+  f.rect(-5 + scurry, by + 6, 2, 3, p.dark);
+  f.rect(0 + scurry, by + 7, 2, 4, p.dark);
+  f.rect(4 + scurry, by + 6, 2, 3, p.dark);
+
+  f.rect(5 + scurry, by + 1, 3, 3, p.eye);
+  f.rect(6 + scurry, by + 2, 1, 1, p.glow);
+}
+
+/** 고정 포탑형 잡몹 — 다리 없이 제자리에서 조준 사격만 한다 */
+function drawTurret(f: Frame, p: Palette, phase: number): void {
+  const pulse = Math.round(Math.sin(phase * Math.PI * 2) * 1);
+
+  f.rect(-9, 0, 18, 4, p.dark);
+  f.rect(-9, 3, 18, 1, p.light);
+
+  f.rect(-7, 4, 14, 12, p.main);
+  f.rect(-7, 4, 14, 1, p.dark);
+  f.rect(-7, 15, 14, 1, p.light);
+  f.rect(-7, 4, 1, 12, p.light);
+  f.rect(6, 4, 1, 12, p.dark);
+
+  f.rect(-3, 8, 6, 4, p.eye);
+  f.rect(-2, 9, 4, 2 + pulse, p.glow);
+
+  f.rect(6, 8, 7, 3, p.weapon);
+  f.rect(12, 8, 2, 3, p.accent);
+}
+
+/** 도약형 잡몹 — 짧게 뛰어오르며 착지할 때마다 조준 사격한다 */
+function drawHopper(f: Frame, p: Palette, phase: number): void {
+  const squash = Math.abs(Math.sin(phase * Math.PI * 2));
+  const bodyH = Math.max(5, 9 - Math.round(squash * 3));
+  const by = 3;
+
+  f.rect(-9, 0, 3, 4, p.dark);
+  f.rect(6, 0, 3, 4, p.dark);
+
+  f.rect(-7, by, 14, bodyH, p.main);
+  f.rect(-7, by, 14, 1, p.light);
+  f.rect(-7, by + bodyH - 1, 14, 1, p.dark);
+
+  f.rect(-5, by + bodyH - 3, 3, 3, p.eye);
+  f.rect(2, by + bodyH - 3, 3, 3, p.eye);
+  f.rect(-4, by + bodyH - 2, 1, 1, p.glow);
+  f.rect(3, by + bodyH - 2, 1, 1, p.glow);
+
+  f.rect(-3, by + bodyH, 1, 3, p.accent);
+  f.rect(3, by + bodyH, 1, 3, p.accent);
+}
+
+type MobKind = 'walker' | 'hover' | 'crawler' | 'turret' | 'hopper';
+
 interface EnemySpec {
   id: string;
-  kind: 'walker' | 'hover' | 'boss';
+  kind: MobKind | 'boss';
 }
+
+const MOB_DRAWERS: Record<MobKind, (f: Frame, p: Palette, phase: number) => void> = {
+  walker: drawWalker,
+  hover: drawHover,
+  crawler: drawCrawler,
+  turret: drawTurret,
+  hopper: drawHopper,
+};
 
 const ENEMIES: EnemySpec[] = [
   { id: 'walker', kind: 'walker' },
   { id: 'hover', kind: 'hover' },
+  { id: 'crawler', kind: 'crawler' },
+  { id: 'wall_turret', kind: 'turret' },
+  { id: 'hopper', kind: 'hopper' },
+  { id: 'sniper_drone', kind: 'hover' },
   { id: 'sting_chameleon', kind: 'boss' },
   { id: 'spark_mandriller', kind: 'boss' },
   { id: 'boomer_kuwanger', kind: 'boss' },
@@ -879,10 +974,10 @@ const ENEMIES: EnemySpec[] = [
   { id: 'titan_breaker', kind: 'boss' },
 ];
 
-function mobFrames(kind: 'walker' | 'hover', palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {
+function mobFrames(kind: MobKind, palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {
   const frames: Frame[] = [];
   const tags: SheetMeta['tags'] = {};
-  const draw = kind === 'walker' ? drawWalker : drawHover;
+  const draw = MOB_DRAWERS[kind];
 
   const push = (name: string, count: number, duration: number, loop: boolean, pal: Palette): void => {
     const from = frames.length;

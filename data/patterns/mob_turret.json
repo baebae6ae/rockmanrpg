@@ -1,0 +1,10 @@
+{
+  "id": "mob_turret",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "idle", "duration": 0.3 },
+    { "op": "shoot_aimed", "count": 2, "spread": 8, "interval": 0.14, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 1.1 },
+    { "op": "loop", "count": -1 }
+  ]
+}

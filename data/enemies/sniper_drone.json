@@ -1,0 +1,46 @@
+{
+  "id": "sniper_drone",
+  "name": "저격 드론",
+  "series": "x",
+  "tier": "mob",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 20,
+    "h": 20
+  },
+  "stats": {
+    "hp": 20,
+    "attack": 9,
+    "exp": 18
+  },
+  "element": "cutter",
+  "gravity": false,
+  "contact_damage": 4,
+  "pattern": "mob_sniper",
+  "pattern_params": {
+    "speed": 50,
+    "snipe_speed": 190,
+    "snipe_power": 10,
+    "element": "cutter",
+    "color": 14220031,
+    "reposition": 0
+  },
+  "respawn": 8,
+  "drops": [
+    {
+      "kind": "energy",
+      "chance": 0.4,
+      "amount": 10
+    },
+    {
+      "kind": "health",
+      "chance": 0.2,
+      "amount": 9
+    },
+    {
+      "kind": "bolt",
+      "chance": 0.85,
+      "amount": 13
+    }
+  ]
+}
