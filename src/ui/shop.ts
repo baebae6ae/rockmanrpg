@@ -19,6 +19,10 @@ export class Shop {
   private stock: ItemDef[] = [];
   open = false;
 
+  /** 닫기 버튼 탭 판정 영역 — 화면을 덮는 패널이 터치패드의 MENU 버튼을 가려버리므로,
+   *  패널 안에 실제로 보이는 닫기 버튼이 따로 있어야 폰에서도 닫을 수 있다. */
+  private readonly closeBox = { x: GAME_W - 54, y: GAME_H - 20, w: 44, h: 14 };
+
   constructor(
     private readonly progress: Progress,
     private readonly items: Record<string, ItemDef>,
@@ -27,7 +31,19 @@ export class Shop {
     dim.rect(0, 0, GAME_W, GAME_H).fill({ color: 0x080b16 });
     const frame = new Graphics();
     frame.rect(6, 6, GAME_W - 12, GAME_H - 12).stroke({ color: 0xffd85c, width: 1 });
-    this.view.addChild(dim, frame, this.body);
+
+    const c = this.closeBox;
+    const closeBtn = new Graphics();
+    closeBtn.rect(c.x, c.y, c.w, c.h).fill({ color: 0x5a4a1a });
+    closeBtn.rect(c.x, c.y, c.w, c.h).stroke({ color: 0xffd85c, width: 1 });
+    const closeLabel = new Text({
+      text: '✕ 닫기',
+      style: { fontFamily: 'monospace', fontSize: 8, fill: 0xffe8b0 },
+    });
+    closeLabel.anchor.set(0.5);
+    closeLabel.position.set(c.x + c.w / 2, c.y + c.h / 2);
+
+    this.view.addChild(dim, frame, this.body, closeBtn, closeLabel);
     this.view.visible = false;
   }
 
@@ -84,12 +100,20 @@ export class Shop {
       y += ROW_H;
     }
 
-    this.text('MENU / M / ESC → 닫기', 14, GAME_H - 16, 0x6f7fa8, 8);
+    this.text('키보드는 M / ESC 로도 닫힌다', 14, GAME_H - 16, 0x6f7fa8, 8);
   }
 
   /** 구매했으면 안내 문구를 돌려준다 */
   handleTap(gx: number, gy: number): string | null {
-    if (!this.open || gx < 12 || gx > GAME_W - 12) return null;
+    if (!this.open) return null;
+
+    const c = this.closeBox;
+    if (gx >= c.x && gx <= c.x + c.w && gy >= c.y && gy <= c.y + c.h) {
+      this.close();
+      return null;
+    }
+
+    if (gx < 12 || gx > GAME_W - 12) return null;
     for (const row of this.rows) {
       if (gy < row.y - 2 || gy > row.y - 2 + ROW_H - 2) continue;
       const ok = this.progress.buy(row.item);
