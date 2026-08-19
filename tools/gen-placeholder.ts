@@ -787,6 +787,30 @@ const ENEMY_PALETTES: Record<string, Palette> = {
     main: '#7a5ec8', light: '#c0a8ff', dark: '#3a2a70',
     skin: '#e0d0f0', eye: '#1a1030', accent: '#a8f0ff', weapon: '#a8f0ff', glow: '#a8f0ff',
   },
+  guard_turtlan: {
+    main: '#6a7a4a', light: '#a8c078', dark: '#333f1e',
+    skin: '#e8dcb0', eye: '#1c2410', accent: '#ffcf4a', weapon: '#8ea058', glow: '#c8e070',
+  },
+  rapier_phantom: {
+    main: '#7ea8c8', light: '#d0eaff', dark: '#33506a',
+    skin: '#e8f0ff', eye: '#173040', accent: '#ffffff', weapon: '#bfe8ff', glow: '#dff4ff',
+  },
+  crimson_barrier: {
+    main: '#a02824', light: '#ff8060', dark: '#4a0e0c',
+    skin: '#f0c8a8', eye: '#2a0605', accent: '#ffcf4a', weapon: '#ff5a3c', glow: '#ff9050',
+  },
+  fang_rusher: {
+    main: '#6a2e8c', light: '#c080e8', dark: '#2e1248',
+    skin: '#d8c0f0', eye: '#180824', accent: '#a8ff5c', weapon: '#c080e8', glow: '#c8ff70',
+  },
+  longshot_eaglet: {
+    main: '#3a7ca8', light: '#bfe8ff', dark: '#173a54',
+    skin: '#e8f4ff', eye: '#0c1e2c', accent: '#ffffff', weapon: '#dff4ff', glow: '#eaffff',
+  },
+  titan_breaker: {
+    main: '#1e4a7a', light: '#5ea8d8', dark: '#0c223f',
+    skin: '#c8d8e8', eye: '#06111f', accent: '#ffcf4a', weapon: '#7fc8ff', glow: '#9fe0ff',
+  },
 };
 
 /** 지상 잡몹 — 다리 달린 메카니로이드 */
@@ -847,6 +871,12 @@ const ENEMIES: EnemySpec[] = [
   { id: 'sting_chameleon', kind: 'boss' },
   { id: 'spark_mandriller', kind: 'boss' },
   { id: 'boomer_kuwanger', kind: 'boss' },
+  { id: 'guard_turtlan', kind: 'boss' },
+  { id: 'rapier_phantom', kind: 'boss' },
+  { id: 'crimson_barrier', kind: 'boss' },
+  { id: 'fang_rusher', kind: 'boss' },
+  { id: 'longshot_eaglet', kind: 'boss' },
+  { id: 'titan_breaker', kind: 'boss' },
 ];
 
 function mobFrames(kind: 'walker' | 'hover', palette: Palette): { frames: Frame[]; tags: SheetMeta['tags'] } {

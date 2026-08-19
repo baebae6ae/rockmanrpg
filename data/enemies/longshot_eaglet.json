@@ -1,0 +1,48 @@
+{
+  "id": "longshot_eaglet",
+  "name": "롱쇼트 이글렛",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 280,
+    "attack": 22,
+    "exp": 620
+  },
+  "element": "ice",
+  "weakness": [
+    {
+      "element": "fire",
+      "multiplier": 2.5
+    }
+  ],
+  "contact_damage": 12,
+  "pattern": "boss_sniper",
+  "pattern_params": {
+    "spot_a": 280,
+    "spot_b": 440,
+    "speed": 65,
+    "snipe_speed": 220,
+    "snipe_power": 20,
+    "shot_speed": 160,
+    "shot_power": 11,
+    "element": "ice",
+    "color": 15400959
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 45
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 270
+    }
+  ]
+}

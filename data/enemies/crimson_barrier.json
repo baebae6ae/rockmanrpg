@@ -1,0 +1,46 @@
+{
+  "id": "crimson_barrier",
+  "name": "크림슨 배리어",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 380,
+    "attack": 17,
+    "exp": 700
+  },
+  "element": "fire",
+  "weakness": [
+    {
+      "element": "water",
+      "multiplier": 2.5
+    }
+  ],
+  "contact_damage": 14,
+  "pattern": "boss_bulwark",
+  "pattern_params": {
+    "charge_speed": 175,
+    "melee_power": 18,
+    "shot_speed": 155,
+    "shot_power": 13,
+    "fan_speed": 135,
+    "element": "fire",
+    "color": 16748624
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 55
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 300
+    }
+  ]
+}

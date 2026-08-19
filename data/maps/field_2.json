@@ -93,6 +93,14 @@
       "to_map": "field_1",
       "to_portal": "east",
       "label": "도시 외곽"
+    },
+    {
+      "id": "east",
+      "x": 940,
+      "y": 208,
+      "to_map": "field_3",
+      "to_portal": "west",
+      "label": "격리 구역"
     }
   ],
   "npcs": [],

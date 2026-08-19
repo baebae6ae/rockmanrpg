@@ -1,0 +1,46 @@
+{
+  "id": "guard_turtlan",
+  "name": "가드 터틀란",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 340,
+    "attack": 15,
+    "exp": 600
+  },
+  "element": "ground",
+  "weakness": [
+    {
+      "element": "wood",
+      "multiplier": 2.5
+    }
+  ],
+  "contact_damage": 12,
+  "pattern": "boss_turret",
+  "pattern_params": {
+    "shot_speed": 160,
+    "shot_power": 13,
+    "fan_speed": 130,
+    "element": "ground",
+    "color": 13164656,
+    "reposition": 250,
+    "speed": 55
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 50
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 260
+    }
+  ]
+}

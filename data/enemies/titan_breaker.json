@@ -1,0 +1,46 @@
+{
+  "id": "titan_breaker",
+  "name": "타이탄 브레이커",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 400,
+    "attack": 18,
+    "exp": 750
+  },
+  "element": "water",
+  "weakness": [
+    {
+      "element": "wood",
+      "multiplier": 2.5
+    }
+  ],
+  "contact_damage": 18,
+  "pattern": "boss_juggernaut",
+  "pattern_params": {
+    "slam_power": 20,
+    "shot_speed": 150,
+    "shot_power": 12,
+    "element": "water",
+    "color": 10477823,
+    "charge_speed": 150,
+    "melee_power": 18
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 55
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 320
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "rapier_phantom",
+  "name": "레이피어 팽텀",
+  "series": "x",
+  "tier": "boss",
+  "sprite_scale": 1,
+  "hitbox": {
+    "w": 24,
+    "h": 36
+  },
+  "stats": {
+    "hp": 300,
+    "attack": 19,
+    "exp": 650
+  },
+  "element": "wind",
+  "weakness": [
+    {
+      "element": "ice",
+      "multiplier": 2.5
+    }
+  ],
+  "contact_damage": 15,
+  "pattern": "boss_diver",
+  "pattern_params": {
+    "dive_speed": 210,
+    "dive_speed_enraged": 270,
+    "dive_distance": 140,
+    "dive_distance_enraged": 170,
+    "shot_speed": 160,
+    "shot_power": 12,
+    "melee_power": 17,
+    "element": "wind",
+    "color": 14677247,
+    "sky_spot_a": 1280,
+    "sky_spot_b": 1480
+  },
+  "drops": [
+    {
+      "kind": "health",
+      "chance": 1,
+      "amount": 50
+    },
+    {
+      "kind": "bolt",
+      "chance": 1,
+      "amount": 280
+    }
+  ]
+}
