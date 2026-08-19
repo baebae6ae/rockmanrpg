@@ -1,0 +1,49 @@
+{
+  "id": "boss_diver",
+  "sequence": [
+    { "op": "teleport", "x": "$sky_spot_a", "y": 30, "fade": 0.2 },
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+    { "op": "charge", "speed": "$dive_speed", "distance": "$dive_distance" },
+    { "op": "melee", "w": 30, "h": 26, "duration": 0.22, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.3 },
+
+    { "op": "face_player" },
+    { "op": "shoot_aimed", "count": 4, "spread": 20, "interval": 0.09, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.4 },
+
+    {
+      "op": "random",
+      "options": [
+        [
+          { "op": "teleport", "x": "$sky_spot_b", "y": 30, "fade": 0.2 },
+          { "op": "face_player" },
+          { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+          { "op": "charge", "speed": "$dive_speed", "distance": "$dive_distance" },
+          { "op": "melee", "w": 30, "h": 26, "duration": 0.22, "power": "$melee_power" }
+        ],
+        [
+          { "op": "face_player" },
+          { "op": "shoot_aimed", "count": 6, "spread": 30, "interval": 0.06, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" }
+        ]
+      ]
+    },
+    { "op": "wait", "duration": 0.5 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.45,
+      "then": [
+        { "op": "invulnerable", "value": true },
+        { "op": "teleport", "x": "$sky_spot_a", "y": 30, "fade": 0.15 },
+        { "op": "invulnerable", "value": false },
+        { "op": "face_player" },
+        { "op": "telegraph", "anim": "telegraph", "duration": 0.2 },
+        { "op": "charge", "speed": "$dive_speed_enraged", "distance": "$dive_distance_enraged" },
+        { "op": "melee", "w": 34, "h": 28, "duration": 0.22, "power": "$melee_power" },
+        { "op": "wait", "duration": 0.4 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}

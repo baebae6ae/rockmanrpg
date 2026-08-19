@@ -1,0 +1,41 @@
+{
+  "id": "boss_turret",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.35 },
+    { "op": "shoot_aimed", "count": 3, "spread": 10, "interval": 0.14, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.35 },
+
+    { "op": "face_player" },
+    { "op": "shoot", "count": 7, "spread": 100, "interval": 0.05, "speed": "$fan_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.5 },
+
+    {
+      "op": "random",
+      "options": [
+        [
+          { "op": "face_player" },
+          { "op": "shoot_aimed", "count": 5, "spread": 22, "interval": 0.08, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" }
+        ],
+        [
+          { "op": "move_to", "x": "$reposition", "speed": "$speed", "timeout": 2 },
+          { "op": "face_player" },
+          { "op": "shoot", "count": 5, "spread": 70, "interval": 0.06, "speed": "$fan_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" }
+        ]
+      ]
+    },
+    { "op": "wait", "duration": 0.5 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.4,
+      "then": [
+        { "op": "face_player" },
+        { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+        { "op": "shoot", "count": 12, "spread": 140, "interval": 0.035, "speed": "$fan_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+        { "op": "wait", "duration": 0.5 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}

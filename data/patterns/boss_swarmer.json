@@ -1,0 +1,52 @@
+{
+  "id": "boss_swarmer",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.2 },
+    { "op": "charge", "speed": "$charge_speed", "distance": 80 },
+    { "op": "melee", "w": 26, "h": 26, "duration": 0.18, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.12 },
+
+    { "op": "face_player" },
+    { "op": "melee", "w": 26, "h": 26, "duration": 0.18, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.2 },
+
+    {
+      "op": "random",
+      "options": [
+        [
+          { "op": "face_player" },
+          { "op": "jump", "vy": 230, "vx": 130, "timeout": 2 },
+          { "op": "melee", "w": 26, "h": 26, "duration": 0.18, "power": "$melee_power" }
+        ],
+        [
+          { "op": "face_player" },
+          { "op": "charge", "speed": "$charge_speed", "distance": 100 },
+          { "op": "melee", "w": 26, "h": 26, "duration": 0.18, "power": "$melee_power" }
+        ],
+        [
+          { "op": "face_player" },
+          { "op": "shoot_aimed", "count": 2, "spread": 10, "interval": 0.1, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" }
+        ]
+      ]
+    },
+    { "op": "wait", "duration": 0.35 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.45,
+      "then": [
+        { "op": "face_player" },
+        { "op": "telegraph", "anim": "telegraph", "duration": 0.12 },
+        { "op": "charge", "speed": "$charge_speed_enraged", "distance": 90 },
+        { "op": "melee", "w": 28, "h": 26, "duration": 0.16, "power": "$melee_power" },
+        { "op": "wait", "duration": 0.1 },
+        { "op": "face_player" },
+        { "op": "charge", "speed": "$charge_speed_enraged", "distance": 90 },
+        { "op": "melee", "w": 28, "h": 26, "duration": 0.16, "power": "$melee_power" },
+        { "op": "wait", "duration": 0.35 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "boss_sniper",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.55 },
+    { "op": "shoot_aimed", "count": 1, "speed": "$snipe_speed", "power": "$snipe_power", "element": "$element", "radius": 4, "color": "$color" },
+    { "op": "wait", "duration": 0.4 },
+
+    { "op": "move_to", "x": "$spot_a", "speed": "$speed", "timeout": 3 },
+    { "op": "face_player" },
+    { "op": "shoot_aimed", "count": 3, "spread": 8, "interval": 0.12, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.4 },
+
+    { "op": "move_to", "x": "$spot_b", "speed": "$speed", "timeout": 3 },
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.5 },
+    { "op": "shoot_aimed", "count": 1, "speed": "$snipe_speed", "power": "$snipe_power", "element": "$element", "radius": 4, "color": "$color" },
+    { "op": "wait", "duration": 0.5 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.4,
+      "then": [
+        { "op": "face_player" },
+        { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+        { "op": "shoot_aimed", "count": 3, "spread": 6, "interval": 0.1, "speed": "$snipe_speed", "power": "$snipe_power", "element": "$element", "radius": 4, "color": "$color" },
+        { "op": "wait", "duration": 0.5 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "boss_juggernaut",
+  "sequence": [
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.4 },
+    { "op": "jump", "vy": 200, "vx": 90, "timeout": 3 },
+    { "op": "melee", "w": 46, "h": 20, "duration": 0.3, "power": "$slam_power" },
+    { "op": "wait", "duration": 0.5 },
+
+    { "op": "face_player" },
+    { "op": "shoot", "count": 6, "spread": 100, "interval": 0.05, "speed": "$shot_speed", "power": "$shot_power", "element": "$element", "radius": 3, "color": "$color" },
+    { "op": "wait", "duration": 0.5 },
+
+    { "op": "face_player" },
+    { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+    { "op": "charge", "speed": "$charge_speed", "distance": 100 },
+    { "op": "melee", "w": 30, "h": 28, "duration": 0.25, "power": "$melee_power" },
+    { "op": "wait", "duration": 0.5 },
+
+    {
+      "op": "if_hp_below",
+      "ratio": 0.4,
+      "then": [
+        { "op": "face_player" },
+        { "op": "telegraph", "anim": "telegraph", "duration": 0.3 },
+        { "op": "jump", "vy": 220, "vx": 110, "timeout": 3 },
+        { "op": "melee", "w": 52, "h": 22, "duration": 0.3, "power": "$slam_power" },
+        { "op": "wait", "duration": 0.15 },
+        { "op": "jump", "vy": 220, "vx": -110, "timeout": 3 },
+        { "op": "melee", "w": 52, "h": 22, "duration": 0.3, "power": "$slam_power" },
+        { "op": "wait", "duration": 0.5 }
+      ]
+    },
+    { "op": "loop", "count": -1 }
+  ]
+}
