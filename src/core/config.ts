@@ -1,12 +1,21 @@
-/** 렌더 규격 — docs/DESIGN.md §2 */
-export const GAME_W = 320;
+/**
+ * 렌더 규격 — docs/DESIGN.md §2
+ *
+ * 가로를 넓게 잡는 이유: 세로(GAME_H)는 화면 높이에 맞춰 스케일을 정하는 축이라
+ * 손대면 캐릭터 표시 크기 자체가 바뀐다. 반면 가로는 화면 비율이 GAME_W:GAME_H
+ * 보다 넓은 기기(요즘 스마트폰 가로모드 대부분)에서 스케일에 전혀 관여하지
+ * 않고 화면 좌우에 검은 여백으로 버려진다. 그 여백만큼 GAME_W를 넓히면 도트
+ * 크기는 그대로인데 화면에 보이는 사냥터 폭만 넓어진다 — 록맨의 좁은 액션
+ * 스테이지가 아니라 메이플식 사냥터로 읽히려면 이 폭이 핵심이다.
+ */
+export const GAME_W = 560;
 export const GAME_H = 240;
 
 /**
  * 정수배 스케일이 원칙이지만, 모바일 세로 화면에서는 ×1 이 화면의 극히 일부만
  * 채워 실기 확인이 어렵다. ×2 이상이 들어가면 정수배로 고정하고, 그보다 좁으면
- * 화면에 맞춰 늘린다. 캔버스 백버퍼는 항상 320×240 이고 확대는 CSS 가 맡으므로
- * 도트 자체는 어느 경우에도 보간되지 않는다.
+ * 화면에 맞춰 늘린다. 캔버스 백버퍼는 항상 GAME_W×GAME_H 이고 확대는 CSS 가
+ * 맡으므로 도트 자체는 어느 경우에도 보간되지 않는다.
  */
 export function computeScale(screenW: number, screenH: number): number {
   const fit = Math.min(screenW / GAME_W, screenH / GAME_H);

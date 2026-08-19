@@ -68,7 +68,7 @@ async function boot(): Promise<void> {
     roundPixels: true,
   });
 
-  // 백버퍼는 320×240 고정. 확대는 CSS 가 맡으므로 도트가 보간되지 않는다.
+  // 백버퍼는 GAME_W×GAME_H 고정. 확대는 CSS 가 맡으므로 도트가 보간되지 않는다.
   const fit = (): void => {
     const scale = computeScale(window.innerWidth, window.innerHeight);
     canvas.style.width = `${Math.round(GAME_W * scale)}px`;

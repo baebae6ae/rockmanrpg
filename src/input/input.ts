@@ -48,12 +48,13 @@ interface PadButton {
   label: string;
 }
 
+/** 오른쪽 가장자리로부터의 거리로 정의한다 — GAME_W가 바뀌어도 화면 가장자리에 계속 붙어 있는다 */
 const PAD_BUTTONS: PadButton[] = [
-  { button: 'jump', x: 288, y: 204, r: 18, label: 'JUMP' },
-  { button: 'shoot', x: 244, y: 192, r: 16, label: 'FIRE' },
-  { button: 'dash', x: 286, y: 160, r: 15, label: 'DASH' },
-  { button: 'weapon', x: 236, y: 150, r: 14, label: 'WPN' },
-  { button: 'menu', x: 300, y: 36, r: 13, label: 'MENU' },
+  { button: 'jump', x: GAME_W - 32, y: 204, r: 18, label: 'JUMP' },
+  { button: 'shoot', x: GAME_W - 76, y: 192, r: 16, label: 'FIRE' },
+  { button: 'dash', x: GAME_W - 34, y: 160, r: 15, label: 'DASH' },
+  { button: 'weapon', x: GAME_W - 84, y: 150, r: 14, label: 'WPN' },
+  { button: 'menu', x: GAME_W - 20, y: 36, r: 13, label: 'MENU' },
 ];
 
 /** 스틱을 잡을 수 있는 영역 — 화면 왼쪽 절반의 아래쪽 */
@@ -170,7 +171,7 @@ export class Input {
 
   // ------------------------------------------------------------ 터치
 
-  /** 캔버스 좌표 → 게임 좌표 (백버퍼가 320×240 이므로 비율만 맞추면 된다) */
+  /** 캔버스 좌표 → 게임 좌표 (백버퍼가 GAME_W×GAME_H 고정이므로 비율만 맞추면 된다) */
   private toGame(e: PointerEvent): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     return {
@@ -239,7 +240,13 @@ export class Input {
     }
     // 손가락이 캔버스 밖으로 나가도 move/up 이벤트를 계속 이 손가락에
     // 묶어 받기 위함 — 안 하면 경계 밖에서 뗐을 때 입력이 붙박인다.
-    this.canvas.setPointerCapture(e.pointerId);
+    // 드물게(빠른 연속 탭 등) 캡처 자체가 실패할 수 있는데, 그렇다고
+    // 아래 refresh() 까지 건너뛰면 이미 등록한 손가락이 반영되지 않는다.
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // 캡처 실패는 무시한다 — 경계 밖 추적 보강이 안 될 뿐, 나머지 등록은 계속한다.
+    }
     this.refresh();
   };
 
