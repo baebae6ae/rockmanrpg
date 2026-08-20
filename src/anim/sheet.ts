@@ -30,13 +30,16 @@ export interface Sheet {
   source: 'sprites' | 'generated';
 }
 
-const pngUrls = import.meta.glob('/assets/**/*.png', {
+// sprites/generated 만 본다 — assets/raw/ 는 임포트 전 원본을 잠깐 두는
+// 곳이라 여기 걸리면 실제 게임 번들에 리핑 시트 원본(수백 KB~수 MB)이
+// 그대로 딸려 들어간다.
+const pngUrls = import.meta.glob('/assets/{sprites,generated}/**/*.png', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
-const metaFiles = import.meta.glob('/assets/**/*.json', {
+const metaFiles = import.meta.glob('/assets/{sprites,generated}/**/*.json', {
   eager: true,
   import: 'default',
 }) as Record<string, SheetMeta>;
