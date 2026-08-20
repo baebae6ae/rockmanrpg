@@ -504,6 +504,23 @@ export class Player implements Damageable {
     }
   }
 
+  /**
+   * 공격 판정은 끝났지만 스윙 마무리 동작이 아직 남아 있는 상태.
+   *
+   * 세이버 스윙은 크게 휘두른 뒤 자세를 되돌리는 복귀 동작까지가 한 세트다.
+   * 판정 시간(attackTimer)이 끝나자마자 idle 로 끊어버리면 크게 뻗은
+   * 자세에서 선 자세로 한 프레임 만에 튄다. 복귀 동작을 끝까지 재생해
+   * 매끄럽게 idle 로 붙인다 — 대신 이동·대시로는 즉시 캔슬된다.
+   */
+  private get inAttackRecovery(): boolean {
+    return (
+      this.view.current.startsWith('attack_main') &&
+      !this.view.finished &&
+      Math.abs(this.vx) <= 8 &&
+      this.dashTimer <= 0
+    );
+  }
+
   private applyAnimation(dt: number): void {
     let tag: string;
     let fallback = 'idle';
@@ -515,7 +532,7 @@ export class Player implements Damageable {
       if (this.attackTimer > 0) fallback = 'attack_main';
     } else if (this.dashTimer > 0 && this.slideMode) tag = 'slide';
     // 대시 중 공격해도 공격 모션이 보이도록, 순수 대시(슬라이드 아님)보다 공격을 우선한다
-    else if (this.attackTimer > 0) {
+    else if (this.attackTimer > 0 || this.inAttackRecovery) {
       // 세이버류 3단 콤보 — attack_main2/3 이 없는 캐릭터는 attack_main 으로 대체된다
       const comboTag = this.comboStep === 0 ? 'attack_main' : `attack_main${this.comboStep + 1}`;
       // 이동 중 전용 공격 동작(달리며/미끄러지며 쏘기)이 있으면 그걸 쓰고,
