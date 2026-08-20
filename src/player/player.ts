@@ -449,9 +449,13 @@ export class Player implements Damageable {
     if (stunned) this.chargeTime = 0;
     else if (input.down('shoot')) this.chargeTime += dt;
 
-    if (input.pressed('shoot') && !stunned) this.fire(shots, melee, meleeTargets, false);
+    // 차지 가능한 무기는 누르는 순간 바로 쏘지 않는다 — 누르자마자 공격 자세가
+    // 반짝이고 차지가 시작되면 "누를 때마다 공격만 나온다"는 인상을 준다.
+    // 떼는 순간 차지 여부에 따라 일반/차지샷 중 하나만 나가게 한다.
+    const chargeable = !!this.weapon?.charged;
+    if (input.pressed('shoot') && !stunned && !chargeable) this.fire(shots, melee, meleeTargets, false);
     if (input.released('shoot') && !stunned) {
-      if (this.chargeTime > this.chargeThreshold) this.fire(shots, melee, meleeTargets, true);
+      if (chargeable) this.fire(shots, melee, meleeTargets, this.chargeTime > this.chargeThreshold);
       this.chargeTime = 0;
     }
 
