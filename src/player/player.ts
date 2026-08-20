@@ -512,18 +512,14 @@ export class Player implements Damageable {
     } else if (this.dashTimer > 0 && this.slideMode) tag = 'slide';
     // 대시 중 공격해도 공격 모션이 보이도록, 순수 대시(슬라이드 아님)보다 공격을 우선한다
     else if (this.attackTimer > 0) {
-      if (this.dashTimer > 0) {
-        // 전용 대시+공격 동작이 있으면 그걸, 없으면 정지 자세로 굳어버리지 않게 대시 자세를 유지한다
-        tag = this.view.has('dash_attack') ? 'dash_attack' : 'dash';
-        fallback = 'dash';
-      } else if (Math.abs(this.vx) > 8) {
-        tag = this.view.has('run_attack') ? 'run_attack' : 'run';
-        fallback = 'run';
-      } else {
-        // 세이버류 3단 콤보 — attack_main2/3 이 없는 캐릭터는 attack_main 으로 대체된다
-        tag = this.comboStep === 0 ? 'attack_main' : `attack_main${this.comboStep + 1}`;
-        fallback = 'attack_main';
-      }
+      // 세이버류 3단 콤보 — attack_main2/3 이 없는 캐릭터는 attack_main 으로 대체된다
+      const comboTag = this.comboStep === 0 ? 'attack_main' : `attack_main${this.comboStep + 1}`;
+      // 이동 중 전용 공격 동작(달리며/미끄러지며 쏘기)이 있으면 그걸 쓰고,
+      // 없는 캐릭터(세이버류)는 콤보 공격 자세를 그대로 보여준다
+      if (this.dashTimer > 0 && this.view.has('dash_attack')) tag = 'dash_attack';
+      else if (Math.abs(this.vx) > 8 && this.view.has('run_attack')) tag = 'run_attack';
+      else tag = comboTag;
+      fallback = 'attack_main';
     } else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
     else if (this.landTimer > 0) tag = 'jump_land';
     else if (Math.abs(this.vx) > 8) tag = 'run';
