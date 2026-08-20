@@ -490,10 +490,12 @@ export class Player implements Damageable {
 
     if (this.hurtTimer > 0) tag = 'hurt';
     else if (this.sliding) tag = 'wall_slide';
-    else if (this.dashTimer > 0 && this.grounded) tag = this.slideMode ? 'slide' : 'dash';
     else if (!this.grounded) {
       tag = this.attackTimer > 0 ? 'attack_air' : this.vy < 0 ? 'jump_rise' : 'jump_fall';
-    } else if (this.attackTimer > 0) tag = 'attack_main';
+    } else if (this.dashTimer > 0 && this.slideMode) tag = 'slide';
+    // 대시 중 공격해도 공격 모션이 보이도록, 순수 대시(슬라이드 아님)보다 공격을 우선한다
+    else if (this.attackTimer > 0) tag = 'attack_main';
+    else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
     else if (this.landTimer > 0) tag = 'jump_land';
     else if (Math.abs(this.vx) > 8) tag = 'run';
     else if (this.chargeTime > this.chargeThreshold && this.weapon?.charged) tag = 'charge_loop';
@@ -507,7 +509,7 @@ export class Player implements Damageable {
   private syncView(): void {
     this.view.position.set(Math.round(this.x), Math.round(this.y));
     // 벽에 매달릴 때는 벽을 등지고 보이도록 뒤집는다
-    this.view.scale.x = this.sliding ? -this.wallDir : this.facing;
+    this.view.scale.x = this.sliding ? this.wallDir : this.facing;
     // 무적 시간 동안 깜빡인다
     this.view.alpha = this.invulnTimer > 0 && Math.floor(this.invulnTimer * 24) % 2 === 0 ? 0.3 : 1;
   }

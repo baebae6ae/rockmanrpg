@@ -8,61 +8,61 @@
     "idle": {
       "from": 0,
       "to": 3,
-      "duration": 120,
+      "duration": 150,
       "loop": true
     },
     "attack_main": {
       "from": 4,
       "to": 7,
-      "duration": 120,
+      "duration": 45,
       "loop": false
     },
     "run": {
       "from": 8,
       "to": 15,
-      "duration": 120,
+      "duration": 70,
       "loop": true
     },
     "dash": {
       "from": 16,
       "to": 18,
-      "duration": 120,
+      "duration": 60,
       "loop": true
     },
     "jump_rise": {
       "from": 19,
       "to": 22,
-      "duration": 120,
+      "duration": 90,
       "loop": false
     },
     "jump_fall": {
       "from": 23,
       "to": 26,
-      "duration": 120,
+      "duration": 90,
       "loop": false
     },
     "jump_land": {
       "from": 27,
       "to": 29,
-      "duration": 120,
+      "duration": 70,
       "loop": false
     },
     "wall_slide": {
       "from": 30,
       "to": 35,
-      "duration": 120,
+      "duration": 130,
       "loop": true
     },
     "hurt": {
       "from": 36,
       "to": 38,
-      "duration": 120,
+      "duration": 90,
       "loop": false
     },
     "death": {
       "from": 36,
       "to": 38,
-      "duration": 120,
+      "duration": 90,
       "loop": false
     }
   }
