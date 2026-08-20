@@ -1,67 +1,67 @@
 {
   "canvas": {
-    "w": 64,
-    "h": 64
+    "w": 72,
+    "h": 72
   },
   "columns": 8,
   "tags": {
     "idle": {
       "from": 0,
-      "to": 7,
+      "to": 3,
       "duration": 120,
       "loop": true
     },
     "attack_main": {
-      "from": 8,
-      "to": 11,
+      "from": 4,
+      "to": 7,
       "duration": 120,
       "loop": false
     },
     "run": {
-      "from": 12,
-      "to": 23,
+      "from": 8,
+      "to": 15,
       "duration": 120,
       "loop": true
     },
     "dash": {
-      "from": 24,
-      "to": 30,
+      "from": 16,
+      "to": 18,
       "duration": 120,
       "loop": true
     },
     "jump_rise": {
-      "from": 31,
-      "to": 34,
+      "from": 19,
+      "to": 22,
       "duration": 120,
       "loop": false
     },
     "jump_fall": {
-      "from": 35,
-      "to": 38,
+      "from": 23,
+      "to": 26,
       "duration": 120,
       "loop": false
     },
     "jump_land": {
-      "from": 39,
-      "to": 42,
+      "from": 27,
+      "to": 29,
       "duration": 120,
       "loop": false
     },
     "wall_slide": {
-      "from": 43,
-      "to": 49,
+      "from": 30,
+      "to": 35,
       "duration": 120,
       "loop": true
     },
     "hurt": {
-      "from": 50,
-      "to": 52,
+      "from": 36,
+      "to": 38,
       "duration": 120,
       "loop": false
     },
     "death": {
-      "from": 50,
-      "to": 52,
+      "from": 36,
+      "to": 38,
       "duration": 120,
       "loop": false
     }
