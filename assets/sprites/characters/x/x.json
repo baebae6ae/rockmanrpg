@@ -35,45 +35,57 @@
       "duration": 70,
       "loop": true
     },
-    "dash": {
+    "run_attack": {
       "from": 23,
-      "to": 25,
+      "to": 30,
+      "duration": 70,
+      "loop": true
+    },
+    "dash": {
+      "from": 31,
+      "to": 33,
+      "duration": 60,
+      "loop": true
+    },
+    "dash_attack": {
+      "from": 34,
+      "to": 37,
       "duration": 60,
       "loop": true
     },
     "jump_rise": {
-      "from": 26,
-      "to": 29,
+      "from": 38,
+      "to": 41,
       "duration": 90,
       "loop": false
     },
     "jump_fall": {
-      "from": 30,
-      "to": 33,
+      "from": 42,
+      "to": 45,
       "duration": 90,
       "loop": false
     },
     "jump_land": {
-      "from": 34,
-      "to": 36,
+      "from": 46,
+      "to": 48,
       "duration": 70,
       "loop": false
     },
     "wall_slide": {
-      "from": 37,
-      "to": 42,
+      "from": 49,
+      "to": 54,
       "duration": 130,
       "loop": true
     },
     "hurt": {
-      "from": 43,
-      "to": 45,
+      "from": 55,
+      "to": 57,
       "duration": 90,
       "loop": false
     },
     "death": {
-      "from": 43,
-      "to": 45,
+      "from": 55,
+      "to": 57,
       "duration": 90,
       "loop": false
     }
