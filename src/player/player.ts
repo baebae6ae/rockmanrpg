@@ -24,6 +24,8 @@ export interface CharacterDef {
   series: string;
   archetype: string;
   hitbox: { w: number; h: number };
+  /** 총구/무기 높이 = hitbox.h * 이 비율. 생략하면 0.63 (docs/DESIGN.md §6.2) */
+  muzzle_ratio?: number;
   movement: {
     can_dash: boolean;
     can_air_dash: boolean;
@@ -61,6 +63,9 @@ export class Player implements Damageable {
   private landTimer = 0;
   private attackTimer = 0;
   private chargeTime = 0;
+  /** 지상 공격 연속기 단계 (0~2) — 세이버류 3단 콤보 */
+  private comboStep = 0;
+  private comboWindow = 0;
   private sliding = false;
 
   hp: number;
@@ -294,6 +299,7 @@ export class Player implements Damageable {
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
     this.landTimer = Math.max(0, this.landTimer - dt);
     this.attackTimer = Math.max(0, this.attackTimer - dt);
+    this.comboWindow = Math.max(0, this.comboWindow - dt);
     this.lock = Math.max(0, this.lock - dt);
 
     const axis = stunned ? 0 : input.axisX;
@@ -471,7 +477,7 @@ export class Player implements Damageable {
       attackBonus: this.attackStat,
       x: this.x,
       // 총구 높이는 캐릭터 키를 따른다 — 클래식 계열은 X 계열보다 낮다
-      y: this.y - this.def.hitbox.h * 0.63,
+      y: this.y - this.def.hitbox.h * (this.def.muzzle_ratio ?? 0.63),
       facing: this.facing,
       shots,
       melee,
@@ -483,25 +489,39 @@ export class Player implements Damageable {
 
     this.attackTimer = 0.22;
     this.cooldown = skill.cooldown;
+
+    // 지상 공격만 3단 콤보를 탄다 — 콤보 유효시간 안에 다시 때리면 다음 단으로
+    if (this.grounded && !charged) {
+      this.comboStep = this.comboWindow > 0 ? (this.comboStep + 1) % 3 : 0;
+      this.comboWindow = 0.6;
+    } else {
+      this.comboStep = 0;
+      this.comboWindow = 0;
+    }
   }
 
   private applyAnimation(dt: number): void {
     let tag: string;
+    let fallback = 'idle';
 
     if (this.hurtTimer > 0) tag = 'hurt';
     else if (this.sliding) tag = 'wall_slide';
     else if (!this.grounded) {
       tag = this.attackTimer > 0 ? 'attack_air' : this.vy < 0 ? 'jump_rise' : 'jump_fall';
+      if (this.attackTimer > 0) fallback = 'attack_main';
     } else if (this.dashTimer > 0 && this.slideMode) tag = 'slide';
     // 대시 중 공격해도 공격 모션이 보이도록, 순수 대시(슬라이드 아님)보다 공격을 우선한다
-    else if (this.attackTimer > 0) tag = 'attack_main';
-    else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
+    else if (this.attackTimer > 0) {
+      // 세이버류 3단 콤보 — attack_main2/3 이 없는 캐릭터는 attack_main 으로 대체된다
+      tag = this.comboStep === 0 ? 'attack_main' : `attack_main${this.comboStep + 1}`;
+      fallback = 'attack_main';
+    } else if (this.dashTimer > 0 && this.grounded) tag = 'dash';
     else if (this.landTimer > 0) tag = 'jump_land';
     else if (Math.abs(this.vx) > 8) tag = 'run';
     else if (this.chargeTime > this.chargeThreshold && this.weapon?.charged) tag = 'charge_loop';
     else tag = 'idle';
 
-    this.view.play(tag);
+    this.view.play(tag, fallback);
     this.view.update(dt * 1000);
     this.syncView();
   }

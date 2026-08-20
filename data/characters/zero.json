@@ -8,6 +8,7 @@
     "w": 14,
     "h": 30
   },
+  "muzzle_ratio": 0.8,
   "base_stats": {
     "hp": 90,
     "attack": 14,
