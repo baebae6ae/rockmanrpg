@@ -121,6 +121,29 @@ export class Input {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
+  /**
+   * 이 클래스의 터치 처리를 끄고 키보드만 남긴다.
+   *
+   * 자기 화면 비율과 자기 조작 UI 를 쓰는 화면(몰이사냥 모드)에서 쓴다.
+   * 그런 화면에서 이 클래스까지 같은 캔버스의 포인터를 물면 스틱 추적기가
+   * 둘이 되는데, 좌표계(GAME_W×GAME_H 고정)도 해제 시점도 서로 달라서
+   * 한쪽만 손가락을 놓치면 그 방향이 그대로 붙박인다.
+   */
+  disableTouch(): void {
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointermove', this.onPointerMove);
+    this.canvas.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+    this.canvas.removeEventListener('lostpointercapture', this.onPointerUp);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerUp);
+    this.touches.clear();
+    this.touchHeld.clear();
+    this.sync();
+    if (this.pad) this.pad.visible = false;
+    this.touchVisible = false;
+  }
+
   down(button: Button): boolean {
     return this.held.has(button);
   }

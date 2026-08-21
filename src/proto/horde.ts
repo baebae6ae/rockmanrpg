@@ -286,6 +286,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const ui = new Container();
   app.stage.addChild(world, ui);
 
+  // 바닥보다 느리게 흐르는 아래층 — 뚫린 격자망 칸으로 비친다.
+  // 시차가 있어야 바닥이 판때기가 아니라 위에 얹힌 층으로 읽힌다.
+  const farLayer = new Container();
+  const farG = new Graphics();
+  farLayer.addChild(farG);
+  app.stage.addChildAt(farLayer, 0);
+
   const groundG = new Graphics();
   const gemG = new Graphics();
   const foeLayer = new Container();
@@ -294,50 +301,106 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const partG = new Graphics();
   world.addChild(groundG, gemG, foeLayer, bulletG, specialG, partG);
 
-  // 배경 — 록맨 스테이지의 파란 금속 방. 한 번만 그린다.
+  // 배경 — 록맨X 발전소 스테이지풍 바닥. 한 번만 그린다.
   //
-  // 예전 검정 격자는 어둡기만 하고 아무 성격이 없었다. 다만 밝히면 탄이
-  // 묻히므로(엑스 탄색이 연한 하늘색이다) 바탕은 중간 명도 파랑까지만
-  // 올리고, 대신 탄에 어두운 외곽선을 넣어 대비를 따로 확보했다.
-  const BG = { base: 0x1b3a6b, panel: 0x24488a, edge: 0x3a6cc4, seam: 0x142a52, bolt: 0x5b8ee0 };
-  groundG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: BG.base });
-
-  const TILE = 48;
+  // 전에 쓰던 단색 파란 패널 벽은 밝기만 했지 깊이가 없었다. X 시리즈
+  // 배경의 핵심은 (1) 굵은 어두운 윤곽으로 끊어지는 덩어리진 타일,
+  // (2) 그 사이로 안쪽 구조물이 비쳐 보이는 층, (3) 발광 배선 몇 줄이다.
+  // 그래서 바닥을 통짜로 칠하지 않고, 일부 칸을 격자망으로 뚫어 그
+  // 아래 기계층(farLayer)이 시차를 두고 보이게 했다.
   const rnd = (() => {
     let s = 0x9e37 >>> 0;
     return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
   })();
-  for (let y = 0; y < ARENA_H; y += TILE) {
-    for (let x = 0; x < ARENA_W; x += TILE) {
-      // 패널 — 위/왼쪽 밝은 모서리, 아래/오른쪽 어두운 이음매로 두께를 준다
-      groundG.rect(x + 2, y + 2, TILE - 4, TILE - 4).fill({ color: BG.panel });
-      groundG.rect(x + 2, y + 2, TILE - 4, 2).fill({ color: BG.edge });
-      groundG.rect(x + 2, y + 2, 2, TILE - 4).fill({ color: BG.edge });
-      groundG.rect(x + 2, y + TILE - 4, TILE - 4, 2).fill({ color: BG.seam });
-      groundG.rect(x + TILE - 4, y + 2, 2, TILE - 4).fill({ color: BG.seam });
-      // 네 귀퉁이 볼트
-      for (const [bx, by] of [[6, 6], [TILE - 9, 6], [6, TILE - 9], [TILE - 9, TILE - 9]]) {
-        groundG.rect(x + bx, y + by, 3, 3).fill({ color: BG.bolt });
+
+  // --- 아래층: 뚫린 칸으로 보이는 기계실
+  farG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: 0x05080f });
+  for (let x = 20; x < ARENA_W; x += 96) {
+    farG.rect(x, 0, 14, ARENA_H).fill({ color: 0x101a2e });
+    farG.rect(x + 2, 0, 3, ARENA_H).fill({ color: 0x1b2b4a });
+  }
+  for (let y = 40; y < ARENA_H; y += 128) {
+    farG.rect(0, y, ARENA_W, 10).fill({ color: 0x0c1424 });
+    farG.rect(0, y + 2, ARENA_W, 2).fill({ color: 0x18263f });
+    for (let x = 30; x < ARENA_W; x += 64) {
+      farG.rect(x, y + 3, 5, 5).fill({ color: rnd() > 0.5 ? 0x2f7fd0 : 0x1d3a63 });
+    }
+  }
+
+  // --- 바닥층
+  const TILE = 40;
+  const P = { plate: 0x3c5390, lit: 0x6786c8, dark: 0x22315a, line: 0x0d1424, rivet: 0x8aa3dc };
+  const COLS = Math.ceil(ARENA_W / TILE);
+  const ROWS = Math.ceil(ARENA_H / TILE);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = c * TILE;
+      const y = r * TILE;
+      const roll = rnd();
+
+      if (roll > 0.9) {
+        // 격자망 — 아래 기계실이 비친다. 창살만 얹는다.
+        for (let i = 4; i < TILE - 2; i += 7) {
+          groundG.rect(x + i, y + 2, 3, TILE - 4).fill({ color: 0x1a2540, alpha: 0.92 });
+        }
+        groundG.rect(x + 1, y + 1, TILE - 2, 2).fill({ color: P.dark });
+        groundG.rect(x + 1, y + TILE - 3, TILE - 2, 2).fill({ color: P.dark });
+        continue;
       }
-      // 가끔 발광 패널을 섞어 넓은 벽이 단조롭지 않게 한다
-      if (rnd() > 0.88) {
-        groundG.rect(x + 12, y + 12, TILE - 24, TILE - 24).fill({ color: 0x2f7fd0 });
-        groundG.rect(x + 15, y + 15, TILE - 30, TILE - 30).fill({ color: 0x63b4f2 });
+
+      // 덩어리진 타일 — 굵은 어두운 윤곽이 X 배경의 인상을 만든다
+      groundG.rect(x, y, TILE, TILE).fill({ color: P.line });
+      groundG.rect(x + 2, y + 2, TILE - 4, TILE - 4).fill({ color: P.plate });
+      groundG.rect(x + 2, y + 2, TILE - 4, 3).fill({ color: P.lit });
+      groundG.rect(x + 2, y + 2, 3, TILE - 4).fill({ color: P.lit });
+      groundG.rect(x + 2, y + TILE - 6, TILE - 4, 4).fill({ color: P.dark });
+      groundG.rect(x + TILE - 6, y + 2, 4, TILE - 4).fill({ color: P.dark });
+      if (roll > 0.72) {
+        groundG.rect(x + 7, y + 7, 3, 3).fill({ color: P.rivet });
+        groundG.rect(x + TILE - 10, y + TILE - 10, 3, 3).fill({ color: P.rivet });
       }
     }
   }
 
-  // 경계벽 — 노란 경고띠
+  // --- 발광 배선 — 바닥을 가로지르는 에너지관
+  for (let r = 3; r < ROWS; r += 7) {
+    const y = r * TILE + TILE / 2 - 4;
+    groundG.rect(0, y - 2, ARENA_W, 12).fill({ color: 0x0b1120 });
+    groundG.rect(0, y + 1, ARENA_W, 6).fill({ color: 0x1c4468 });
+    groundG.rect(0, y + 2, ARENA_W, 2).fill({ color: 0x2f7ba0 });
+    for (let x = 24; x < ARENA_W; x += 80) {
+      groundG.rect(x, y - 4, 10, 16).fill({ color: 0x27385f });
+      groundG.rect(x + 3, y - 1, 4, 10).fill({ color: 0x4ea6c8 });
+    }
+  }
+
+  // --- 대형 발전기
+  for (let i = 0; i < 5; i++) {
+    const gx = 120 + Math.floor(rnd() * (ARENA_W - 240));
+    const gy = 120 + Math.floor(rnd() * (ARENA_H - 240));
+    groundG.circle(gx, gy, 46).fill({ color: 0x121b33 });
+    groundG.circle(gx, gy, 42).fill({ color: 0x2c3f6e });
+    groundG.circle(gx, gy, 30).stroke({ color: 0x4a68ab, width: 3 });
+    groundG.circle(gx, gy, 18).fill({ color: 0x1a3b5e });
+    groundG.circle(gx, gy, 12).fill({ color: 0x2f7ba0 });
+    groundG.circle(gx, gy, 6).fill({ color: 0x7fc9e0 });
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      groundG.rect(gx + Math.cos(a) * 36 - 2, gy + Math.sin(a) * 36 - 2, 4, 4).fill({ color: 0x7d97d4 });
+    }
+  }
+
+  // --- 경계벽 — 노란 경고띠
   for (const [bx, by, bw, bh] of [
-    [0, 0, ARENA_W, 6], [0, ARENA_H - 6, ARENA_W, 6],
-    [0, 0, 6, ARENA_H], [ARENA_W - 6, 0, 6, ARENA_H],
+    [0, 0, ARENA_W, 8], [0, ARENA_H - 8, ARENA_W, 8],
+    [0, 0, 8, ARENA_H], [ARENA_W - 8, 0, 8, ARENA_H],
   ]) {
-    groundG.rect(bx, by, bw, bh).fill({ color: 0x1a2340 });
+    groundG.rect(bx, by, bw, bh).fill({ color: 0x10182c });
     const along = bw > bh;
-    const n = Math.ceil((along ? bw : bh) / 16);
+    const n = Math.ceil((along ? bw : bh) / 14);
     for (let i = 0; i < n; i += 2) {
-      if (along) groundG.rect(bx + i * 16, by, 16, bh).fill({ color: 0xe8c024 });
-      else groundG.rect(bx, by + i * 16, bw, 16).fill({ color: 0xe8c024 });
+      if (along) groundG.rect(bx + i * 14, by + 1, 14, bh - 2).fill({ color: 0xf0c020 });
+      else groundG.rect(bx + 1, by + i * 14, bw - 2, 14).fill({ color: 0xf0c020 });
     }
   }
 
@@ -405,6 +468,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 본편 가상패드(JUMP/FIRE/WPN)는 이 모드에 안 맞는다 — 여기선 점프도
   // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
   // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
+  input.disableTouch();
   const padG = new Graphics();
   const dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'monospace', fontSize: 8, fill: 0x8ef0ff } });
   dashLabel.anchor.set(0.5);
@@ -493,8 +557,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let touchDash = false;
   let touchMode = false;
 
+  // 브라우저가 드래그를 스크롤/확대 제스처로 가져가면 pointercancel 이 나거나
+  // move 가 끊긴다. 그러면 스틱이 마지막 방향에 붙박인다 — touch-action 을
+  // 꺼서 제스처 자체가 시작되지 않게 하는 게 근본 처방이다.
+  app.canvas.style.touchAction = 'none';
+
   app.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
     if (e.pointerType === 'touch') touchMode = true;
+    e.preventDefault();
     const p = toGame(e);
 
     const inside = (r: { x: number; y: number; w: number; h: number }): boolean =>
@@ -542,6 +612,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   app.canvas.addEventListener('pointermove', (e: PointerEvent) => {
     if (!stick || e.pointerId !== stick.id) return;
+    e.preventDefault();
     const p = toGame(e);
     let dx = p.x - stick.ox;
     let dy = p.y - stick.oy;
@@ -560,10 +631,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (stick && e.pointerId === stick.id) stick = null;
     if (dashId === e.pointerId) dashId = null;
   };
-  app.canvas.addEventListener('pointerup', endPointer);
-  app.canvas.addEventListener('pointercancel', endPointer);
+  const releaseAll = (): void => {
+    stick = null;
+    dashId = null;
+    touchDash = false;
+  };
+  // 손가락을 놓친 경로가 하나라도 새면 그 방향으로 영구히 밀리므로
+  // 끝날 수 있는 모든 경로를 다 잡는다. 이미 지워진 손가락이면 조용히 무시된다.
+  for (const target of [app.canvas, window] as (HTMLCanvasElement | Window)[]) {
+    target.addEventListener('pointerup', endPointer as EventListener);
+    target.addEventListener('pointercancel', endPointer as EventListener);
+  }
   app.canvas.addEventListener('lostpointercapture', endPointer);
-  window.addEventListener('pointerup', endPointer);
+  // 화면이 가려지거나 포커스를 잃으면 up 이 아예 안 오는 경우가 있다
+  window.addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseAll();
+  });
 
   // 시작은 1발이다. 처음부터 화면을 덮으면 도달점이 없어서 "확 늘었다"는
   // 순간이 안 생기고, 가만히 있어도 사방이 정리돼 버린다.
@@ -1581,6 +1665,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     world.position.set(Math.round(-camX + sx), Math.round(-camY + sy));
+    farLayer.position.set(Math.round(-camX * 0.42 + sx * 0.42), Math.round(-camY * 0.42 + sy * 0.42));
 
     // 화면 밖은 그리지 않는다. 탄 수백 발이 상시 떠 있는 게임이라
     // 이걸 안 하면 안 보이는 탄을 그리느라 프레임이 반으로 떨어진다.
@@ -1777,6 +1862,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
       face: facing,
       anim: hero?.current ?? '',
+      stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
     };
     dbg.__hordePick = phase === 'pick'
       ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
