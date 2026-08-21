@@ -3,8 +3,11 @@
  * 본편과 완전히 분리돼 있고 ?horde 로만 들어간다.
  *
  * 검증하려는 것은 딱 하나다: "정신없이 총알 갈기는 손맛"이 실제로 나는가.
- * 그래서 조작은 이동/대시뿐이고 사격은 전부 자동이다. 대신 레벨업마다
- * 탄이 늘어나 30초쯤 지나면 화면이 탄으로 덮이도록 수치를 잡았다.
+ * 그래서 조작은 이동/대시뿐이고 사격은 전부 자동이다.
+ *
+ * 다만 그 상태는 출발점이 아니라 도달점이다. 1발에서 시작해 레벨업으로
+ * 쌓아 올려야 "확 늘었다"는 순간이 생기고, 처음부터 화면을 덮어버리면
+ * 가만히 서 있어도 사방이 정리돼 긴장이 사라진다.
  */
 
 import { Application, Container, Graphics, Text } from 'pixi.js';
@@ -24,6 +27,7 @@ const DASH_CD = 0.55;
 const MAX_BULLETS = 700;
 const MAX_FOES = 170;
 const MAX_PARTS = 460;
+const MAX_GEMS = 80;
 
 type FoeKind = 'crawler' | 'walker' | 'hopper' | 'fang_rusher' | 'sniper_drone';
 
@@ -201,7 +205,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     ui.addChild(name, desc);
   }
 
-  input.mountTouchUI(ui);
+  // 본편 가상패드(JUMP/FIRE/WPN)는 이 모드에 안 맞는다 — 여기선 점프도
+  // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
+  // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
+  const padG = new Graphics();
+  const dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'monospace', fontSize: 8, fill: 0x8ef0ff } });
+  dashLabel.anchor.set(0.5);
+  dashLabel.visible = false;
+  ui.addChild(padG, dashLabel);
 
   // ------------------------------------------------------------ 상태
   const foes: Foe[] = [];
@@ -235,7 +246,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let xpNeed = 4;
   let spawnAcc = 0;
   let fireAcc = 0;
-  let surgeAt = 12;
+  let surgeAt = 32;
   let shake = 0;
   let hitstop = 0;
   let phase: 'play' | 'pick' | 'dead' = 'play';
@@ -243,16 +254,98 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let pickList: Upgrade[] = [];
   let deadTimer = 0;
 
-  // 시작부터 이미 "갈긴다"는 느낌이 나야 한다 — 1발 똑똑 쏘는 구간은 없다.
+  // 레벨업 카드는 손가락으로 직접 짚는 게 맞다. 가상 스틱으로 커서를 옮겨
+  // 버튼으로 확정하는 방식은 눈앞에 카드가 세 장 떠 있는데도 조작이
+  // 한 단계 겉돌아서 안 맞는다. 키보드 ←→/Z 도 그대로 둔다.
+  const cardRects: { x: number; y: number; w: number; h: number }[] = [];
+  /** 캔버스 좌표 → 게임 좌표. 백버퍼가 GAME_W×GAME_H 고정이라 비율만 맞추면 된다 */
+  const toGame = (e: PointerEvent): { x: number; y: number } => {
+    const r = app.canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - r.left) / r.width) * GAME_W,
+      y: ((e.clientY - r.top) / r.height) * GAME_H,
+    };
+  };
+  // 이동은 왼쪽 어디를 짚어도 그 자리가 원점이 되는 스틱이다. 고정 위치
+  // 패드는 손가락이 조금만 미끄러져도 입력이 끊긴다.
+  const STICK = { dead: 5, radius: 24, drag: 28 };
+  const DASH_BTN = { x: GAME_W - 44, y: GAME_H - 44, r: 27 };
+  let stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
+  let dashId: number | null = null;
+  let touchDash = false;
+  let touchMode = false;
+
+  app.canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (e.pointerType === 'touch') touchMode = true;
+    const p = toGame(e);
+
+    if (phase === 'pick') {
+      for (let i = 0; i < cardRects.length && i < pickList.length; i++) {
+        const c = cardRects[i];
+        if (p.x < c.x || p.x > c.x + c.w || p.y < c.y || p.y > c.y + c.h) continue;
+        pickIndex = i;
+        choosePick();
+        break;
+      }
+      return;
+    }
+    if (phase === 'dead') {
+      if (deadTimer > 0.5) reset();
+      return;
+    }
+
+    if (Math.hypot(p.x - DASH_BTN.x, p.y - DASH_BTN.y) <= DASH_BTN.r * 1.25) {
+      dashId = e.pointerId;
+      touchDash = true;
+    } else if (stick === null) {
+      stick = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
+    }
+    try {
+      app.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // 캡처 실패는 무시 — 경계 밖 추적만 약해질 뿐 나머지는 그대로 동작한다
+    }
+  });
+
+  app.canvas.addEventListener('pointermove', (e: PointerEvent) => {
+    if (!stick || e.pointerId !== stick.id) return;
+    const p = toGame(e);
+    let dx = p.x - stick.ox;
+    let dy = p.y - stick.oy;
+    // 너무 멀어지면 원점을 손가락 쪽으로 끌어당긴다 — 미끄러져도 계속 조작된다
+    const d = Math.hypot(dx, dy);
+    if (d > STICK.drag) {
+      const pull = (d - STICK.drag) / d;
+      stick.ox += dx * pull;
+      stick.oy += dy * pull;
+    }
+    stick.x = p.x;
+    stick.y = p.y;
+  });
+
+  const endPointer = (e: PointerEvent): void => {
+    if (stick && e.pointerId === stick.id) stick = null;
+    if (dashId === e.pointerId) dashId = null;
+  };
+  app.canvas.addEventListener('pointerup', endPointer);
+  app.canvas.addEventListener('pointercancel', endPointer);
+  app.canvas.addEventListener('lostpointercapture', endPointer);
+  window.addEventListener('pointerup', endPointer);
+
+  // 시작은 1발이다. 처음부터 화면을 덮으면 도달점이 없어서 "확 늘었다"는
+  // 순간이 안 생기고, 가만히 있어도 사방이 정리돼 버린다.
+  // 탄이 화면을 덮는 상태는 여기서 쌓아 올려 도달하는 곳이지 출발점이 아니다.
   const w: Weapon = {
-    interval: 0.085,
-    shots: 3,
-    spread: 0.34,
-    dmg: 4,
-    speed: 340,
-    pierce: 0,
+    interval: 0.16,
+    shots: 1,
+    spread: 0.06,
+    dmg: 6,
+    speed: 330,
+    // 시작부터 관통 1을 준다. 1발이 한 마리에서 멈추면 어느 방향도 못 뚫어
+    // 적이 무조건 쌓이고, 20초 안에 사방이 막혀 손쓸 수가 없다.
+    pierce: 1,
     drones: 0,
-    magnet: 72,
+    magnet: 40,
   };
 
   const taken: Record<string, number> = {};
@@ -260,7 +353,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const UPGRADES: Upgrade[] = [
     {
       id: 'rapid', name: '연사 강화', desc: '발사 간격 -20%', max: 9,
-      apply: () => { w.interval = Math.max(0.022, w.interval * 0.8); },
+      apply: () => { w.interval = Math.max(0.026, w.interval * 0.8); },
     },
     {
       id: 'spread', name: '확산탄', desc: '동시 발사 +2', max: 9,
@@ -341,7 +434,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 화력이 지수로 커지므로 적 체력도 그렇게 따라가야 한다.
     // 선형으로 두면 30초 넘어가는 순간 스폰 즉시 증발해서 화면이 텅 빈다.
-    const grow = 1 + time * 0.05 + time * time * 0.0055;
+    // 난이도는 체력이 아니라 머릿수가 끌고 간다. 체력을 가파르게 올리면
+    // 킬 수가 줄고 → 레벨이 안 오르고 → 화력이 멈춰서 교착에 빠진다.
+    const grow = 1 + time * 0.05 + time * time * 0.0012;
     const view = takeView(kind);
     const scale = def.scale * (elite ? 1.6 : 1);
     view.scale.set(scale, scale);
@@ -356,21 +451,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     });
   }
 
-  function killFoe(f: Foe): void {
-    if (!f.alive) return;
-    f.alive = false;
-    kills++;
-    spawnPart(f.x, f.y - 8, f.elite ? 26 : 9, f.elite ? 0xffc45c : 0xff9a4c, f.elite ? 190 : 130);
-    const drops = f.elite ? 8 : 1;
-    for (let i = 0; i < drops; i++) {
-      const a = Math.random() * Math.PI * 2;
-      gems.push({
-        x: f.x, y: f.y - 6,
-        vx: Math.cos(a) * 40, vy: Math.sin(a) * 40,
-        val: f.def.xp * (f.elite ? 3 : 1), alive: true,
-      });
-    }
-    shake = Math.max(shake, f.elite ? 6 : 1.2);
+  /**
+   * 경험치를 떨군다. 상한을 넘으면 가장 오래된 것을 새 것에 합친다 —
+   * 그냥 쌓아두면 초당 수십 개가 안 주워진 채 남아 후반에 바닥이 온통
+   * 경험치로 덮여서 적도 탄도 안 보인다. 버리지 않고 합치므로 총량은 같다.
+   */
+  function pushGem(x: number, y: number, val: number): void {
+    let v = val;
+    while (gems.length >= MAX_GEMS) v += gems.shift()!.val;
+    const a = Math.random() * Math.PI * 2;
+    gems.push({ x, y, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, val: v, alive: true });
+  }
+
+  /** 화면에서 치우고 뷰를 재사용 풀로 돌려보낸다 */
+  function retire(f: Foe): void {
     foeLayer.removeChild(f.view);
     f.view.visible = false;
     let pool = pools.get(f.kind);
@@ -378,6 +472,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     pool.push(f.view);
     const idx = foes.indexOf(f);
     if (idx >= 0) foes.splice(idx, 1);
+  }
+
+  function killFoe(f: Foe): void {
+    if (!f.alive) return;
+    f.alive = false;
+    kills++;
+    spawnPart(f.x, f.y - 8, f.elite ? 26 : 9, f.elite ? 0xffc45c : 0xff9a4c, f.elite ? 190 : 130);
+    const drops = f.elite ? 8 : 1;
+    for (let i = 0; i < drops; i++) {
+      pushGem(f.x, f.y - 6, f.def.xp * (f.elite ? 3 : 1));
+    }
+    shake = Math.max(shake, f.elite ? 6 : 1.2);
+    retire(f);
   }
 
   function fireOne(ax: number, ay: number, ox: number, oy: number, dmg: number): void {
@@ -434,7 +541,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     xp -= xpNeed;
     // 2차식으로 올린다. 선형이면 킬 수가 초당 수십으로 불어나는 순간
     // 레벨이 초당 하나씩 올라 1분 만에 화력이 화면을 다 태워버린다.
-    xpNeed = Math.round(3 + level * 2.2 + level * level * 0.26);
+    // 계수를 키워 후반 한 레벨이 10초 이상 걸리게 잡았다.
+    xpNeed = Math.round(4 + level * 3 + level * level * 0.8);
     const avail = UPGRADES.filter((u) => (taken[u.id] ?? 0) < u.max);
     pickList = [];
     const pool = [...avail];
@@ -444,6 +552,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (!pickList.length) return;
     pickIndex = 0;
     phase = 'pick';
+  }
+
+  function choosePick(): void {
+    if (phase !== 'pick') return;
+    const u = pickList[pickIndex];
+    if (!u) return;
+    taken[u.id] = (taken[u.id] ?? 0) + 1;
+    u.apply();
+    phase = 'play';
   }
 
   function reset(): void {
@@ -462,10 +579,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hp = 100; maxHp = 100; iframe = 0;
     dashTimer = 0; dashCd = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
-    spawnAcc = 0; fireAcc = 0; surgeAt = 12; shake = 0; hitstop = 0;
+    spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
     speedMul = 1;
-    w.interval = 0.085; w.shots = 3; w.spread = 0.34; w.dmg = 4;
-    w.speed = 340; w.pierce = 0; w.drones = 0; w.magnet = 72;
+    w.interval = 0.16; w.shots = 1; w.spread = 0.06; w.dmg = 6;
+    w.speed = 330; w.pierce = 1; w.drones = 0; w.magnet = 40;
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
     deadTimer = 0;
@@ -478,12 +595,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'pick') {
       if (input.pressed('left')) pickIndex = (pickIndex + pickList.length - 1) % pickList.length;
       if (input.pressed('right')) pickIndex = (pickIndex + 1) % pickList.length;
-      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) {
-        const u = pickList[pickIndex];
-        taken[u.id] = (taken[u.id] ?? 0) + 1;
-        u.apply();
-        phase = 'play';
-      }
+      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) choosePick();
       drawPick();
       draw(dt);
       input.endFrame();
@@ -513,13 +625,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // ---- 이동
     let ix = input.axisX;
     let iy = (input.down('down') ? 1 : 0) - (input.down('up') ? 1 : 0);
+    if (stick) {
+      const sdx = stick.x - stick.ox;
+      const sdy = stick.y - stick.oy;
+      if (Math.hypot(sdx, sdy) > STICK.dead) { ix = sdx; iy = sdy; }
+    }
     const len = Math.hypot(ix, iy);
     if (len > 0) { ix /= len; iy /= len; }
     if (ix !== 0) facing = ix > 0 ? 1 : -1;
 
+    const wantDash = input.pressed('dash') || touchDash;
+    touchDash = false;
     dashCd -= dt;
     if (dashTimer > 0) dashTimer -= dt;
-    else if (input.pressed('dash') && dashCd <= 0) {
+    else if (wantDash && dashCd <= 0) {
       dashTimer = DASH_TIME;
       dashCd = DASH_CD;
       dashDx = len > 0 ? ix : facing;
@@ -545,15 +664,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hero.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
 
     // ---- 스폰
-    const rate = Math.min(70, 10 + time * 1.0);
+    const rate = Math.min(55, 1.6 + time * 0.3);
     spawnAcc += rate * dt;
     while (spawnAcc >= 1) { spawnAcc -= 1; spawnFoe(false); }
 
     if (time >= surgeAt) {
-      surgeAt += 13;
-      const elites = 3 + Math.floor(time / 25);
+      surgeAt += 24;
+      const elites = 1 + Math.floor(time / 50);
       for (let i = 0; i < elites; i++) spawnFoe(true);
-      for (let i = 0; i < 26; i++) spawnFoe(false);
+      for (let i = 0; i < 10 + Math.floor(time / 4); i++) spawnFoe(false);
       shake = 7;
     }
 
@@ -572,8 +691,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const f = foes[i];
       const dx = px - f.x;
       const dy = py - f.y;
+
+      // 뒤처진 개체는 조용히 치운다. 안 치우면 못 죽인 적이 영원히 따라와
+      // 쌓이기만 해서, 한 번 밀리는 순간 회복이 불가능한 죽음의 나선이 된다.
+      // 스폰 반경보다 넉넉히 바깥이라 화면에서 사라지는 게 보이지는 않는다.
+      if (!f.elite && (Math.abs(dx) > 640 || Math.abs(dy) > 380)) {
+        retire(f);
+        continue;
+      }
+
       const d = Math.hypot(dx, dy) || 1;
-      const sp = f.def.speed * (f.elite ? 0.8 : 1) * (1 + time * 0.006);
+      // 초반 접근을 느리게 잡는다 — 화력이 1발일 때 정속으로 몰려오면
+      // 포위가 끝나는 데 20초도 안 걸린다.
+      const sp = f.def.speed * (f.elite ? 0.8 : 1) * Math.min(1.2, 0.78 + time * 0.0045);
       f.x += (dx / d) * sp * dt + f.kx * dt;
       f.y += (dy / d) * sp * 0.78 * dt + f.ky * dt;
       f.kx *= 0.86;
@@ -817,6 +947,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeTime = time;
     dbg.__hordeDead = phase === 'dead';
     dbg.__hordeStat = { foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp), shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS) };
+    dbg.__hordePick = phase === 'pick' ? pickList.map((u) => u.id) : null;
+    dbg.__hordePickIndex = pickIndex;
 
     timeLabel.text = `${Math.floor(time)}s`;
     killLabel.text = `KILL ${kills}`;
@@ -825,21 +957,45 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'dead') {
       centerLabel.position.set(GAME_W / 2, GAME_H / 2 - 14);
       centerLabel.text = '격 파 당 함';
-      subLabel.text = `${Math.floor(time)}초 생존 · ${kills}킬 · Lv.${level}\n아무 키나 눌러 재시도`;
+      subLabel.text = `${Math.floor(time)}초 생존 · ${kills}킬 · Lv.${level}\n화면을 누르면 재시도`;
       hintLabel.text = '';
     } else if (phase === 'pick') {
       centerLabel.text = '';
       subLabel.text = '';
-      hintLabel.text = '← → 선택 · Z 확정';
+      hintLabel.text = '카드를 눌러 선택 (← → · Z 도 됨)';
     } else {
       centerLabel.text = '';
       subLabel.text = '';
-      hintLabel.text = time < 6 ? '방향키 이동 · C 대시 · 사격은 자동' : '';
+      hintLabel.text =
+        time < 8 ? (touchMode ? '왼쪽을 끌어 이동 · 사격은 자동' : '방향키 이동 · C 대시 · 사격은 자동') : '';
     }
 
     if (phase !== 'pick') {
       cardG.clear();
       for (const t of cardTexts) t.text = '';
+    }
+
+    // 터치 조작 표시 — 레벨업 카드가 떠 있는 동안은 숨긴다.
+    // 카드를 손가락으로 짚는 화면에 조작 패드가 겹쳐 있으면 뭘 누르는지 모른다.
+    padG.clear();
+    dashLabel.visible = touchMode && phase === 'play';
+    if (touchMode && phase === 'play') {
+      dashLabel.position.set(DASH_BTN.x, DASH_BTN.y);
+      const cd = dashCd > 0 ? 1 - dashCd / DASH_CD : 1;
+      dashLabel.alpha = cd >= 1 ? 0.85 : 0.3;
+      padG.circle(DASH_BTN.x, DASH_BTN.y, DASH_BTN.r).fill({ color: 0x8ef0ff, alpha: 0.07 + cd * 0.07 });
+      padG
+        .circle(DASH_BTN.x, DASH_BTN.y, DASH_BTN.r)
+        .stroke({ color: 0x8ef0ff, alpha: cd >= 1 ? 0.55 : 0.2, width: 1 });
+      if (stick) {
+        padG.circle(stick.ox, stick.oy, STICK.radius).fill({ color: 0xffffff, alpha: 0.06 });
+        padG.circle(stick.ox, stick.oy, STICK.radius).stroke({ color: 0xffffff, alpha: 0.22, width: 1 });
+        const dx = stick.x - stick.ox;
+        const dy = stick.y - stick.oy;
+        const d = Math.hypot(dx, dy);
+        const k = d > STICK.radius ? STICK.radius / d : 1;
+        padG.circle(stick.ox + dx * k, stick.oy + dy * k, 9).fill({ color: 0xdfe8ff, alpha: 0.34 });
+      }
     }
   }
 
@@ -851,22 +1007,27 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     centerLabel.position.set(GAME_W / 2, 42);
     subLabel.text = '';
 
-    const cw = 150;
-    const gap = 14;
+    // 손가락으로 짚을 카드라 화면 높이의 절반 가까이 크게 잡는다
+    const cw = 168;
+    const ch = 116;
+    const cy = 66;
+    const gap = 12;
     const total = pickList.length * cw + (pickList.length - 1) * gap;
     const x0 = (GAME_W - total) / 2;
+    cardRects.length = 0;
     for (let i = 0; i < pickList.length; i++) {
       const x = x0 + i * (cw + gap);
       const on = i === pickIndex;
-      cardG.roundRect(x, 82, cw, 68, 4).fill({ color: on ? 0x1e3266 : 0x11172e });
-      cardG.roundRect(x, 82, cw, 68, 4).stroke({ color: on ? 0x8ef0ff : 0x2b3560, width: on ? 2 : 1 });
+      cardRects.push({ x, y: cy, w: cw, h: ch });
+      cardG.roundRect(x, cy, cw, ch, 5).fill({ color: on ? 0x1e3266 : 0x11172e });
+      cardG.roundRect(x, cy, cw, ch, 5).stroke({ color: on ? 0x8ef0ff : 0x2b3560, width: on ? 2 : 1 });
       const name = cardTexts[i * 2];
       const desc = cardTexts[i * 2 + 1];
       name.text = pickList[i].name;
       name.style.fill = on ? 0xffffff : 0x9fb0dd;
-      name.position.set(x + cw / 2, 106);
+      name.position.set(x + cw / 2, cy + 44);
       desc.text = pickList[i].desc;
-      desc.position.set(x + cw / 2, 128);
+      desc.position.set(x + cw / 2, cy + 70);
     }
     for (let i = pickList.length; i < 3; i++) {
       cardTexts[i * 2].text = '';
