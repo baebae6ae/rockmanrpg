@@ -145,7 +145,35 @@ interface Part {
   size: number;
 }
 
+/**
+ * 캐릭터가 싸우는 방식. 데이터의 archetype 을 그대로 따른다.
+ *
+ *  charge — 느리지만 크고 센 탄 (버스터: 엑스·록맨·블루스·아일)
+ *  rapid  — 빠르지만 작고 약한 탄 (연사: 액셀·포르테)
+ *  saber  — 탄이 없고 넓은 참격 (근접: 제로·제로Z·벤트)
+ */
+type Style = 'charge' | 'rapid' | 'saber';
+
+const STYLE_BY_ARCHETYPE: Record<string, Style> = {
+  buster: 'charge',
+  ranged: 'rapid',
+  saber: 'saber',
+};
+
+const STYLE_DESC: Record<Style, string> = {
+  charge: '느리지만 크고 센 탄',
+  rapid: '빠르지만 작고 약한 탄',
+  saber: '근접이지만 넓게 베는 강타',
+};
+
+const STYLE_NAME: Record<Style, string> = {
+  charge: '차지 버스터',
+  rapid: '연사',
+  saber: '세이버',
+};
+
 interface Weapon {
+  style: Style;
   interval: number;
   shots: number;
   spread: number;
@@ -154,6 +182,23 @@ interface Weapon {
   pierce: number;
   drones: number;
   magnet: number;
+  /** saber 전용 — 참격 반경과 부채꼴 각도 */
+  arcR: number;
+  arcSpan: number;
+  /** 방식별 기본 위력. 위력 카드를 여기 비례해서 올린다 */
+  baseDmg: number;
+}
+
+/** 세이버 참격 자국 — 잠깐 보이고 사라진다 */
+interface Arc {
+  x: number;
+  y: number;
+  angle: number;
+  r: number;
+  span: number;
+  life: number;
+  max: number;
+  color: number;
 }
 
 interface Upgrade {
@@ -161,6 +206,8 @@ interface Upgrade {
   name: string;
   desc: string;
   max: number;
+  /** 이 방식에서만 뽑힌다. 없으면 전부 해당 — 세이버에게 탄속을 주면 안 된다 */
+  only?: Style[];
   apply: () => void;
 }
 
@@ -190,6 +237,7 @@ interface HordeChar {
   id: string;
   name: string;
   sprite_scale?: number;
+  archetype?: string;
   base_stats: { hp: number };
   /** X·제로만 갖고 있다. 나머지는 시작 스킬에서 탄을 가져온다 */
   shot?: { speed: number; color: string; power: number };
@@ -228,10 +276,16 @@ function resolveShot(c: HordeChar): ShotInfo {
   const sk = SKILLS[c.starting_skills?.[0] ?? ''];
   const proj = sk?.effects?.find((e) => e.type === 'projectile');
   const dmg = sk?.effects?.find((e) => e.type === 'damage');
-  return { speed: proj?.speed ?? 300, color: Number(proj?.color ?? 0x9fe8ff), power: dmg?.power ?? 8 };
+  // 세이버 스킬은 melee_hitbox 라 projectile 이 없다 — 참격 색이라도
+  // 세이버답게 잡아준다. 안 그러면 전부 기본 하늘색으로 나온다.
+  const fallback = c.archetype === 'saber' ? 0x8ef0d8 : 0x9fe8ff;
+  return { speed: proj?.speed ?? 300, color: Number(proj?.color ?? fallback), power: dmg?.power ?? 8 };
 }
 
 const SHOTS = new Map<string, ShotInfo>(CHAR_DEFS.map((c) => [c.id, resolveShot(c)]));
+const STYLES = new Map<Style | string, Style>();
+for (const c of CHAR_DEFS) STYLES.set(c.id, STYLE_BY_ARCHETYPE[c.archetype ?? ''] ?? 'charge');
+const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
  * 선택 화면 한 칸이 62px 뿐이라 긴 이름은 옆 칸을 침범한다.
@@ -482,6 +536,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const parts: Part[] = [];
   const rings: Ring[] = [];
   const bolts: Bolt[] = [];
+  const arcs: Arc[] = [];
   const pools = new Map<FoeKind, AnimView[]>();
   const grid: Foe[][] = Array.from({ length: GRID_W * GRID_H }, () => []);
   const cellIndex = (x: number, y: number): number => {
@@ -653,6 +708,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 순간이 안 생기고, 가만히 있어도 사방이 정리돼 버린다.
   // 탄이 화면을 덮는 상태는 여기서 쌓아 올려 도달하는 곳이지 출발점이 아니다.
   const w: Weapon = {
+    style: 'charge',
+    baseDmg: 6,
+    arcR: 50,
+    arcSpan: Math.PI * 1.1,
     interval: 0.16,
     shots: 1,
     spread: 0.06,
@@ -673,20 +732,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       apply: () => { w.interval = Math.max(0.026, w.interval * 0.8); },
     },
     {
-      id: 'spread', name: '확산탄', desc: '동시 발사 +2', max: 9,
+      id: 'spread', name: '확산탄', desc: '동시 발사 +2', max: 9, only: ['charge', 'rapid'],
       apply: () => { w.shots += 2; w.spread = Math.min(1.6, w.spread + 0.09); },
     },
     {
-      id: 'power', name: '위력 증폭', desc: '탄 위력 +3', max: 9,
-      apply: () => { w.dmg += 3; },
+      // 정액으로 올리면 방식마다 값어치가 딴판이 된다. 연사는 한 발 위력이
+      // 2 라 +3이면 배로 뛰고, 반대로 +1로 낮추면 적 체력이 제곱으로 느는
+      // 후반에 완전히 뒤처져 뽑으면 손해인 카드가 된다. 기본 위력에 비례시킨다.
+      id: 'power', name: '위력 증폭', desc: '위력 상승', max: 9,
+      apply: () => { w.dmg += Math.max(1, Math.round(w.baseDmg * 0.3)); },
     },
     {
-      id: 'pierce', name: '관통 탄자', desc: '관통 +1', max: 5,
+      id: 'pierce', name: '관통 탄자', desc: '관통 +1', max: 5, only: ['charge', 'rapid'],
       apply: () => { w.pierce += 1; },
     },
     {
-      id: 'velo', name: '가속 장전', desc: '탄속 +70', max: 4,
+      id: 'velo', name: '가속 장전', desc: '탄속 +70', max: 4, only: ['charge', 'rapid'],
       apply: () => { w.speed += 70; },
+    },
+    {
+      // 세이버는 탄이 없으니 확산·관통·탄속이 전부 죽은 카드가 된다.
+      // 그 자리를 참격 자체를 키우는 카드로 채운다.
+      id: 'arc', name: '참격 확장', desc: '베는 범위 확대', max: 6, only: ['saber'],
+      apply: () => { w.arcR += 9; w.arcSpan = Math.min(Math.PI * 2, w.arcSpan + 0.16); },
     },
     {
       id: 'drone', name: '옵션 유닛', desc: '주위를 도는 포탑 +1', max: 4,
@@ -815,9 +883,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       pierce: w.pierce,
       lastHit: null,
       alive: true,
-      shape: 'tracer',
+      // 차지는 크고 느린 덩어리, 연사는 작고 빠른 실선
+      shape: w.style === 'charge' ? 'orb' : 'tracer',
       color: shotColor,
-      r: 3,
+      r: w.style === 'charge' ? 7 : 2,
       spin: 0,
       angle: 0,
       homing: 0,
@@ -854,6 +923,39 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
   }
 
+  /**
+   * 세이버 참격 — 탄을 안 쏘고 부채꼴 안의 적을 한꺼번에 벤다.
+   *
+   * 붙어야만 닿으므로 몰이사냥에서는 그 자체가 위험 부담이다. 대신 한 번에
+   * 여러 마리를 베고 밀쳐내서, 파고들어 쓸어내는 방식으로 성립하게 했다.
+   */
+  function swingSaber(angle: number): void {
+    arcs.push({ x: px, y: py - 10, angle, r: w.arcR, span: w.arcSpan, life: 0.16, max: 0.16, color: shotColor });
+    shake = Math.max(shake, 1.5);
+
+    const half = w.arcSpan / 2;
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const dx = f.x - px;
+      const dy = (f.y - 8 - (py - 10)) / 0.78;
+      const reach = w.arcR + f.def.r * f.scale;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      let d = Math.atan2(dy, dx) - angle;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      if (Math.abs(d) > half) continue;
+
+      f.hp -= w.dmg;
+      f.flash = 0.07;
+      f.view.tint = 0xff5c5c;
+      const len = Math.hypot(dx, dy) || 1;
+      f.kx += (dx / len) * 190;
+      f.ky += (dy / len) * 190 * 0.78;
+      spawnPart(f.x, f.y - 8, 3, 0xfff2c0, 120);
+      if (f.hp <= 0) killFoe(f);
+    }
+  }
+
   function nearestFoe(fx: number, fy: number): Foe | null {
     let best: Foe | null = null;
     let bd = Infinity;
@@ -872,11 +974,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     attackHold = 0.2;
     const muzX = px + facing * 9;
     const muzY = py - 10;
+
+    if (w.style === 'saber') {
+      swingSaber(base);
+      return;
+    }
+
     for (let i = 0; i < w.shots; i++) {
       const t = w.shots === 1 ? 0 : i / (w.shots - 1) - 0.5;
-      fireOne(base + t * w.spread, 0.6, muzX, muzY, w.dmg);
+      // 연사는 매 발이 조금씩 흩어져야 "갈긴다"는 느낌이 난다
+      const jitter = w.style === 'rapid' ? (Math.random() - 0.5) * 0.1 : 0;
+      fireOne(base + t * w.spread + jitter, w.style === 'charge' ? 0.75 : 0.5, muzX, muzY, w.dmg);
     }
-    spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, 2, 0xfff2c0, 60);
+    spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
 
     for (let d = 0; d < w.drones; d++) {
       const ang = droneAngle + (d / w.drones) * Math.PI * 2;
@@ -1110,6 +1220,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
     for (const u of UPGRADES) {
+      if (u.only && !u.only.includes(w.style)) continue;
       if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
     }
 
@@ -1180,6 +1291,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     parts.length = 0;
     rings.length = 0;
     bolts.length = 0;
+    arcs.length = 0;
     owned.clear();
     cooldowns.clear();
     orbs.length = 0;
@@ -1198,9 +1310,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     speedMul = 1;
     w.interval = 0.16; w.shots = 1; w.spread = 0.06;
     const si = SHOTS.get(charDef.id)!;
-    w.dmg = 5 + Math.round(si.power * 0.15);
+    w.style = styleOf(charDef);
     w.speed = Math.round(si.speed * 1.25);
-    w.pierce = 1; w.drones = 0; w.magnet = 40;
+    w.drones = 0; w.magnet = 40;
+    w.arcR = 50; w.arcSpan = Math.PI * 1.1;
+
+    // 초당 위력은 세 방식이 비슷하게 두고, 그 위력을 어떻게 꺼내느냐만
+    // 다르게 한다 — 한 방이 큰가, 자잘하게 많은가, 붙어서 쓸어내는가.
+    if (w.style === 'rapid') {
+      // 액셀의 듀얼 피스톨 — 데이터에도 count 2 다. 두 발씩 흩뿌린다.
+      w.interval = 0.075;
+      w.dmg = Math.max(2, Math.round(si.power * 0.7));
+      w.shots = 2; w.spread = 0.16; w.pierce = 0;
+      w.baseDmg = w.dmg;
+    } else if (w.style === 'saber') {
+      w.interval = 0.42;
+      w.dmg = 8 + Math.round(si.power * 0.5);
+      w.shots = 1; w.spread = 0; w.pierce = 0;
+      w.arcR = 42; w.arcSpan = Math.PI * 0.85;
+      w.baseDmg = w.dmg;
+    } else {
+      w.interval = 0.3;
+      w.dmg = 9 + Math.round(si.power * 0.9);
+      w.shots = 1; w.spread = 0.06; w.pierce = 3;
+      w.baseDmg = w.dmg;
+    }
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
     deadTimer = 0;
@@ -1267,9 +1401,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       selNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
     }
     const d = CHAR_DEFS[selIndex];
-    const si = SHOTS.get(d.id)!;
+    const st = styleOf(d);
     selHint.text =
-      `${d.name}\n체력 ${Math.round(d.base_stats.hp * 1.2)} · 위력 ${5 + Math.round(si.power * 0.15)} · 탄속 ${Math.round(si.speed * 1.25)}\n▸ 눌러서 시작`;
+      `${d.name} — ${STYLE_NAME[st]}\n${STYLE_DESC[st]}\n체력 ${Math.round(d.base_stats.hp * 1.2)}   ▸ 눌러서 시작`;
   }
 
   // ------------------------------------------------------------ 루프
@@ -1724,8 +1858,45 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       bulletG.stroke({ color: shotCore, width: 3 });
     }
 
+    // 차지 탄 — 크고 둥근 덩어리. 궤적선과 달리 원으로 그린다.
+    let orbAny = false;
+    for (const b of bullets) {
+      if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
+      bulletG.circle(b.x, b.y, b.r + 2);
+      orbAny = true;
+    }
+    if (orbAny) {
+      bulletG.fill({ color: 0x0a1024, alpha: 0.55 });
+      for (const b of bullets) {
+        if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
+        bulletG.circle(b.x, b.y, b.r);
+      }
+      bulletG.fill({ color: shotColor });
+      for (const b of bullets) {
+        if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
+        bulletG.circle(b.x, b.y, Math.max(2, b.r - 3));
+      }
+      bulletG.fill({ color: shotCore });
+    }
+
     // 특수무기 탄 — 무기 색이 몇 개 안 되므로 색깔별로 묶어 한 번씩만 그린다
     specialG.clear();
+
+    // 세이버 참격 — 부채꼴이 확 퍼졌다 사라진다
+    for (let i = arcs.length - 1; i >= 0; i--) {
+      const ac = arcs[i];
+      ac.life -= dt;
+      if (ac.life <= 0) { arcs.splice(i, 1); continue; }
+      const k = 1 - ac.life / ac.max;
+      const r = ac.r * (0.55 + k * 0.45);
+      const a0 = ac.angle - ac.span / 2;
+      const a1 = ac.angle + ac.span / 2;
+      specialG.moveTo(ac.x, ac.y).arc(ac.x, ac.y, r, a0, a1).closePath();
+      specialG.fill({ color: ac.color, alpha: (1 - k) * 0.28 });
+      specialG.arc(ac.x, ac.y, r, a0, a1);
+      specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.9 });
+    }
+
     for (const color of SPECIAL_COLORS) {
       let any = false;
       for (const b of bullets) {
@@ -1862,6 +2033,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
       face: facing,
       anim: hero?.current ?? '',
+      style: w.style,
+      dmg: w.dmg,
+      char: charDef.id,
       stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
     };
     dbg.__hordePick = phase === 'pick'
