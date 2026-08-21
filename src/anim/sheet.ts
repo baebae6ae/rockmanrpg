@@ -136,6 +136,18 @@ export class AnimView extends Sprite {
     this.texture = this.sheet.textures[this.index];
   }
 
+  /**
+   * 같은 태그를 처음부터 다시 재생한다. play() 는 같은 태그면 무시하므로
+   * 사격을 계속 누르고 있을 때 발사 모션을 매번 다시 보여줄 방법이 없다.
+   */
+  restart(): void {
+    if (!this.tag) return;
+    this.index = this.tag.from;
+    this.elapsed = 0;
+    this.done = false;
+    this.texture = this.sheet.textures[this.index];
+  }
+
   update(dtMs: number): void {
     if (!this.tag) return;
 

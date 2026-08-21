@@ -125,6 +125,78 @@ const GRID_H = Math.ceil(ARENA_H / GRID_CELL);
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
+/** 색을 흰색 쪽으로 amount 만큼 민다 — 탄 심지를 캐릭터 색의 밝은 판으로 쓴다 */
+function lighten(color: number, amount: number): number {
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  const up = (c: number): number => Math.round(c + (255 - c) * amount);
+  return (up(r) << 16) | (up(g) << 8) | up(b);
+}
+
+/** 캐릭터 선택에 필요한 것만 추린 형태 — 본편 CharacterDef 의 부분집합이다 */
+interface HordeChar {
+  id: string;
+  name: string;
+  sprite_scale?: number;
+  base_stats: { hp: number };
+  /** X·제로만 갖고 있다. 나머지는 시작 스킬에서 탄을 가져온다 */
+  shot?: { speed: number; color: string; power: number };
+  starting_skills?: string[];
+}
+
+interface SkillLite {
+  id: string;
+  effects?: { type: string; speed?: number; color?: number; power?: number }[];
+}
+
+const CHAR_DEFS = Object.values(
+  import.meta.glob('/data/characters/*.json', { eager: true, import: 'default' }) as Record<string, HordeChar>,
+).sort((a, b) => a.id.localeCompare(b.id));
+
+const SKILLS: Record<string, SkillLite> = {};
+for (const s of Object.values(
+  import.meta.glob('/data/skills/*.json', { eager: true, import: 'default' }) as Record<string, SkillLite>,
+)) {
+  SKILLS[s.id] = s;
+}
+
+interface ShotInfo {
+  speed: number;
+  color: number;
+  power: number;
+}
+
+/**
+ * 캐릭터의 탄 성질을 뽑는다. shot 블록이 있으면 그걸 쓰고, 없으면 시작
+ * 스킬의 projectile 효과에서 가져온다 — 9명 중 7명이 후자다.
+ * color 는 데이터마다 "0x..." 문자열이거나 십진수라 Number() 로 통일한다.
+ */
+function resolveShot(c: HordeChar): ShotInfo {
+  if (c.shot) return { speed: c.shot.speed, color: Number(c.shot.color), power: c.shot.power };
+  const sk = SKILLS[c.starting_skills?.[0] ?? ''];
+  const proj = sk?.effects?.find((e) => e.type === 'projectile');
+  const dmg = sk?.effects?.find((e) => e.type === 'damage');
+  return { speed: proj?.speed ?? 300, color: Number(proj?.color ?? 0x9fe8ff), power: dmg?.power ?? 8 };
+}
+
+const SHOTS = new Map<string, ShotInfo>(CHAR_DEFS.map((c) => [c.id, resolveShot(c)]));
+
+/**
+ * 선택 화면 한 칸이 62px 뿐이라 긴 이름은 옆 칸을 침범한다.
+ * 괄호 설명을 떼고, 그래서 이름이 겹치면 id 꼬리를 붙여 구분한다
+ * ("제로(제로 시리즈)" → "제로Z").
+ */
+const SHORT_NAMES = new Map<string, string>();
+{
+  const base = CHAR_DEFS.map((c) => c.name.replace(/\s*[(（].*$/, '').trim() || c.id);
+  for (let i = 0; i < CHAR_DEFS.length; i++) {
+    const dup = base.some((n, j) => j !== i && n === base[i]);
+    const tail = CHAR_DEFS[i].id.split('_')[1];
+    SHORT_NAMES.set(CHAR_DEFS[i].id, dup && tail ? base[i] + tail.toUpperCase() : base[i]);
+  }
+}
+
 export async function runHordeProto(app: Application, input: Input): Promise<void> {
   const sheets = new Map<FoeKind, Sheet>();
   await Promise.all(
@@ -132,7 +204,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sheets.set(k, await loadSheet('enemies', k));
     }),
   );
-  const heroSheet = await loadSheet('characters', 'x');
+  // 고를 수 있는 캐릭터의 시트를 전부 미리 받아둔다 — 선택 화면에서
+  // 9명을 동시에 세워 보여줘야 하므로 어차피 다 필요하다.
+  const charSheets = new Map<string, Sheet>();
+  await Promise.all(
+    CHAR_DEFS.map(async (c) => {
+      charSheets.set(c.id, await loadSheet('characters', c.id));
+    }),
+  );
 
   // ------------------------------------------------------------ 레이어
   const world = new Container();
@@ -160,9 +239,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   groundG.rect(ARENA_W - 4, 0, 4, ARENA_H).fill({ color: 0x3a4a90 });
 
   foeLayer.sortableChildren = true;
-  const hero = new AnimView(heroSheet);
-  hero.play('idle');
-  foeLayer.addChild(hero);
+  let hero: AnimView | null = null;
+  let heroScale = 1;
+  let charDef: HordeChar = CHAR_DEFS[0];
+  let shotColor = 0xff8a2c;
+  let shotCore = 0xfff0b0;
 
   const droneG = new Graphics();
   world.addChild(droneG);
@@ -196,6 +277,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const cardG = new Graphics();
   const cardTexts: Text[] = [];
   ui.addChild(cardG);
+  const charBtnLabel = new Text({ text: '다른 캐릭터로', style: { ...mono, fontSize: 9, fill: 0xc9d6ff } });
+  charBtnLabel.anchor.set(0.5);
+  charBtnLabel.visible = false;
+  charBtnLabel.position.set(GAME_W / 2, GAME_H - 33);
+  ui.addChild(charBtnLabel);
   for (let i = 0; i < 3; i++) {
     const name = new Text({ text: '', style: { ...mono, fontSize: 11, fill: 0xffffff } });
     name.anchor.set(0.5);
@@ -249,7 +335,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let surgeAt = 32;
   let shake = 0;
   let hitstop = 0;
-  let phase: 'play' | 'pick' | 'dead' = 'play';
+  let phase: 'select' | 'play' | 'pick' | 'dead' = 'select';
+  let selIndex = 0;
+  /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
+  let attackHold = 0;
+  let attackBeat = 0;
   let pickIndex = 0;
   let pickList: Upgrade[] = [];
   let deadTimer = 0;
@@ -258,6 +348,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 버튼으로 확정하는 방식은 눈앞에 카드가 세 장 떠 있는데도 조작이
   // 한 단계 겉돌아서 안 맞는다. 키보드 ←→/Z 도 그대로 둔다.
   const cardRects: { x: number; y: number; w: number; h: number }[] = [];
+  /** 사망 화면의 "캐릭터 변경" 영역 — 그 밖을 누르면 같은 캐릭터로 재시도한다 */
+  const BTN_CHAR = { x: GAME_W / 2 - 62, y: GAME_H - 44, w: 124, h: 22 };
   /** 캔버스 좌표 → 게임 좌표. 백버퍼가 GAME_W×GAME_H 고정이라 비율만 맞추면 된다 */
   const toGame = (e: PointerEvent): { x: number; y: number } => {
     const r = app.canvas.getBoundingClientRect();
@@ -279,10 +371,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (e.pointerType === 'touch') touchMode = true;
     const p = toGame(e);
 
+    const inside = (r: { x: number; y: number; w: number; h: number }): boolean =>
+      p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+
+    if (phase === 'select') {
+      for (let i = 0; i < selRects.length; i++) {
+        if (!inside(selRects[i])) continue;
+        // 짚은 캐릭터로 바로 시작한다 — 골랐다가 다시 확정하는 두 단계는
+        // 손가락으로 하면 번거롭기만 하다.
+        selIndex = i;
+        startRun();
+        break;
+      }
+      return;
+    }
     if (phase === 'pick') {
       for (let i = 0; i < cardRects.length && i < pickList.length; i++) {
-        const c = cardRects[i];
-        if (p.x < c.x || p.x > c.x + c.w || p.y < c.y || p.y > c.y + c.h) continue;
+        if (!inside(cardRects[i])) continue;
         pickIndex = i;
         choosePick();
         break;
@@ -290,7 +395,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       return;
     }
     if (phase === 'dead') {
-      if (deadTimer > 0.5) reset();
+      if (deadTimer <= 0.5) return;
+      if (inside(BTN_CHAR)) { phase = 'select'; return; }
+      reset();
       return;
     }
 
@@ -516,6 +623,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function shoot(): void {
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
+    // 쏘는 쪽을 본다. 이동 방향만 보면 등 뒤에서 탄이 나가는 그림이 된다.
+    if (target) facing = Math.cos(base) >= 0 ? 1 : -1;
+    attackHold = 0.2;
     const muzX = px + facing * 9;
     const muzY = py - 10;
     for (let i = 0; i < w.shots; i++) {
@@ -554,6 +664,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     phase = 'pick';
   }
 
+  /** 고른 캐릭터로 갈아끼운다 — 시트·색·기본 능력치가 전부 여기서 정해진다 */
+  function setCharacter(def: HordeChar): void {
+    charDef = def;
+    if (hero) foeLayer.removeChild(hero);
+    hero = new AnimView(charSheets.get(def.id)!);
+    hero.play('idle');
+    heroScale = def.sprite_scale ?? 1;
+    hero.scale.set(heroScale, heroScale);
+    foeLayer.addChild(hero);
+
+    const si = SHOTS.get(def.id)!;
+    shotColor = si.color;
+    shotCore = lighten(shotColor, 0.55);
+  }
+
+  function startRun(): void {
+    setCharacter(CHAR_DEFS[selIndex]);
+    reset();
+  }
+
   function choosePick(): void {
     if (phase !== 'pick') return;
     const u = pickList[pickIndex];
@@ -576,21 +706,99 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     gems.length = 0;
     parts.length = 0;
     px = ARENA_W / 2; py = ARENA_H / 2;
-    hp = 100; maxHp = 100; iframe = 0;
+    // 캐릭터마다 체력과 탄이 다르다. 검증해 둔 곡선에서 크게 벗어나지 않도록
+    // 원본 수치를 그대로 쓰지 않고 좁은 폭으로만 반영한다.
+    maxHp = Math.round(charDef.base_stats.hp * 1.2);
+    hp = maxHp;
+    iframe = 0;
     dashTimer = 0; dashCd = 0;
+    attackHold = 0; attackBeat = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
     spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
     speedMul = 1;
-    w.interval = 0.16; w.shots = 1; w.spread = 0.06; w.dmg = 6;
-    w.speed = 330; w.pierce = 1; w.drones = 0; w.magnet = 40;
+    w.interval = 0.16; w.shots = 1; w.spread = 0.06;
+    const si = SHOTS.get(charDef.id)!;
+    w.dmg = 5 + Math.round(si.power * 0.15);
+    w.speed = Math.round(si.speed * 1.25);
+    w.pierce = 1; w.drones = 0; w.magnet = 40;
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
     deadTimer = 0;
   }
 
+  // ------------------------------------------------------------ 캐릭터 선택
+  const selLayer = new Container();
+  ui.addChild(selLayer);
+  const selG = new Graphics();
+  selLayer.addChild(selG);
+  const CELL_W = Math.floor(GAME_W / CHAR_DEFS.length);
+  const SEL_FOOT = 152;
+  const selViews: AnimView[] = [];
+  const selNames: Text[] = [];
+  const selRects: { x: number; y: number; w: number; h: number }[] = [];
+
+  for (let i = 0; i < CHAR_DEFS.length; i++) {
+    const def = CHAR_DEFS[i];
+    const cx = i * CELL_W + CELL_W / 2;
+    const v = new AnimView(charSheets.get(def.id)!);
+    v.play('idle');
+    const s = def.sprite_scale ?? 1;
+    v.scale.set(s, s);
+    v.position.set(cx, SEL_FOOT);
+    selLayer.addChild(v);
+    selViews.push(v);
+
+    const n = new Text({ text: SHORT_NAMES.get(def.id) ?? def.name, style: { ...mono, fontSize: 9, fill: 0x9fb0dd } });
+    n.anchor.set(0.5, 0);
+    n.position.set(cx, SEL_FOOT + 6);
+    selLayer.addChild(n);
+    selNames.push(n);
+
+    selRects.push({ x: i * CELL_W, y: 44, w: CELL_W, h: 130 });
+  }
+
+  const selTitle = new Text({ text: '캐릭터 선택', style: { ...mono, fontSize: 14, fill: 0xffffff } });
+  selTitle.anchor.set(0.5);
+  selTitle.position.set(GAME_W / 2, 28);
+  const selHint = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
+  selHint.anchor.set(0.5);
+  selHint.position.set(GAME_W / 2, GAME_H - 14);
+  selLayer.addChild(selTitle, selHint);
+
+  function drawSelect(dtMs: number): void {
+    selG.clear();
+    selG.rect(0, 0, GAME_W, GAME_H).fill({ color: 0x070a16 });
+    for (let i = 0; i < selRects.length; i++) {
+      const r = selRects[i];
+      const on = i === selIndex;
+      selG.roundRect(r.x + 2, r.y, r.w - 4, r.h, 4).fill({ color: on ? 0x1e3266 : 0x0e1428 });
+      selG.roundRect(r.x + 2, r.y, r.w - 4, r.h, 4).stroke({ color: on ? 0x8ef0ff : 0x222c52, width: on ? 2 : 1 });
+      selViews[i].update(dtMs);
+      selViews[i].alpha = on ? 1 : 0.5;
+      selNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
+    }
+    const d = CHAR_DEFS[selIndex];
+    const si = SHOTS.get(d.id)!;
+    selHint.text = `${d.name} — 체력 ${Math.round(d.base_stats.hp * 1.2)} · 위력 ${5 + Math.round(si.power * 0.15)} · 탄속 ${Math.round(si.speed * 1.25)}    ▸ 눌러서 시작 (←→ · Z)`;
+  }
+
   // ------------------------------------------------------------ 루프
   app.ticker.add(() => {
     const dt = Math.min(app.ticker.deltaMS / 1000, 1 / 30);
+
+    if (phase === 'select') {
+      if (input.pressed('left')) selIndex = (selIndex + CHAR_DEFS.length - 1) % CHAR_DEFS.length;
+      if (input.pressed('right')) selIndex = (selIndex + 1) % CHAR_DEFS.length;
+      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) startRun();
+      selLayer.visible = phase === 'select';
+      if (selLayer.visible) drawSelect(app.ticker.deltaMS);
+      input.endFrame();
+      return;
+    }
+    selLayer.visible = false;
+    // 캐릭터를 고르기 전에는 아래 로직이 돌 일이 없다
+    const hv = hero;
+    if (!hv) { input.endFrame(); return; }
 
     if (phase === 'pick') {
       if (input.pressed('left')) pickIndex = (pickIndex + pickList.length - 1) % pickList.length;
@@ -604,8 +812,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     if (phase === 'dead') {
       deadTimer += dt;
-      if (deadTimer > 0.5 && (input.pressed('jump') || input.pressed('shoot') || input.pressed('weapon') || input.pressed('menu'))) {
-        reset();
+      if (deadTimer > 0.5) {
+        if (input.pressed('menu') || input.pressed('weapon')) phase = 'select';
+        else if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) reset();
       }
       draw(dt);
       input.endFrame();
@@ -657,11 +866,30 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     px = clamp(px, 10, ARENA_W - 10);
     py = clamp(py, 20, ARENA_H - 8);
 
-    hero.play(dashTimer > 0 ? 'dash' : len > 0 ? 'run' : 'idle');
-    hero.scale.x = facing;
-    hero.update(app.ticker.deltaMS);
-    hero.position.set(Math.round(px), Math.round(py));
-    hero.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
+    // 사격 모션. 시트마다 가진 태그가 달라 (임시 도트는 run_attack 이 없다)
+    // play() 의 fallback 으로 흘려보낸다.
+    if (attackHold > 0) attackHold -= dt;
+    attackBeat -= dt;
+    const firing = attackHold > 0;
+    const wantTag = dashTimer > 0
+      ? (firing ? 'dash_attack' : 'dash')
+      : len > 0
+        ? (firing ? 'run_attack' : 'run')
+        : firing ? 'attack_main' : 'idle';
+    const fallback = dashTimer > 0 ? 'dash' : len > 0 ? 'run' : 'idle';
+    hv.play(wantTag, fallback);
+    // 제자리 사격 모션은 한 번 재생하고 끝나는 태그라, 계속 쏘는 동안에는
+    // 일정 간격으로 다시 틀어줘야 발사가 이어지는 것처럼 보인다.
+    // 발사 간격(후반 0.04초)에 맞추면 부들거리기만 해서 박자를 따로 잡는다.
+    if (firing && attackBeat <= 0) {
+      attackBeat = 0.17;
+      if (!hv.current.startsWith('run') && !hv.current.startsWith('dash')) hv.restart();
+    }
+    hv.scale.x = facing * heroScale;
+    hv.scale.y = heroScale;
+    hv.update(app.ticker.deltaMS);
+    hv.position.set(Math.round(px), Math.round(py));
+    hv.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
 
     // ---- 스폰
     const rate = Math.min(55, 1.6 + time * 0.3);
@@ -737,7 +965,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         }
       }
     }
-    hero.zIndex = py + 0.5;
+    hv.zIndex = py + 0.5;
 
     // 적을 격자에 담는다. 탄 700발 × 적 200마리를 전수 비교하면 프레임이
     // 반토막 난다 — 탄은 자기 주변 칸만 본다. 밀어내기도 같은 격자를 쓴다.
@@ -897,12 +1125,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       drew = true;
     }
     if (drew) {
-      bulletG.stroke({ color: 0xff8a2c, width: 6, alpha: 0.4 });
+      bulletG.stroke({ color: shotColor, width: 6, alpha: 0.4 });
       for (const b of bullets) {
         if (!onScreen(b.x, b.y)) continue;
         bulletG.moveTo(b.x - b.vx * 0.016, b.y - b.vy * 0.016).lineTo(b.x, b.y);
       }
-      bulletG.stroke({ color: 0xfff0b0, width: 3 });
+      bulletG.stroke({ color: shotCore, width: 3 });
     }
 
     // 경험치
@@ -955,10 +1183,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     lvLabel.text = `Lv.${level}`;
 
     if (phase === 'dead') {
-      centerLabel.position.set(GAME_W / 2, GAME_H / 2 - 14);
+      centerLabel.position.set(GAME_W / 2, GAME_H / 2 - 20);
       centerLabel.text = '격 파 당 함';
-      subLabel.text = `${Math.floor(time)}초 생존 · ${kills}킬 · Lv.${level}\n화면을 누르면 재시도`;
+      subLabel.text = `${charDef.name} · ${Math.floor(time)}초 생존 · ${kills}킬 · Lv.${level}\n화면을 누르면 같은 캐릭터로 재시도`;
       hintLabel.text = '';
+      cardG.clear();
+      cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).fill({ color: 0x16203f });
+      cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).stroke({ color: 0x4f6198, width: 1 });
+      charBtnLabel.visible = true;
     } else if (phase === 'pick') {
       centerLabel.text = '';
       subLabel.text = '';
@@ -970,9 +1202,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         time < 8 ? (touchMode ? '왼쪽을 끌어 이동 · 사격은 자동' : '방향키 이동 · C 대시 · 사격은 자동') : '';
     }
 
-    if (phase !== 'pick') {
+    if (phase !== 'pick' && phase !== 'dead') {
       cardG.clear();
       for (const t of cardTexts) t.text = '';
+      charBtnLabel.visible = false;
     }
 
     // 터치 조작 표시 — 레벨업 카드가 떠 있는 동안은 숨긴다.
