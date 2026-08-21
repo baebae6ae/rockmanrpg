@@ -13,6 +13,8 @@
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import type { Input } from '../input/input';
 import { AnimView, loadSheet, type Sheet } from '../anim/sheet';
+import { THEMES, buildTheme } from './stage_bg';
+import { createSfx } from './sfx';
 
 /**
  * 이 모드는 본편(560×240 가로)과 화면 비율 자체가 다르다.
@@ -343,120 +345,38 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 바닥보다 느리게 흐르는 아래층 — 뚫린 격자망 칸으로 비친다.
   // 시차가 있어야 바닥이 판때기가 아니라 위에 얹힌 층으로 읽힌다.
   const farLayer = new Container();
-  const farG = new Graphics();
-  farLayer.addChild(farG);
   app.stage.addChildAt(farLayer, 0);
 
-  const groundG = new Graphics();
+  const groundLayer = new Container();
   const gemG = new Graphics();
   const foeLayer = new Container();
   const bulletG = new Graphics();
   const specialG = new Graphics();
   const partG = new Graphics();
-  world.addChild(groundG, gemG, foeLayer, bulletG, specialG, partG);
+  // animG 는 바닥 바로 위여야 한다 — 아래에 두면 흐르는 쇳물도 눈발도
+  // 바닥에 가려서 안 보인다.
+  const animG = new Graphics();
+  world.addChild(groundLayer, animG, gemG, foeLayer, bulletG, specialG, partG);
 
-  // 배경 — 록맨X 발전소 스테이지풍 바닥. 한 번만 그린다.
-  //
-  // 전에 쓰던 단색 파란 패널 벽은 밝기만 했지 깊이가 없었다. X 시리즈
-  // 배경의 핵심은 (1) 굵은 어두운 윤곽으로 끊어지는 덩어리진 타일,
-  // (2) 그 사이로 안쪽 구조물이 비쳐 보이는 층, (3) 발광 배선 몇 줄이다.
-  // 그래서 바닥을 통짜로 칠하지 않고, 일부 칸을 격자망으로 뚫어 그
-  // 아래 기계층(farLayer)이 시차를 두고 보이게 했다.
-  const rnd = (() => {
-    let s = 0x9e37 >>> 0;
-    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
-  })();
-
-  // --- 아래층: 뚫린 칸으로 보이는 기계실
-  farG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: 0x05080f });
-  for (let x = 20; x < ARENA_W; x += 96) {
-    farG.rect(x, 0, 14, ARENA_H).fill({ color: 0x101a2e });
-    farG.rect(x + 2, 0, 3, ARENA_H).fill({ color: 0x1b2b4a });
-  }
-  for (let y = 40; y < ARENA_H; y += 128) {
-    farG.rect(0, y, ARENA_W, 10).fill({ color: 0x0c1424 });
-    farG.rect(0, y + 2, ARENA_W, 2).fill({ color: 0x18263f });
-    for (let x = 30; x < ARENA_W; x += 64) {
-      farG.rect(x, y + 3, 5, 5).fill({ color: rnd() > 0.5 ? 0x2f7fd0 : 0x1d3a63 });
+  // 배경 — 스테이지 테마는 stage_bg.ts 에 있다.
+  // 판이 진행되면서 구역이 바뀌므로 정지 배경 한 장으로 끝나지 않는다.
+  let themeIndex = 0;
+  let theme = THEMES[0];
+  const themeCache = new Map<string, { far: Container; ground: Container }>();
+  function useTheme(i: number): void {
+    themeIndex = i % THEMES.length;
+    theme = THEMES[themeIndex];
+    let built = themeCache.get(theme.id);
+    if (!built) {
+      built = buildTheme(theme, ARENA_W, ARENA_H);
+      themeCache.set(theme.id, built);
     }
+    farLayer.removeChildren();
+    groundLayer.removeChildren();
+    farLayer.addChild(built.far);
+    groundLayer.addChild(built.ground);
   }
 
-  // --- 바닥층
-  const TILE = 40;
-  const P = { plate: 0x3c5390, lit: 0x6786c8, dark: 0x22315a, line: 0x0d1424, rivet: 0x8aa3dc };
-  const COLS = Math.ceil(ARENA_W / TILE);
-  const ROWS = Math.ceil(ARENA_H / TILE);
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const x = c * TILE;
-      const y = r * TILE;
-      const roll = rnd();
-
-      if (roll > 0.9) {
-        // 격자망 — 아래 기계실이 비친다. 창살만 얹는다.
-        for (let i = 4; i < TILE - 2; i += 7) {
-          groundG.rect(x + i, y + 2, 3, TILE - 4).fill({ color: 0x1a2540, alpha: 0.92 });
-        }
-        groundG.rect(x + 1, y + 1, TILE - 2, 2).fill({ color: P.dark });
-        groundG.rect(x + 1, y + TILE - 3, TILE - 2, 2).fill({ color: P.dark });
-        continue;
-      }
-
-      // 덩어리진 타일 — 굵은 어두운 윤곽이 X 배경의 인상을 만든다
-      groundG.rect(x, y, TILE, TILE).fill({ color: P.line });
-      groundG.rect(x + 2, y + 2, TILE - 4, TILE - 4).fill({ color: P.plate });
-      groundG.rect(x + 2, y + 2, TILE - 4, 3).fill({ color: P.lit });
-      groundG.rect(x + 2, y + 2, 3, TILE - 4).fill({ color: P.lit });
-      groundG.rect(x + 2, y + TILE - 6, TILE - 4, 4).fill({ color: P.dark });
-      groundG.rect(x + TILE - 6, y + 2, 4, TILE - 4).fill({ color: P.dark });
-      if (roll > 0.72) {
-        groundG.rect(x + 7, y + 7, 3, 3).fill({ color: P.rivet });
-        groundG.rect(x + TILE - 10, y + TILE - 10, 3, 3).fill({ color: P.rivet });
-      }
-    }
-  }
-
-  // --- 발광 배선 — 바닥을 가로지르는 에너지관
-  for (let r = 3; r < ROWS; r += 7) {
-    const y = r * TILE + TILE / 2 - 4;
-    groundG.rect(0, y - 2, ARENA_W, 12).fill({ color: 0x0b1120 });
-    groundG.rect(0, y + 1, ARENA_W, 6).fill({ color: 0x1c4468 });
-    groundG.rect(0, y + 2, ARENA_W, 2).fill({ color: 0x2f7ba0 });
-    for (let x = 24; x < ARENA_W; x += 80) {
-      groundG.rect(x, y - 4, 10, 16).fill({ color: 0x27385f });
-      groundG.rect(x + 3, y - 1, 4, 10).fill({ color: 0x4ea6c8 });
-    }
-  }
-
-  // --- 대형 발전기
-  for (let i = 0; i < 5; i++) {
-    const gx = 120 + Math.floor(rnd() * (ARENA_W - 240));
-    const gy = 120 + Math.floor(rnd() * (ARENA_H - 240));
-    groundG.circle(gx, gy, 46).fill({ color: 0x121b33 });
-    groundG.circle(gx, gy, 42).fill({ color: 0x2c3f6e });
-    groundG.circle(gx, gy, 30).stroke({ color: 0x4a68ab, width: 3 });
-    groundG.circle(gx, gy, 18).fill({ color: 0x1a3b5e });
-    groundG.circle(gx, gy, 12).fill({ color: 0x2f7ba0 });
-    groundG.circle(gx, gy, 6).fill({ color: 0x7fc9e0 });
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2;
-      groundG.rect(gx + Math.cos(a) * 36 - 2, gy + Math.sin(a) * 36 - 2, 4, 4).fill({ color: 0x7d97d4 });
-    }
-  }
-
-  // --- 경계벽 — 노란 경고띠
-  for (const [bx, by, bw, bh] of [
-    [0, 0, ARENA_W, 8], [0, ARENA_H - 8, ARENA_W, 8],
-    [0, 0, 8, ARENA_H], [ARENA_W - 8, 0, 8, ARENA_H],
-  ]) {
-    groundG.rect(bx, by, bw, bh).fill({ color: 0x10182c });
-    const along = bw > bh;
-    const n = Math.ceil((along ? bw : bh) / 14);
-    for (let i = 0; i < n; i += 2) {
-      if (along) groundG.rect(bx + i * 14, by + 1, 14, bh - 2).fill({ color: 0xf0c020 });
-      else groundG.rect(bx + 1, by + i * 14, bw - 2, 14).fill({ color: 0xf0c020 });
-    }
-  }
 
   foeLayer.sortableChildren = true;
   let hero: AnimView | null = null;
@@ -485,6 +405,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   hintLabel.anchor.set(0.5, 1);
   hintLabel.position.set(W / 2, H - 3);
   ui.addChild(timeLabel, killLabel, lvLabel, hintLabel);
+
+  const stageLabel = new Text({ text: '', style: { ...mono, fontSize: 12, fill: 0xffffff } });
+  stageLabel.anchor.set(0.5);
+  stageLabel.position.set(W / 2, 46);
+  stageLabel.visible = false;
+  ui.addChild(stageLabel);
+
+  const muteLabel = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
+  muteLabel.anchor.set(1, 1);
+  muteLabel.position.set(W - 4, H - 3);
+  ui.addChild(muteLabel);
 
   const centerLabel = new Text({ text: '', style: { ...mono, fontSize: 15, fill: 0xffffff } });
   centerLabel.anchor.set(0.5);
@@ -522,6 +453,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 본편 가상패드(JUMP/FIRE/WPN)는 이 모드에 안 맞는다 — 여기선 점프도
   // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
   // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
+  const sfx = createSfx();
+  // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
+  const unlock = (): void => sfx.unlock();
+  window.addEventListener('pointerdown', unlock, { once: true });
+  window.addEventListener('keydown', unlock, { once: true });
+
   input.disableTouch();
   const padG = new Graphics();
   const dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'monospace', fontSize: 8, fill: 0x8ef0ff } });
@@ -565,6 +502,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let spawnAcc = 0;
   let fireAcc = 0;
   let surgeAt = 32;
+  let stageAt = 45;
+  /** 구역 이름을 띄워두는 남은 시간 */
+  let stageBanner = 0;
+  /** 배경 애니메이션용 시계 — 일시정지 중에도 흘러야 자연스럽다 */
+  let animClock = 0;
   let shake = 0;
   let hitstop = 0;
   let phase: 'select' | 'play' | 'pick' | 'dead' = 'select';
@@ -869,6 +811,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       pushGem(f.x, f.y - 6, f.def.xp * (f.elite ? 3 : 1));
     }
     shake = Math.max(shake, f.elite ? 6 : 1.2);
+    sfx.kill();
     retire(f);
   }
 
@@ -909,6 +852,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 반경 안의 적을 한꺼번에 때린다 (크래시 봄버·번개) */
   function blast(x: number, y: number, radius: number, dmg: number, color: number): void {
     rings.push({ x, y, r: radius, life: 0.24, max: 0.24, color });
+    sfx.explode();
     spawnPart(x, y, 12, 0xff9a4c, 150);
     shake = Math.max(shake, 3);
     for (let j = foes.length - 1; j >= 0; j--) {
@@ -977,6 +921,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     if (w.style === 'saber') {
       swingSaber(base);
+      sfx.shot('saber');
       return;
     }
 
@@ -987,6 +932,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       fireOne(base + t * w.spread + jitter, w.style === 'charge' ? 0.75 : 0.5, muzX, muzY, w.dmg);
     }
     spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
+    sfx.shot(w.style);
 
     for (let d = 0; d < w.drones; d++) {
       const ang = droneAngle + (d / w.drones) * Math.PI * 2;
@@ -1239,6 +1185,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (!pickList.length) return;
     pickIndex = 0;
     phase = 'pick';
+    sfx.level();
   }
 
   /** 고른 캐릭터로 갈아끼운다 — 시트·색·기본 능력치가 전부 여기서 정해진다 */
@@ -1265,6 +1212,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase !== 'pick') return;
     const o = pickList[pickIndex];
     if (!o) return;
+    sfx.pick();
     if (o.kind === 'stat') {
       taken[o.up.id] = (taken[o.up.id] ?? 0) + 1;
       o.up.apply();
@@ -1307,6 +1255,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     attackHold = 0; attackBeat = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
     spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
+    stageAt = 45; stageBanner = 0;
+    useTheme(0);
     speedMul = 1;
     w.interval = 0.16; w.shots = 1; w.spread = 0.06;
     const si = SHOTS.get(charDef.id)!;
@@ -1456,6 +1406,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     time += dt;
     droneAngle += dt * 2.4;
+    if (stageBanner > 0) stageBanner -= dt;
 
     // ---- 이동
     let ix = input.axisX;
@@ -1492,6 +1443,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    if (input.pressed('menu')) sfx.toggleMute();
+
     const wantDash = input.pressed('dash') || touchDash;
     touchDash = false;
     dashCd -= dt;
@@ -1503,6 +1456,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       dashDy = len > 0 ? iy : 0;
       iframe = Math.max(iframe, DASH_TIME + 0.08);
       spawnPart(px, py - 10, 8, 0x8ef0ff, 90);
+      sfx.dash();
     }
 
     if (dashTimer > 0) {
@@ -1582,6 +1536,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     spawnAcc += rate * dt;
     while (spawnAcc >= 1) { spawnAcc -= 1; spawnFoe(false); }
 
+    // 45초마다 구역이 바뀐다. 배경 한 장으로 끝까지 가면 5분쯤에 눈이
+    // 완전히 죽는데, 장소가 바뀌면 "더 깊이 들어왔다"는 진행감이 생긴다.
+    if (time >= stageAt) {
+      stageAt += 45;
+      useTheme(themeIndex + 1);
+      stageBanner = 2.2;
+      shake = Math.max(shake, 5);
+      sfx.stage();
+    }
+
     if (time >= surgeAt) {
       surgeAt += 24;
       const elites = 1 + Math.floor(time / 50);
@@ -1641,6 +1605,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         hitstop = 0.055;
         shake = 8;
         spawnPart(px, py - 10, 14, 0xff5c5c, 150);
+        sfx.hurt();
         f.kx = -(dx / d) * 260;
         f.ky = -(dy / d) * 260;
         if (hp <= 0) {
@@ -1649,6 +1614,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           deadTimer = 0;
           spawnPart(px, py - 10, 40, 0xffffff, 220);
           shake = 12;
+          sfx.dead();
         }
       }
     }
@@ -1749,6 +1715,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             f.kx += (b.vx / w.speed) * 120;
             f.ky += (b.vy / w.speed) * 120;
             spawnPart(b.x, b.y, 2, b.shape === 'tracer' ? 0xfff0a0 : b.color, 110);
+            sfx.hit();
             b.lastHit = f;
 
             if (f.hp <= 0) killFoe(f);
@@ -1792,6 +1759,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   // ------------------------------------------------------------ 그리기
   function draw(dt: number): void {
+    animClock += dt;
+
     // 카메라
     if (shake > 0) shake = Math.max(0, shake - dt * 26);
     const camX = clamp(px - W / 2, 0, ARENA_W - W);
@@ -1808,6 +1777,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const vy0 = camY - 24;
     const vy1 = camY + H + 24;
     const onScreen = (x: number, y: number): boolean => x > vx0 && x < vx1 && y > vy0 && y < vy1;
+
+    // 스테이지 애니메이션 — 보이는 범위만 다시 그린다
+    animG.clear();
+    if (theme.anim) {
+      theme.anim(animG, { arenaW: ARENA_W, arenaH: ARENA_H, rnd: Math.random },
+        animClock, { x0: vx0, y0: vy0, x1: vx1, y1: vy1 });
+    }
 
     // 파티클 — 색깔별로 묶어서 fill 을 한 번씩만 부른다.
     // 개체마다 fill 하면 수백 개일 때 드로우콜만으로 프레임이 죽는다.
@@ -2042,6 +2018,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
       : null;
     dbg.__hordePickIndex = pickIndex;
+    dbg.__hordeTheme = theme.id;
+    dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
+
+    // 구역 배너 — 바뀐 직후 잠깐 뜬다
+    stageLabel.visible = stageBanner > 0 && phase === 'play';
+    if (stageLabel.visible) {
+      stageLabel.text = `${theme.name}`;
+      stageLabel.style.fill = theme.accent;
+      stageLabel.alpha = Math.min(1, stageBanner / 0.6);
+    }
+    muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
 
     timeLabel.text = `${Math.floor(time)}s`;
     killLabel.text = `KILL ${kills}`;
@@ -2076,6 +2063,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase !== 'pick' && phase !== 'dead') {
       cardG.clear();
       for (const t of cardTexts) t.text = '';
+      for (const b of cardBadges) b.visible = false;
       charBtnLabel.visible = false;
     }
 
