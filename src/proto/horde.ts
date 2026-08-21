@@ -11,9 +11,18 @@
  */
 
 import { Application, Container, Graphics, Text } from 'pixi.js';
-import { GAME_H, GAME_W } from '../core/config';
 import type { Input } from '../input/input';
 import { AnimView, loadSheet, type Sheet } from '../anim/sheet';
+
+/**
+ * 이 모드는 본편(560×240 가로)과 화면 비율 자체가 다르다.
+ * 사방에서 몰려오는 걸 보여줘야 하는데 가로로 납작하면 위아래가 너무
+ * 좁고, 한 손으로 쥔 세로 화면이 이 장르에 훨씬 맞는다.
+ * 보이는 넓이는 본편과 거의 같아서(129,600 vs 134,400px²) 적 밀도
+ * 수치는 그대로 쓸 수 있다.
+ */
+const W = 270;
+const H = 480;
 
 const ARENA_W = 1400;
 const ARENA_H = 900;
@@ -240,6 +249,23 @@ const SHORT_NAMES = new Map<string, string>();
 }
 
 export async function runHordeProto(app: Application, input: Input): Promise<void> {
+  // 백버퍼를 세로로 다시 잡고 확대는 CSS 가 맡는다 — 본편과 같은 방식이라
+  // 어느 배율에서도 도트가 보간되지 않는다.
+  app.renderer.resize(W, H);
+  const canvas = app.canvas as HTMLCanvasElement;
+  const fit = (): void => {
+    const raw = Math.min(window.innerWidth / W, window.innerHeight / H);
+    const scale = raw >= 2 ? Math.floor(raw) : raw;
+    canvas.style.width = `${Math.round(W * scale)}px`;
+    canvas.style.height = `${Math.round(H * scale)}px`;
+    canvas.style.position = 'absolute';
+    canvas.style.left = `${Math.round((window.innerWidth - W * scale) / 2)}px`;
+    canvas.style.top = `${Math.round((window.innerHeight - H * scale) / 2)}px`;
+  };
+  fit();
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 100));
+
   const sheets = new Map<FoeKind, Sheet>();
   await Promise.all(
     KIND_LIST.map(async (k) => {
@@ -268,18 +294,52 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const partG = new Graphics();
   world.addChild(groundG, gemG, foeLayer, bulletG, specialG, partG);
 
-  // 바닥 격자 — 한 번만 그린다. 이동감이 있어야 스스로 움직인다는 게 읽힌다.
-  groundG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: 0x0d1024 });
-  for (let x = 0; x <= ARENA_W; x += 40) {
-    groundG.rect(x, 0, 1, ARENA_H).fill({ color: 0x161c3a });
+  // 배경 — 록맨 스테이지의 파란 금속 방. 한 번만 그린다.
+  //
+  // 예전 검정 격자는 어둡기만 하고 아무 성격이 없었다. 다만 밝히면 탄이
+  // 묻히므로(엑스 탄색이 연한 하늘색이다) 바탕은 중간 명도 파랑까지만
+  // 올리고, 대신 탄에 어두운 외곽선을 넣어 대비를 따로 확보했다.
+  const BG = { base: 0x1b3a6b, panel: 0x24488a, edge: 0x3a6cc4, seam: 0x142a52, bolt: 0x5b8ee0 };
+  groundG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: BG.base });
+
+  const TILE = 48;
+  const rnd = (() => {
+    let s = 0x9e37 >>> 0;
+    return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
+  })();
+  for (let y = 0; y < ARENA_H; y += TILE) {
+    for (let x = 0; x < ARENA_W; x += TILE) {
+      // 패널 — 위/왼쪽 밝은 모서리, 아래/오른쪽 어두운 이음매로 두께를 준다
+      groundG.rect(x + 2, y + 2, TILE - 4, TILE - 4).fill({ color: BG.panel });
+      groundG.rect(x + 2, y + 2, TILE - 4, 2).fill({ color: BG.edge });
+      groundG.rect(x + 2, y + 2, 2, TILE - 4).fill({ color: BG.edge });
+      groundG.rect(x + 2, y + TILE - 4, TILE - 4, 2).fill({ color: BG.seam });
+      groundG.rect(x + TILE - 4, y + 2, 2, TILE - 4).fill({ color: BG.seam });
+      // 네 귀퉁이 볼트
+      for (const [bx, by] of [[6, 6], [TILE - 9, 6], [6, TILE - 9], [TILE - 9, TILE - 9]]) {
+        groundG.rect(x + bx, y + by, 3, 3).fill({ color: BG.bolt });
+      }
+      // 가끔 발광 패널을 섞어 넓은 벽이 단조롭지 않게 한다
+      if (rnd() > 0.88) {
+        groundG.rect(x + 12, y + 12, TILE - 24, TILE - 24).fill({ color: 0x2f7fd0 });
+        groundG.rect(x + 15, y + 15, TILE - 30, TILE - 30).fill({ color: 0x63b4f2 });
+      }
+    }
   }
-  for (let y = 0; y <= ARENA_H; y += 40) {
-    groundG.rect(0, y, ARENA_W, 1).fill({ color: 0x161c3a });
+
+  // 경계벽 — 노란 경고띠
+  for (const [bx, by, bw, bh] of [
+    [0, 0, ARENA_W, 6], [0, ARENA_H - 6, ARENA_W, 6],
+    [0, 0, 6, ARENA_H], [ARENA_W - 6, 0, 6, ARENA_H],
+  ]) {
+    groundG.rect(bx, by, bw, bh).fill({ color: 0x1a2340 });
+    const along = bw > bh;
+    const n = Math.ceil((along ? bw : bh) / 16);
+    for (let i = 0; i < n; i += 2) {
+      if (along) groundG.rect(bx + i * 16, by, 16, bh).fill({ color: 0xe8c024 });
+      else groundG.rect(bx, by + i * 16, bw, 16).fill({ color: 0xe8c024 });
+    }
   }
-  groundG.rect(0, 0, ARENA_W, 4).fill({ color: 0x3a4a90 });
-  groundG.rect(0, ARENA_H - 4, ARENA_W, 4).fill({ color: 0x3a4a90 });
-  groundG.rect(0, 0, 4, ARENA_H).fill({ color: 0x3a4a90 });
-  groundG.rect(ARENA_W - 4, 0, 4, ARENA_H).fill({ color: 0x3a4a90 });
 
   foeLayer.sortableChildren = true;
   let hero: AnimView | null = null;
@@ -298,23 +358,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   const timeLabel = new Text({ text: '', style: { ...mono, fontSize: 13, fill: 0xffffff } });
   timeLabel.anchor.set(0.5, 0);
-  timeLabel.position.set(GAME_W / 2, 2);
+  timeLabel.position.set(W / 2, 1);
   const killLabel = new Text({ text: '', style: { ...mono, fontSize: 10, fill: 0xffd85c } });
   killLabel.anchor.set(1, 0);
-  killLabel.position.set(GAME_W - 6, 4);
+  killLabel.position.set(W - 6, 3);
   const lvLabel = new Text({ text: '', style: { ...mono, fontSize: 10, fill: 0x8ef0ff } });
-  lvLabel.position.set(6, 4);
+  lvLabel.position.set(6, 3);
   const hintLabel = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
   hintLabel.anchor.set(0.5, 1);
-  hintLabel.position.set(GAME_W / 2, GAME_H - 3);
+  hintLabel.position.set(W / 2, H - 3);
   ui.addChild(timeLabel, killLabel, lvLabel, hintLabel);
 
   const centerLabel = new Text({ text: '', style: { ...mono, fontSize: 15, fill: 0xffffff } });
   centerLabel.anchor.set(0.5);
-  centerLabel.position.set(GAME_W / 2, GAME_H / 2 - 14);
+  centerLabel.position.set(W / 2, H / 2 - 14);
   const subLabel = new Text({ text: '', style: { ...mono, fontSize: 10, fill: 0xc9d6ff } });
   subLabel.anchor.set(0.5);
-  subLabel.position.set(GAME_W / 2, GAME_H / 2 + 8);
+  subLabel.position.set(W / 2, H / 2 + 8);
   ui.addChild(centerLabel, subLabel);
 
   const cardG = new Graphics();
@@ -324,7 +384,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const charBtnLabel = new Text({ text: '다른 캐릭터로', style: { ...mono, fontSize: 9, fill: 0xc9d6ff } });
   charBtnLabel.anchor.set(0.5);
   charBtnLabel.visible = false;
-  charBtnLabel.position.set(GAME_W / 2, GAME_H - 33);
+  charBtnLabel.position.set(W / 2, H - 33);
   ui.addChild(charBtnLabel);
   for (let i = 0; i < 3; i++) {
     const name = new Text({ text: '', style: { ...mono, fontSize: 11, fill: 0xffffff } });
@@ -338,6 +398,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     cardBadges.push(badge);
     ui.addChild(name, desc, badge);
   }
+  // cardG 는 이 둘보다 뒤에 붙었으므로 그대로 두면 어두운 판이 글자를 덮는다.
+  // 다시 addChild 해서 맨 위로 올린다.
+  ui.addChild(centerLabel, subLabel);
 
   // 본편 가상패드(JUMP/FIRE/WPN)는 이 모드에 안 맞는다 — 여기선 점프도
   // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
@@ -392,6 +455,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let attackBeat = 0;
   /** 콤보 태그를 가진 시트(제로)에서 몇 단째를 틀 차례인지 */
   let comboStep = 0;
+  /** 이동 표시용 — 몸 방향(facing)과 별개로 실제 진행 방향을 들고 있는다 */
+  let moveDirX = 0;
+  let moveDirY = 0;
+  let dustAcc = 0;
+  /** run_attack 이 없는 시트에서 걷기와 휘두르기를 번갈아 쓰기 위한 간격 */
+  let swingGap = 0;
   /** 레벨업 카드 한 장 — 능력치이거나 특수무기(신규/강화)다 */
   type PickOption =
     | { kind: 'stat'; up: Upgrade }
@@ -406,19 +475,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 한 단계 겉돌아서 안 맞는다. 키보드 ←→/Z 도 그대로 둔다.
   const cardRects: { x: number; y: number; w: number; h: number }[] = [];
   /** 사망 화면의 "캐릭터 변경" 영역 — 그 밖을 누르면 같은 캐릭터로 재시도한다 */
-  const BTN_CHAR = { x: GAME_W / 2 - 62, y: GAME_H - 44, w: 124, h: 22 };
-  /** 캔버스 좌표 → 게임 좌표. 백버퍼가 GAME_W×GAME_H 고정이라 비율만 맞추면 된다 */
+  const BTN_CHAR = { x: W / 2 - 62, y: H - 44, w: 124, h: 22 };
+  /** 캔버스 좌표 → 게임 좌표. 백버퍼가 W×H 고정이라 비율만 맞추면 된다 */
   const toGame = (e: PointerEvent): { x: number; y: number } => {
     const r = app.canvas.getBoundingClientRect();
     return {
-      x: ((e.clientX - r.left) / r.width) * GAME_W,
-      y: ((e.clientY - r.top) / r.height) * GAME_H,
+      x: ((e.clientX - r.left) / r.width) * W,
+      y: ((e.clientY - r.top) / r.height) * H,
     };
   };
   // 이동은 왼쪽 어디를 짚어도 그 자리가 원점이 되는 스틱이다. 고정 위치
   // 패드는 손가락이 조금만 미끄러져도 입력이 끊긴다.
   const STICK = { dead: 5, radius: 24, drag: 28 };
-  const DASH_BTN = { x: GAME_W - 44, y: GAME_H - 44, r: 27 };
+  const DASH_BTN = { x: W - 44, y: H - 44, r: 27 };
   let stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
   let dashId: number | null = null;
   let touchDash = false;
@@ -589,12 +658,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (foes.length >= MAX_FOES) return;
     const kind = KIND_LIST[Math.floor(Math.random() * KIND_LIST.length)];
     const def = KINDS[kind];
-    // 화면이 560×240 이라 원형으로 뿌리면 위아래 개체가 한참을 걸어와야 한다.
-    // 화면 비율에 맞춘 타원 바로 바깥에 뿌려야 스폰 즉시 압박이 된다.
+    // 원형으로 뿌리면 화면 비율이 안 맞는 축의 개체가 한참을 걸어온다.
+    // 화면(세로) 비율에 맞춘 타원 바로 바깥에 뿌려야 스폰 즉시 압박이 된다.
     const a = Math.random() * Math.PI * 2;
     const far = 1 + Math.random() * 0.22;
-    const x = clamp(px + Math.cos(a) * 320 * far, 14, ARENA_W - 14);
-    const y = clamp(py + Math.sin(a) * 168 * far, 14, ARENA_H - 14);
+    const x = clamp(px + Math.cos(a) * 175 * far, 14, ARENA_W - 14);
+    const y = clamp(py + Math.sin(a) * 290 * far, 14, ARENA_H - 14);
 
     // 화력이 지수로 커지므로 적 체력도 그렇게 따라가야 한다.
     // 선형으로 두면 30초 넘어가는 순간 스폰 즉시 증발해서 화면이 텅 빈다.
@@ -1058,43 +1127,52 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   ui.addChild(selLayer);
   const selG = new Graphics();
   selLayer.addChild(selG);
-  const CELL_W = Math.floor(GAME_W / CHAR_DEFS.length);
-  const SEL_FOOT = 152;
+  // 세로 화면이라 9명을 한 줄로 못 세운다 — 3×3 격자로 놓는다
+  const SEL_COLS = 3;
+  const CELL_W = Math.floor(W / SEL_COLS);
+  const CELL_H = 108;
+  const SEL_TOP = 62;
   const selViews: AnimView[] = [];
   const selNames: Text[] = [];
   const selRects: { x: number; y: number; w: number; h: number }[] = [];
 
   for (let i = 0; i < CHAR_DEFS.length; i++) {
     const def = CHAR_DEFS[i];
-    const cx = i * CELL_W + CELL_W / 2;
+    const col = i % SEL_COLS;
+    const row = Math.floor(i / SEL_COLS);
+    const cx = col * CELL_W + CELL_W / 2;
+    const cyTop = SEL_TOP + row * CELL_H;
+    const foot = cyTop + CELL_H - 26;
+
     const v = new AnimView(charSheets.get(def.id)!);
     v.play('idle');
     const s = def.sprite_scale ?? 1;
     v.scale.set(s, s);
-    v.position.set(cx, SEL_FOOT);
+    v.position.set(cx, foot);
     selLayer.addChild(v);
     selViews.push(v);
 
     const n = new Text({ text: SHORT_NAMES.get(def.id) ?? def.name, style: { ...mono, fontSize: 9, fill: 0x9fb0dd } });
     n.anchor.set(0.5, 0);
-    n.position.set(cx, SEL_FOOT + 6);
+    n.position.set(cx, foot + 4);
     selLayer.addChild(n);
     selNames.push(n);
 
-    selRects.push({ x: i * CELL_W, y: 44, w: CELL_W, h: 130 });
+    selRects.push({ x: col * CELL_W, y: cyTop, w: CELL_W, h: CELL_H - 4 });
   }
 
   const selTitle = new Text({ text: '캐릭터 선택', style: { ...mono, fontSize: 14, fill: 0xffffff } });
   selTitle.anchor.set(0.5);
-  selTitle.position.set(GAME_W / 2, 28);
+  selTitle.position.set(W / 2, 28);
   const selHint = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
   selHint.anchor.set(0.5);
-  selHint.position.set(GAME_W / 2, GAME_H - 14);
+  selHint.position.set(W / 2, H - 46);
+  selHint.style.align = 'center';
   selLayer.addChild(selTitle, selHint);
 
   function drawSelect(dtMs: number): void {
     selG.clear();
-    selG.rect(0, 0, GAME_W, GAME_H).fill({ color: 0x070a16 });
+    selG.rect(0, 0, W, H).fill({ color: 0x070a16 });
     for (let i = 0; i < selRects.length; i++) {
       const r = selRects[i];
       const on = i === selIndex;
@@ -1106,7 +1184,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     const d = CHAR_DEFS[selIndex];
     const si = SHOTS.get(d.id)!;
-    selHint.text = `${d.name} — 체력 ${Math.round(d.base_stats.hp * 1.2)} · 위력 ${5 + Math.round(si.power * 0.15)} · 탄속 ${Math.round(si.speed * 1.25)}    ▸ 눌러서 시작 (←→ · Z)`;
+    selHint.text =
+      `${d.name}\n체력 ${Math.round(d.base_stats.hp * 1.2)} · 위력 ${5 + Math.round(si.power * 0.15)} · 탄속 ${Math.round(si.speed * 1.25)}\n▸ 눌러서 시작`;
   }
 
   // ------------------------------------------------------------ 루프
@@ -1116,6 +1195,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'select') {
       if (input.pressed('left')) selIndex = (selIndex + CHAR_DEFS.length - 1) % CHAR_DEFS.length;
       if (input.pressed('right')) selIndex = (selIndex + 1) % CHAR_DEFS.length;
+      if (input.pressed('up')) selIndex = (selIndex + CHAR_DEFS.length - SEL_COLS) % CHAR_DEFS.length;
+      if (input.pressed('down')) selIndex = (selIndex + SEL_COLS) % CHAR_DEFS.length;
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) startRun();
       selLayer.visible = phase === 'select';
       if (selLayer.visible) drawSelect(app.ticker.deltaMS);
@@ -1169,12 +1250,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const len = Math.hypot(ix, iy);
     if (len > 0) { ix /= len; iy /= len; }
 
-    // 몸은 쏘는 쪽을 본다. 겨눌 적이 없을 때만 이동 방향을 따른다.
-    // (예전엔 여기서 이동 방향으로 정하고 shoot() 이 뒤늦게 덮어썼는데,
-    //  그러면 이동 중에는 매 프레임 이동 방향이 이겨서 등지고 쏜다.)
+    // 몸은 쏘는 쪽을 본다 — 이동 방향을 따르면 등에서 탄이 나가는 그림이 된다.
+    //
+    // 대신 그러면 어디로 가는지가 안 읽힌다. 그건 몸 방향으로 풀지 않고
+    // 따로 표시한다: 진행 방향 반대쪽으로 발밑 먼지를 뿌리고, 바닥에 방향
+    // 화살표를 깐다. 몸은 조준, 발밑은 이동 — 둘이 안 싸운다.
     const aim = nearestFoe(px, py);
     if (aim) facing = aim.x >= px ? 1 : -1;
     else if (ix !== 0) facing = ix > 0 ? 1 : -1;
+
+    moveDirX = ix;
+    moveDirY = iy;
+    if (len > 0) {
+      dustAcc -= dt;
+      if (dustAcc <= 0) {
+        dustAcc = 0.045;
+        parts.push({
+          x: px - ix * 7, y: py - 1 - iy * 5,
+          vx: -ix * 34 + (Math.random() - 0.5) * 14,
+          vy: -iy * 26 + (Math.random() - 0.5) * 10,
+          life: 0.3, max: 0.3, color: 0x8ef0ff, size: 2,
+        });
+      }
+    }
 
     const wantDash = input.pressed('dash') || touchDash;
     touchDash = false;
@@ -1207,14 +1305,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const moving = len > 0;
     const idleTag = dashTimer > 0 ? 'dash' : moving ? 'run' : 'idle';
     let wantTag = idleTag;
+    swingGap -= dt;
+    // 콤보 태그가 있는 시트(제로)는 지금 몇 단째인지에 따라 태그가 달라진다
+    const comboTag = (): string => {
+      const t = comboStep === 0 ? 'attack_main' : `attack_main${comboStep + 1}`;
+      return hv.has(t) ? t : 'attack_main';
+    };
     if (firing) {
-      // 이동/대시 전용 공격 태그가 있으면 그걸 쓰고, 없으면 제자리 공격을
-      // 그대로 튼다. 없다고 그냥 달리기로 흘려보내면 제로처럼 run_attack 이
-      // 없는 시트는 움직이는 내내 세이버를 안 휘두른다.
       const moveTag = dashTimer > 0 ? 'dash_attack' : 'run_attack';
-      wantTag = dashTimer > 0 || moving
-        ? (hv.has(moveTag) ? moveTag : hv.has('attack_main') ? 'attack_main' : idleTag)
-        : 'attack_main';
+      if (!(dashTimer > 0 || moving)) {
+        wantTag = comboTag();
+      } else if (hv.has(moveTag)) {
+        // 이동 전용 공격 태그가 있으면(엑스) 그대로 쓴다 — 걷기와 사격이
+        // 한 태그에 들어 있어 고민할 게 없다.
+        wantTag = moveTag;
+      } else if (hv.has('attack_main')) {
+        // 없으면(제로) 걷기와 휘두르기를 번갈아 쓴다. 계속 휘두르게 두면
+        // 다리가 한 번도 안 움직여서 미끄러지듯 떠다니는 그림이 된다.
+        const swinging = hv.current.startsWith('attack_main') && !hv.finished;
+        wantTag = swinging || swingGap <= 0 ? comboTag() : idleTag;
+      } else {
+        wantTag = idleTag;
+      }
     }
     // 콤보 중간 단(attack_main2/3)이 재생 중이면 끊지 않는다 — 매 프레임
     // attack_main 으로 되돌리면 2단 이후가 첫 프레임에서 잘려 안 보인다.
@@ -1223,15 +1335,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서
     // 부들거리기만 하므로, 한 번 끝까지 재생된 뒤에만 다시 튼다.
-    if (firing && hv.finished && attackBeat <= 0) {
+    if (firing && hv.finished && attackBeat <= 0 && wantTag !== idleTag) {
       attackBeat = 0.05;
       // 제로처럼 콤보 태그를 가진 시트는 돌려가며 틀어 같은 동작만
       // 반복되지 않게 한다.
       if (hv.current.startsWith('attack_main')) {
         comboStep = (comboStep + 1) % 3;
-        const next = comboStep === 0 ? 'attack_main' : `attack_main${comboStep + 1}`;
-        if (hv.has(next)) hv.play(next, 'attack_main');
-        else { comboStep = 0; hv.restart(); }
+        if (moving && !hv.has('run_attack')) {
+          // 한 번 휘두르고 나면 걷기를 보여준 뒤 다음 단을 낸다.
+          // 여기서 바로 다음 스윙을 틀면 다리가 한 번도 안 움직인다.
+          swingGap = 0.3;
+          hv.play(idleTag, idleTag);
+        } else {
+          hv.play(comboTag(), 'attack_main');
+        }
       } else {
         hv.restart();
       }
@@ -1275,7 +1392,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 뒤처진 개체는 조용히 치운다. 안 치우면 못 죽인 적이 영원히 따라와
       // 쌓이기만 해서, 한 번 밀리는 순간 회복이 불가능한 죽음의 나선이 된다.
       // 스폰 반경보다 넉넉히 바깥이라 화면에서 사라지는 게 보이지는 않는다.
-      if (!f.elite && (Math.abs(dx) > 640 || Math.abs(dy) > 380)) {
+      if (!f.elite && (Math.abs(dx) > 360 || Math.abs(dy) > 620)) {
         retire(f);
         continue;
       }
@@ -1459,8 +1576,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function draw(dt: number): void {
     // 카메라
     if (shake > 0) shake = Math.max(0, shake - dt * 26);
-    const camX = clamp(px - GAME_W / 2, 0, ARENA_W - GAME_W);
-    const camY = clamp(py - GAME_H / 2, 0, ARENA_H - GAME_H);
+    const camX = clamp(px - W / 2, 0, ARENA_W - W);
+    const camY = clamp(py - H / 2, 0, ARENA_H - H);
     const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     world.position.set(Math.round(-camX + sx), Math.round(-camY + sy));
@@ -1468,9 +1585,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 화면 밖은 그리지 않는다. 탄 수백 발이 상시 떠 있는 게임이라
     // 이걸 안 하면 안 보이는 탄을 그리느라 프레임이 반으로 떨어진다.
     const vx0 = camX - 24;
-    const vx1 = camX + GAME_W + 24;
+    const vx1 = camX + W + 24;
     const vy0 = camY - 24;
-    const vy1 = camY + GAME_H + 24;
+    const vy1 = camY + H + 24;
     const onScreen = (x: number, y: number): boolean => x > vx0 && x < vx1 && y > vy0 && y < vy1;
 
     // 파티클 — 색깔별로 묶어서 fill 을 한 번씩만 부른다.
@@ -1508,7 +1625,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       drew = true;
     }
     if (drew) {
-      bulletG.stroke({ color: shotColor, width: 6, alpha: 0.4 });
+      // 밝아진 배경에 탄이 묻히지 않도록 어두운 외곽선을 먼저 깐다
+      bulletG.stroke({ color: 0x0a1024, width: 7, alpha: 0.55 });
+      for (const b of bullets) {
+        if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
+        bulletG.moveTo(b.x - b.vx * 0.028, b.y - b.vy * 0.028).lineTo(b.x, b.y);
+      }
+      bulletG.stroke({ color: shotColor, width: 5, alpha: 0.55 });
       for (const b of bullets) {
         if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
         bulletG.moveTo(b.x - b.vx * 0.016, b.y - b.vy * 0.016).lineTo(b.x, b.y);
@@ -1546,6 +1669,27 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       outline = true;
     }
     if (outline) specialG.stroke({ color: 0xffffff, width: 1, alpha: 0.5 });
+
+    // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
+    if (phase === 'play' && (moveDirX !== 0 || moveDirY !== 0)) {
+      const a = Math.atan2(moveDirY * 0.78, moveDirX);
+      const bx = px + Math.cos(a) * 18;
+      const by = py + 2 + Math.sin(a) * 13;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const tri = (k: number): void => {
+        specialG
+          .moveTo(bx + c * (7 + k), by + s * (7 + k))
+          .lineTo(bx - (c * 3 + k) - s * (6 + k), by - (s * 3 + k) + c * (6 + k))
+          .lineTo(bx - (c * 3 + k) + s * (6 + k), by - (s * 3 + k) - c * (6 + k))
+          .closePath();
+      };
+      // 밝은 배경에 묻히지 않게 어두운 테두리를 깔고 그 위에 얹는다
+      tri(1.5);
+      specialG.fill({ color: 0x08101f, alpha: 0.75 });
+      tri(0);
+      specialG.fill({ color: 0x8ef0ff, alpha: 0.95 });
+    }
 
     // 실드 구슬
     for (const o of orbs) {
@@ -1604,22 +1748,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // HUD
     hudBar.clear();
-    hudBar.rect(0, 0, GAME_W, 18).fill({ color: 0x000000, alpha: 0.5 });
+    // 세로 화면은 폭이 270뿐이라 한 줄에 다 못 넣는다 — 두 줄로 나눈다
+    hudBar.rect(0, 0, W, 26).fill({ color: 0x000000, alpha: 0.55 });
     // 체력
-    hudBar.rect(6, 14, 120, 4).fill({ color: 0x2a1420 });
-    hudBar.rect(6, 14, Math.round(120 * clamp(hp / maxHp, 0, 1)), 4).fill({ color: 0xff5c78 });
+    hudBar.rect(6, 17, 120, 5).fill({ color: 0x2a1420 });
+    hudBar.rect(6, 17, Math.round(120 * clamp(hp / maxHp, 0, 1)), 5).fill({ color: 0xff5c78 });
     // 경험치
-    hudBar.rect(0, 18, GAME_W, 2).fill({ color: 0x12203a });
-    hudBar.rect(0, 18, Math.round(GAME_W * clamp(xp / xpNeed, 0, 1)), 2).fill({ color: 0x4fd6e8 });
+    hudBar.rect(0, 26, W, 2).fill({ color: 0x12203a });
+    hudBar.rect(0, 26, Math.round(W * clamp(xp / xpNeed, 0, 1)), 2).fill({ color: 0x4fd6e8 });
 
     // 보유 특수무기 — 색 칸과 레벨 눈금. 뭘 뽑았는지 한눈에 보여야 한다
     let hx = 134;
     for (const def of SPECIALS) {
       const lv = owned.get(def.id) ?? 0;
       if (!lv) continue;
-      hudBar.rect(hx, 12, 9, 8).fill({ color: def.color });
-      for (let i = 0; i < lv; i++) hudBar.rect(hx + i * 2, 9, 1, 2).fill({ color: 0xffffff });
-      hx += 13;
+      hudBar.rect(hx, 16, 10, 7).fill({ color: def.color });
+      for (let i = 0; i < lv; i++) hudBar.rect(hx + i * 2, 13, 1, 2).fill({ color: 0xffffff });
+      hx += 14;
     }
 
     // 튜닝용 계측 — 화면만 보고 "적당히 많네" 하고 넘기면 밀도를 못 맞춘다
@@ -1643,23 +1788,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     lvLabel.text = `Lv.${level}`;
 
     if (phase === 'dead') {
-      centerLabel.position.set(GAME_W / 2, GAME_H / 2 - 20);
+      centerLabel.position.set(W / 2, H / 2 - 20);
       centerLabel.text = '격 파 당 함';
-      subLabel.text = `${charDef.name} · ${Math.floor(time)}초 생존 · ${kills}킬 · Lv.${level}\n화면을 누르면 같은 캐릭터로 재시도`;
+      subLabel.text = `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}\n화면을 누르면 재시도`;
       hintLabel.text = '';
       cardG.clear();
+      // 밝아진 배경 위에서는 글자만 얹으면 안 읽힌다 — 판을 깔고 올린다
+      for (const t of cardTexts) t.text = '';
+      for (const b of cardBadges) b.visible = false;
+      cardG.roundRect(16, H / 2 - 46, W - 32, 92, 5).fill({ color: 0x05070f, alpha: 0.88 });
+      cardG.roundRect(16, H / 2 - 46, W - 32, 92, 5).stroke({ color: 0x3a4a90, width: 1 });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).fill({ color: 0x16203f });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).stroke({ color: 0x4f6198, width: 1 });
       charBtnLabel.visible = true;
     } else if (phase === 'pick') {
-      centerLabel.text = '';
+      // drawPick() 이 먼저 돌고 draw() 가 나중이라, 여기서 비우면 제목이 지워진다
+      centerLabel.position.set(W / 2, 42);
+      centerLabel.text = 'LEVEL UP';
       subLabel.text = '';
-      hintLabel.text = '카드를 눌러 선택 (← → · Z 도 됨)';
+      hintLabel.text = '카드를 눌러 선택';
     } else {
       centerLabel.text = '';
       subLabel.text = '';
-      hintLabel.text =
-        time < 8 ? (touchMode ? '왼쪽을 끌어 이동 · 사격은 자동' : '방향키 이동 · C 대시 · 사격은 자동') : '';
+      hintLabel.text = time < 8 ? (touchMode ? '끌어서 이동 · 사격 자동' : '방향키 이동 · 사격 자동') : '';
     }
 
     if (phase !== 'pick' && phase !== 'dead') {
@@ -1694,22 +1845,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   function drawPick(): void {
     cardG.clear();
-    cardG.rect(0, 0, GAME_W, GAME_H).fill({ color: 0x05070f, alpha: 0.72 });
-    const head = 'LEVEL UP';
-    centerLabel.text = head;
-    centerLabel.position.set(GAME_W / 2, 42);
-    subLabel.text = '';
+    cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.72 });
 
-    // 손가락으로 짚을 카드라 화면 높이의 절반 가까이 크게 잡는다
-    const cw = 168;
-    const ch = 116;
-    const cy = 66;
-    const gap = 12;
-    const total = pickList.length * cw + (pickList.length - 1) * gap;
-    const x0 = (GAME_W - total) / 2;
+    // 세로 화면이라 카드를 가로로 늘어놓을 수 없다 — 위에서 아래로 쌓는다.
+    // 손가락으로 짚을 거라 한 장을 화면 폭 거의 전부로 잡는다.
+    const cw = W - 28;
+    const ch = 86;
+    const gap = 14;
+    const total = pickList.length * ch + (pickList.length - 1) * gap;
+    const x = 14;
+    const y0 = (H - total) / 2 + 10;
     cardRects.length = 0;
     for (let i = 0; i < pickList.length; i++) {
-      const x = x0 + i * (cw + gap);
+      const cy = y0 + i * (ch + gap);
       const on = i === pickIndex;
       cardRects.push({ x, y: cy, w: cw, h: ch });
       const o = pickList[i];
@@ -1734,12 +1882,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         desc.text = o.def.desc(o.lv);
         badge.text = isNew ? 'NEW' : `Lv.${o.lv} → ${o.lv + 1}`;
         badge.style.fill = isNew ? 0xffd85c : 0x8ef0ff;
-        badge.position.set(x + cw / 2, cy + 20);
+        badge.position.set(x + cw / 2, cy + 18);
       }
       badge.visible = badge.text !== '';
       name.style.fill = on ? 0xffffff : 0x9fb0dd;
-      name.position.set(x + cw / 2, cy + 50);
-      desc.position.set(x + cw / 2, cy + 76);
+      name.position.set(x + cw / 2, cy + 43);
+      desc.position.set(x + cw / 2, cy + 66);
     }
     for (let i = pickList.length; i < 3; i++) {
       cardTexts[i * 2].text = '';

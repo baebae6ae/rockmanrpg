@@ -68,6 +68,16 @@ async function boot(): Promise<void> {
     roundPixels: true,
   });
 
+  const input = new Input(canvas);
+
+  // 몰이사냥 프로토타입은 화면 비율부터 다르다(세로). 아래 fit() 이 걸리기
+  // 전에 넘겨서 자기 해상도로 직접 잡게 한다.
+  if (new URLSearchParams(location.search).has('horde')) {
+    const { runHordeProto } = await import('./proto/horde');
+    await runHordeProto(app, input);
+    return;
+  }
+
   // 백버퍼는 GAME_W×GAME_H 고정. 확대는 CSS 가 맡으므로 도트가 보간되지 않는다.
   const fit = (): void => {
     const scale = computeScale(window.innerWidth, window.innerHeight);
@@ -81,16 +91,9 @@ async function boot(): Promise<void> {
   window.addEventListener('resize', fit);
   window.addEventListener('orientationchange', () => setTimeout(fit, 100));
 
-  const input = new Input(canvas);
-
   // 기획 프로토타입 — 본편과 완전히 분리해서 쿼리로만 들어간다.
   // 재미가 검증되면 본편으로 승격하고, 아니면 이 블록만 지우면 된다.
   const proto = new URLSearchParams(location.search);
-  if (proto.has('horde')) {
-    const { runHordeProto } = await import('./proto/horde');
-    await runHordeProto(app, input);
-    return;
-  }
   if (proto.has('mook')) {
     const { runMookProto } = await import('./proto/mook');
     await runMookProto(app, input);
