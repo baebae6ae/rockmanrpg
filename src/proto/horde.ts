@@ -51,15 +51,67 @@ interface KindDef {
   scale: number;
 }
 
+/**
+ * 잡몹 행동. 전부 똑같이 쫓아오기만 하면 200마리가 한 덩어리로 움직여서
+ * 볼 게 없다. 붙는 놈·튀는 놈·파고드는 놈·쏘는 놈으로 갈라 놓으면
+ * 같은 수라도 화면이 훨씬 살아난다.
+ */
+type Behavior = 'chase' | 'hop' | 'charge' | 'shooter';
+
+const BEHAVIOR: Record<FoeKind, Behavior> = {
+  crawler: 'chase',
+  walker: 'chase',
+  hopper: 'hop',
+  fang_rusher: 'charge',
+  sniper_drone: 'shooter',
+};
+
 const KINDS: Record<FoeKind, KindDef> = {
   crawler: { hp: 6, speed: 34, r: 9, touch: 7, xp: 1, scale: 0.9 },
   walker: { hp: 10, speed: 44, r: 10, touch: 9, xp: 1, scale: 1 },
   hopper: { hp: 5, speed: 62, r: 8, touch: 7, xp: 1, scale: 0.85 },
-  fang_rusher: { hp: 14, speed: 78, r: 10, touch: 12, xp: 2, scale: 1 },
+  fang_rusher: { hp: 14, speed: 78, r: 10, touch: 9, xp: 2, scale: 1 },
   sniper_drone: { hp: 8, speed: 50, r: 9, touch: 8, xp: 2, scale: 0.9 },
 };
 
 const KIND_LIST = Object.keys(KINDS) as FoeKind[];
+
+/**
+ * 스폰 비율. 균등하게 뽑으면 사격형이 다섯 중 하나가 되는데, 화면에 100
+ * 마리가 있으면 그중 20마리가 계속 쏴대서 피할 수가 없다. 쏘는 놈은
+ * 어쩌다 하나 섞여야 위협으로 읽히지, 흔하면 그냥 환경 피해가 된다.
+ */
+const SPAWN_WEIGHT: Record<FoeKind, number> = {
+  crawler: 30,
+  walker: 25,
+  hopper: 22,
+  fang_rusher: 16,
+  sniper_drone: 7,
+};
+const SPAWN_TOTAL = KIND_LIST.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
+
+function pickKind(): FoeKind {
+  let r = Math.random() * SPAWN_TOTAL;
+  for (const k of KIND_LIST) {
+    r -= SPAWN_WEIGHT[k];
+    if (r <= 0) return k;
+  }
+  return KIND_LIST[0];
+}
+
+/** 보스로 쓸 대형 적 — 전부 telegraph/attack 태그를 가진 시트다 */
+const BOSS_IDS = [
+  'spark_mandriller', 'sting_chameleon', 'boomer_kuwanger', 'titan_breaker',
+  'guard_turtlan', 'rapier_phantom', 'longshot_eaglet', 'crimson_barrier',
+];
+
+interface EnemyLite { id: string; name?: string }
+const ENEMY_NAMES: Record<string, string> = {};
+for (const e of Object.values(
+  import.meta.glob('/data/enemies/*.json', { eager: true, import: 'default' }) as Record<string, EnemyLite>,
+)) {
+  if (e.name) ENEMY_NAMES[e.id] = e.name;
+}
 
 interface Foe {
   kind: FoeKind;
@@ -74,6 +126,42 @@ interface Foe {
   flash: number;
   view: AnimView;
   alive: boolean;
+  /** 행동 단계 (0=평소, 1=준비, 2=돌진/사격) */
+  mode: number;
+  timer: number;
+  /** 돌진할 때 고정해 두는 방향 */
+  ax: number;
+  ay: number;
+}
+
+/** 적이 쏘는 탄 — 플레이어만 맞힌다 */
+interface Hostile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  r: number;
+  dmg: number;
+  color: number;
+}
+
+/**
+ * 보스 — 60초마다 하나 나온다.
+ * 준비 동작(telegraph)을 확실히 보여주고 나서 사방으로 탄을 뿌린다.
+ * 잡몹은 붙어야 아프지만 보스는 멀리서도 아프므로 계속 움직여야 한다.
+ */
+interface Boss {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  view: AnimView;
+  mode: number;
+  timer: number;
+  flash: number;
 }
 
 /** 궤적선(버스터) / 회전 날(메탈 블레이드) / 구체(토네이도·미사일·폭탄) */
@@ -134,6 +222,13 @@ interface Gem {
   vy: number;
   val: number;
   alive: boolean;
+}
+
+/** 가끔 떨어지는 회복 캡슐 */
+interface Heal {
+  x: number;
+  y: number;
+  life: number;
 }
 
 interface Part {
@@ -412,6 +507,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   stageLabel.visible = false;
   ui.addChild(stageLabel);
 
+  const bossLabel = new Text({ text: '', style: { ...mono, fontSize: 9, fill: 0xffb0c8 } });
+  bossLabel.anchor.set(0.5, 0);
+  bossLabel.position.set(W / 2, 30);
+  bossLabel.visible = false;
+  ui.addChild(bossLabel);
+
   const muteLabel = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
   muteLabel.anchor.set(1, 1);
   muteLabel.position.set(W - 4, H - 3);
@@ -474,6 +575,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const rings: Ring[] = [];
   const bolts: Bolt[] = [];
   const arcs: Arc[] = [];
+  const hostiles: Hostile[] = [];
+  const heals: Heal[] = [];
+  const bossSheets = new Map<string, Sheet>();
+  let boss: Boss | null = null;
+  let bossAt = 70;
+  let bossBanner = 0;
+  let bossKills = 0;
   const pools = new Map<FoeKind, AnimView[]>();
   const grid: Foe[][] = Array.from({ length: GRID_W * GRID_H }, () => []);
   const cellIndex = (x: number, y: number): number => {
@@ -750,7 +858,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   function spawnFoe(elite: boolean): void {
     if (foes.length >= MAX_FOES) return;
-    const kind = KIND_LIST[Math.floor(Math.random() * KIND_LIST.length)];
+    const kind = pickKind();
     const def = KINDS[kind];
     // 원형으로 뿌리면 화면 비율이 안 맞는 축의 개체가 한참을 걸어온다.
     // 화면(세로) 비율에 맞춘 타원 바로 바깥에 뿌려야 스폰 즉시 압박이 된다.
@@ -772,6 +880,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foeLayer.addChild(view);
 
     foes.push({
+      mode: 0, timer: Math.random() * 1.2, ax: 0, ay: 0,
       kind, x, y, kx: 0, ky: 0,
       hp: def.hp * grow * (elite ? 7 : 1),
       def, scale, elite, flash: 0, view, alive: true,
@@ -806,6 +915,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     f.alive = false;
     kills++;
     spawnPart(f.x, f.y - 8, f.elite ? 26 : 9, f.elite ? 0xffc45c : 0xff9a4c, f.elite ? 190 : 130);
+    // 아주 가끔 회복 캡슐 — 흔하면 긴장이 사라지고, 없으면 회복 수단이
+    // 레벨업 카드뿐이라 후반에 손쓸 방법이 없다.
+    if (Math.random() < (f.elite ? 0.4 : 0.014) && heals.length < 6) {
+      heals.push({ x: f.x, y: f.y - 6, life: 14 });
+    }
     const drops = f.elite ? 8 : 1;
     for (let i = 0; i < drops; i++) {
       pushGem(f.x, f.y - 6, f.def.xp * (f.elite ? 3 : 1));
@@ -847,6 +961,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       homing: 0, boomR: 0, boomDmg: 0,
       ...b,
     } as Bullet);
+  }
+
+  /** 보스에게 피해를 준다 — 죽으면 정리까지 */
+  function hurtBoss(amount: number): void {
+    const b = boss;
+    if (!b) return;
+    b.hp -= amount;
+    b.flash = 0.07;
+    b.view.tint = 0xff5c5c;
+    if (b.hp <= 0) killBoss();
   }
 
   /** 반경 안의 적을 한꺼번에 때린다 (크래시 봄버·번개) */
@@ -898,6 +1022,133 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       spawnPart(f.x, f.y - 8, 3, 0xfff2c0, 120);
       if (f.hp <= 0) killFoe(f);
     }
+
+    const b = boss;
+    if (b) {
+      const dx = b.x - px;
+      const dy = (b.y - 14 - (py - 10)) / 0.78;
+      const reach = w.arcR + 18;
+      if (dx * dx + dy * dy <= reach * reach) {
+        let d = Math.atan2(dy, dx) - angle;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        if (Math.abs(d) <= half) {
+          hurtBoss(w.dmg);
+          spawnPart(b.x, b.y - 14, 4, 0xfff2c0, 140);
+        }
+      }
+    }
+  }
+
+  function fireHostile(x: number, y: number, ang: number, speed: number, dmg: number, color: number): void {
+    if (hostiles.length > 220) hostiles.shift();
+    hostiles.push({
+      x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed * 0.8,
+      life: 3.4, r: 4, dmg, color,
+    });
+  }
+
+  async function spawnBoss(): Promise<void> {
+    if (boss) return;
+    const id = BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)];
+    let sheet = bossSheets.get(id);
+    if (!sheet) {
+      sheet = await loadSheet('enemies', id);
+      bossSheets.set(id, sheet);
+    }
+    const view = new AnimView(sheet);
+    view.play('move');
+    view.scale.set(1.9, 1.9);
+    foeLayer.addChild(view);
+    const a = Math.random() * Math.PI * 2;
+    const maxHp = Math.round(220 + time * 46);
+    boss = {
+      id, name: ENEMY_NAMES[id] ?? id,
+      x: clamp(px + Math.cos(a) * 190, 40, ARENA_W - 40),
+      y: clamp(py + Math.sin(a) * 300, 40, ARENA_H - 40),
+      hp: maxHp, maxHp, view, mode: 0, timer: 2.4, flash: 0,
+    };
+    bossBanner = 2.4;
+    sfx.boss();
+    shake = 8;
+  }
+
+  /** 보스 행동 — 다가오다가 준비 동작을 보이고 사방으로 뿌린다 */
+  function updateBoss(dt: number): void {
+    const b = boss;
+    if (!b) return;
+    const dx = px - b.x;
+    const dy = py - b.y;
+    const d = Math.hypot(dx, dy) || 1;
+
+    if (b.flash > 0) {
+      b.flash -= dt;
+      if (b.flash <= 0) b.view.tint = 0xffffff;
+    }
+
+    b.timer -= dt;
+    if (b.mode === 0) {
+      // 접근
+      const sp = 44;
+      b.x += (dx / d) * sp * dt;
+      b.y += (dy / d) * sp * 0.78 * dt;
+      b.view.play('move', 'idle');
+      if (b.timer <= 0) { b.mode = 1; b.timer = 0.85; }
+    } else if (b.mode === 1) {
+      // 준비 — 멈춰서 부풀어오른다. 여기가 보이니까 피할 수 있다.
+      b.view.play('telegraph', 'idle');
+      b.view.tint = Math.floor(b.timer * 18) % 2 === 0 ? 0xffc0c0 : 0xffffff;
+      if (b.timer <= 0) {
+        b.mode = 2;
+        b.timer = 0.45;
+        b.view.tint = 0xffffff;
+        b.view.play('attack_1', 'idle');
+        const n = 10 + Math.floor(time / 45);
+        const base = Math.atan2(dy, dx);
+        for (let i = 0; i < n; i++) {
+          fireHostile(b.x, b.y - 10, base + (i / n) * Math.PI * 2, 118, 13, 0xff77c8);
+        }
+        // 플레이어를 정조준하는 한 줄도 같이 — 가만히 있으면 맞는다
+        for (let i = -1; i <= 1; i++) {
+          fireHostile(b.x, b.y - 10, base + i * 0.16, 168, 13, 0xffd05c);
+        }
+        sfx.explode();
+        shake = Math.max(shake, 5);
+      }
+    } else {
+      if (b.timer <= 0) { b.mode = 0; b.timer = 2.6; }
+    }
+
+    b.x = clamp(b.x, 20, ARENA_W - 20);
+    b.y = clamp(b.y, 24, ARENA_H - 12);
+    b.view.scale.x = dx < 0 ? -1.9 : 1.9;
+    b.view.update(app.ticker.deltaMS);
+    b.view.position.set(Math.round(b.x), Math.round(b.y));
+    b.view.zIndex = b.y;
+
+    // 접촉 피해
+    if (iframe <= 0 && d < 26) {
+      hp -= 15;
+      iframe = 0.85;
+      hitstop = 0.06;
+      shake = 9;
+      spawnPart(px, py - 10, 16, 0xff5c5c, 160);
+      sfx.hurt();
+      if (hp <= 0) { hp = 0; phase = 'dead'; deadTimer = 0; sfx.dead(); }
+    }
+  }
+
+  function killBoss(): void {
+    const b = boss;
+    if (!b) return;
+    for (let i = 0; i < 26; i++) pushGem(b.x, b.y - 8, 4);
+    spawnPart(b.x, b.y - 10, 60, 0xffc45c, 220);
+    rings.push({ x: b.x, y: b.y - 10, r: 70, life: 0.5, max: 0.5, color: 0xffd05c });
+    shake = 14;
+    sfx.explode();
+    foeLayer.removeChild(b.view);
+    boss = null;
+    bossKills++;
   }
 
   function nearestFoe(fx: number, fy: number): Foe | null {
@@ -1240,6 +1491,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     rings.length = 0;
     bolts.length = 0;
     arcs.length = 0;
+    hostiles.length = 0;
+    heals.length = 0;
+    if (boss) { foeLayer.removeChild(boss.view); boss = null; }
+    bossAt = 70;
+    bossBanner = 0;
+    bossKills = 0;
     owned.clear();
     cooldowns.clear();
     orbs.length = 0;
@@ -1354,6 +1611,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const st = styleOf(d);
     selHint.text =
       `${d.name} — ${STYLE_NAME[st]}\n${STYLE_DESC[st]}\n체력 ${Math.round(d.base_stats.hp * 1.2)}   ▸ 눌러서 시작`;
+  }
+
+  // 튜닝용 훅 — 매 프레임 다시 만들면 쓸데없는 할당이 된다. 한 번만 붙인다.
+  {
+    const dbg = window as unknown as Record<string, unknown>;
+    dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
+    dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
   }
 
   // ------------------------------------------------------------ 루프
@@ -1546,6 +1810,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sfx.stage();
     }
 
+    if (time >= bossAt && !boss) {
+      bossAt += 62;
+      void spawnBoss();
+    }
+    if (bossBanner > 0) bossBanner -= dt;
+    updateBoss(dt);
+
     if (time >= surgeAt) {
       surgeAt += 24;
       const elites = 1 + Math.floor(time / 50);
@@ -1582,9 +1853,53 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const d = Math.hypot(dx, dy) || 1;
       // 초반 접근을 느리게 잡는다 — 화력이 1발일 때 정속으로 몰려오면
       // 포위가 끝나는 데 20초도 안 걸린다.
-      const sp = f.def.speed * (f.elite ? 0.8 : 1) * Math.min(1.2, 0.78 + time * 0.0045);
-      f.x += (dx / d) * sp * dt + f.kx * dt;
-      f.y += (dy / d) * sp * 0.78 * dt + f.ky * dt;
+      const ramp = Math.min(1.2, 0.78 + time * 0.0045);
+      let sp = f.def.speed * (f.elite ? 0.8 : 1) * ramp;
+      let toward = 1;
+      /** 돌진 중이면 목표를 계속 쫓지 않고 고정 방향으로만 간다 */
+      let locked = false;
+
+      f.timer -= dt;
+      switch (BEHAVIOR[f.kind]) {
+        case 'hop':
+          // 튀어오르듯 끊어서 온다 — 멈췄다 붙는다
+          if (f.timer <= 0) { f.mode = f.mode === 0 ? 1 : 0; f.timer = f.mode === 1 ? 0.3 : 0.5; }
+          sp *= f.mode === 1 ? 2.1 : 0.18;
+          break;
+        case 'charge':
+          // 파고드는 놈 — 멈춰 노려보다가(붉게) 직선으로 꽂힌다.
+          // 돌진 방향을 그 순간에 고정하는 게 핵심이다. 계속 따라오게 두면
+          // 플레이어보다 빠른 이상 절대 못 피해서 그냥 맞는 함정이 된다.
+          if (f.mode === 0 && f.timer <= 0 && d < 170) { f.mode = 1; f.timer = 0.5; }
+          else if (f.mode === 1 && f.timer <= 0) {
+            f.mode = 2;
+            f.timer = 0.42;
+            f.ax = dx / d;
+            f.ay = dy / d;
+          } else if (f.mode === 2 && f.timer <= 0) { f.mode = 0; f.timer = 1.3; }
+          if (f.mode === 1) { sp *= 0.08; if (f.flash <= 0) f.view.tint = 0xffa0a0; }
+          else if (f.mode === 2) { sp *= 2.3; locked = true; }
+          else if (f.flash <= 0) f.view.tint = f.elite ? 0xffb0b0 : 0xffffff;
+          break;
+        case 'shooter':
+          // 거리를 두고 쏜다 — 붙으면 물러난다
+          if (d < 120) toward = -1;
+          else if (d < 200) toward = 0;
+          if (f.timer <= 0) {
+            f.timer = 3.4 + Math.random() * 1.4;
+            if (d < 260) {
+              fireHostile(f.x, f.y - 8, Math.atan2(dy, dx), 128, 6, 0xff77c8);
+            }
+          }
+          break;
+        default:
+          break;
+      }
+
+      const mvx = locked ? f.ax : (dx / d) * toward;
+      const mvy = locked ? f.ay : (dy / d) * toward;
+      f.x += mvx * sp * dt + f.kx * dt;
+      f.y += mvy * sp * 0.78 * dt + f.ky * dt;
       f.kx *= 0.86;
       f.ky *= 0.86;
 
@@ -1601,7 +1916,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const rr = f.def.r * f.scale + PLAYER_R;
       if (iframe <= 0 && dx * dx + dy * dy < rr * rr) {
         hp -= f.def.touch * (f.elite ? 2 : 1);
-        iframe = 0.72;
+        iframe = 0.82;
         hitstop = 0.055;
         shake = 8;
         spawnPart(px, py - 10, 14, 0xff5c5c, 150);
@@ -1684,6 +1999,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         bullets.splice(i, 1);
         continue;
       }
+      // 보스는 격자에 안 들어가므로 따로 본다
+      const bs = boss;
+      if (bs && b.lastHit === null) {
+        const bdx = bs.x - b.x;
+        const bdy = bs.y - 14 - b.y;
+        const brr = 18 + b.r;
+        if (bdx * bdx + bdy * bdy <= brr * brr) {
+          if (b.boomR > 0) {
+            blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
+          } else {
+            hurtBoss(b.dmg);
+            spawnPart(b.x, b.y, 3, 0xfff0a0, 120);
+            sfx.hit();
+          }
+          if (b.pierce > 0) b.pierce--;
+          else { bullets.splice(i, 1); continue; }
+        }
+      }
+
       const cx = Math.floor(b.x / GRID_CELL);
       const cy = Math.floor(b.y / GRID_CELL);
       // 한 프레임에 한 번만 맞는다 — 안 그러면 인접 칸을 도는 동안
@@ -1730,6 +2064,52 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     updateOrbs(dt);
+
+    // ---- 적 탄
+    for (let i = hostiles.length - 1; i >= 0; i--) {
+      const h = hostiles[i];
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.life -= dt;
+      if (h.life <= 0 || h.x < -20 || h.x > ARENA_W + 20 || h.y < -20 || h.y > ARENA_H + 20) {
+        hostiles.splice(i, 1);
+        continue;
+      }
+      const dx = px - h.x;
+      const dy = py - 10 - h.y;
+      const rr = h.r + PLAYER_R;
+      if (dx * dx + dy * dy > rr * rr) continue;
+      hostiles.splice(i, 1);
+      if (iframe > 0) continue;
+      hp -= h.dmg;
+      iframe = 0.72;
+      hitstop = 0.05;
+      shake = 7;
+      spawnPart(px, py - 10, 12, 0xff5c5c, 150);
+      sfx.hurt();
+      if (hp <= 0) {
+        hp = 0;
+        phase = 'dead';
+        deadTimer = 0;
+        spawnPart(px, py - 10, 40, 0xffffff, 220);
+        shake = 12;
+        sfx.dead();
+      }
+    }
+
+    // ---- 회복 캡슐
+    for (let i = heals.length - 1; i >= 0; i--) {
+      const cap = heals[i];
+      cap.life -= dt;
+      if (cap.life <= 0) { heals.splice(i, 1); continue; }
+      const dx = px - cap.x;
+      const dy = py - 8 - cap.y;
+      if (dx * dx + dy * dy > 13 * 13) continue;
+      heals.splice(i, 1);
+      hp = Math.min(maxHp, hp + 20);
+      spawnPart(px, py - 10, 12, 0x8ef0ff, 110);
+      sfx.pick();
+    }
 
     // ---- 경험치
     for (let i = gems.length - 1; i >= 0; i--) {
@@ -1902,6 +2282,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     if (outline) specialG.stroke({ color: 0xffffff, width: 1, alpha: 0.5 });
 
+    // 적 탄 — 내 탄과 헷갈리면 안 되므로 분홍 계열에 어두운 테두리
+    for (const h of hostiles) {
+      if (!onScreen(h.x, h.y)) continue;
+      specialG.circle(h.x, h.y, h.r + 2);
+    }
+    if (hostiles.length) specialG.fill({ color: 0x1a0a16, alpha: 0.8 });
+    for (const h of hostiles) {
+      if (!onScreen(h.x, h.y)) continue;
+      specialG.circle(h.x, h.y, h.r);
+    }
+    if (hostiles.length) specialG.fill({ color: 0xff77c8 });
+    for (const h of hostiles) {
+      if (!onScreen(h.x, h.y)) continue;
+      specialG.circle(h.x, h.y, Math.max(1, h.r - 2));
+    }
+    if (hostiles.length) specialG.fill({ color: 0xffe0f4 });
+
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
     if (phase === 'play' && (moveDirX !== 0 || moveDirY !== 0)) {
       const a = Math.atan2(moveDirY * 0.78, moveDirX);
@@ -1968,6 +2365,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       gemG.fill({ color: 0xd8fbff });
     }
 
+    // 회복 캡슐 — 곧 사라질 때는 깜빡여서 알린다
+    for (const cap of heals) {
+      if (!onScreen(cap.x, cap.y)) continue;
+      if (cap.life < 3 && Math.floor(cap.life * 6) % 2 === 0) continue;
+      gemG.rect(cap.x - 5, cap.y - 5, 10, 10).fill({ color: 0x0a1024 });
+      gemG.rect(cap.x - 4, cap.y - 4, 8, 8).fill({ color: 0x3fd06a });
+      gemG.rect(cap.x - 1, cap.y - 3, 2, 6).fill({ color: 0xdcffe8 });
+      gemG.rect(cap.x - 3, cap.y - 1, 6, 2).fill({ color: 0xdcffe8 });
+    }
+
+
     // 옵션 유닛
     droneG.clear();
     for (let d = 0; d < w.drones; d++) {
@@ -2019,7 +2427,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       : null;
     dbg.__hordePickIndex = pickIndex;
     dbg.__hordeTheme = theme.id;
-    dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
+    dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp } : null;
+    dbg.__hordeHostiles = hostiles.length;
 
     // 구역 배너 — 바뀐 직후 잠깐 뜬다
     stageLabel.visible = stageBanner > 0 && phase === 'play';
@@ -2030,6 +2439,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
 
+    // 보스 체력 — 화면 위에 따로 붙인다. 얼마나 남았는지가 안 보이면
+    // 언제까지 버텨야 하는지를 몰라서 그냥 도망만 다니게 된다.
+    bossLabel.visible = !!boss && phase === 'play';
+    if (boss && phase === 'play') {
+      bossLabel.text = boss.name;
+      const bw = W - 40;
+      hudBar.rect(20, 42, bw, 6).fill({ color: 0x2a1420 });
+      hudBar.rect(20, 42, Math.round(bw * clamp(boss.hp / boss.maxHp, 0, 1)), 6).fill({ color: 0xff5c78 });
+      hudBar.rect(20, 42, bw, 1).fill({ color: 0xffb0c8, alpha: 0.6 });
+    }
+    if (bossBanner > 0 && phase === 'play') {
+      stageLabel.visible = true;
+      stageLabel.text = '경 고';
+      stageLabel.style.fill = 0xff5c78;
+      stageLabel.alpha = Math.floor(bossBanner * 8) % 2 === 0 ? 1 : 0.25;
+    }
+
     timeLabel.text = `${Math.floor(time)}s`;
     killLabel.text = `KILL ${kills}`;
     lvLabel.text = `Lv.${level}`;
@@ -2037,7 +2463,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'dead') {
       centerLabel.position.set(W / 2, H / 2 - 20);
       centerLabel.text = '격 파 당 함';
-      subLabel.text = `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}\n화면을 누르면 재시도`;
+      subLabel.text =
+        `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}` +
+        (bossKills ? ` · 보스 ${bossKills}` : '') + '\n화면을 누르면 재시도';
       hintLabel.text = '';
       cardG.clear();
       // 밝아진 배경 위에서는 글자만 얹으면 안 읽힌다 — 판을 깔고 올린다
