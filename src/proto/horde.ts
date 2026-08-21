@@ -65,6 +65,9 @@ interface Foe {
   alive: boolean;
 }
 
+/** 궤적선(버스터) / 회전 날(메탈 블레이드) / 구체(토네이도·미사일·폭탄) */
+type Shape = 'tracer' | 'blade' | 'orb';
+
 interface Bullet {
   x: number;
   y: number;
@@ -75,6 +78,42 @@ interface Bullet {
   pierce: number;
   lastHit: Foe | null;
   alive: boolean;
+  shape: Shape;
+  color: number;
+  /** 피격 반경 */
+  r: number;
+  /** 초당 회전 라디안 — 보이는 용도 */
+  spin: number;
+  angle: number;
+  /** 0보다 크면 매 프레임 가장 가까운 적 쪽으로 이 각속도만큼 튼다 */
+  homing: number;
+  /** 0보다 크면 사라질 때 이 반경으로 터진다 */
+  boomR: number;
+  boomDmg: number;
+}
+
+/** 번개 — 즉발이라 탄이 아니고, 잠깐 보이는 선으로만 남는다 */
+interface Bolt {
+  x: number;
+  y: number;
+  life: number;
+  color: number;
+}
+
+/** 폭발·타격 표시용으로 퍼지는 원 */
+interface Ring {
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+  max: number;
+  color: number;
+}
+
+/** 플레이어 주위를 도는 실드 구슬 */
+interface Orb {
+  angle: number;
+  cd: number;
 }
 
 interface Gem {
@@ -118,6 +157,9 @@ interface Upgrade {
 
 /** 파티클은 이 색들만 쓴다 — 색이 고정이라야 색깔별 배치 그리기가 가능하다 */
 const PART_COLORS = [0xfff0a0, 0xff9a4c, 0xffc45c, 0xfff2c0, 0xff5c5c, 0x8ef0ff, 0xffffff];
+
+/** 특수무기 탄 색. 같은 이유로 고정이다 (SPECIALS 의 color 와 맞춰 둘 것) */
+const SPECIAL_COLORS = [0xd8e2f0, 0xffa8dc, 0x9fe8ff, 0xff8a5c];
 
 const GRID_CELL = 34;
 const GRID_W = Math.ceil(ARENA_W / GRID_CELL);
@@ -222,8 +264,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const gemG = new Graphics();
   const foeLayer = new Container();
   const bulletG = new Graphics();
+  const specialG = new Graphics();
   const partG = new Graphics();
-  world.addChild(groundG, gemG, foeLayer, bulletG, partG);
+  world.addChild(groundG, gemG, foeLayer, bulletG, specialG, partG);
 
   // 바닥 격자 — 한 번만 그린다. 이동감이 있어야 스스로 움직인다는 게 읽힌다.
   groundG.rect(0, 0, ARENA_W, ARENA_H).fill({ color: 0x0d1024 });
@@ -276,6 +319,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   const cardG = new Graphics();
   const cardTexts: Text[] = [];
+  const cardBadges: Text[] = [];
   ui.addChild(cardG);
   const charBtnLabel = new Text({ text: '다른 캐릭터로', style: { ...mono, fontSize: 9, fill: 0xc9d6ff } });
   charBtnLabel.anchor.set(0.5);
@@ -288,7 +332,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const desc = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0xa8b6e0 } });
     desc.anchor.set(0.5);
     cardTexts.push(name, desc);
-    ui.addChild(name, desc);
+    const badge = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0xffd85c } });
+    badge.anchor.set(0.5);
+    badge.visible = false;
+    cardBadges.push(badge);
+    ui.addChild(name, desc, badge);
   }
 
   // 본편 가상패드(JUMP/FIRE/WPN)는 이 모드에 안 맞는다 — 여기선 점프도
@@ -305,6 +353,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const bullets: Bullet[] = [];
   const gems: Gem[] = [];
   const parts: Part[] = [];
+  const rings: Ring[] = [];
+  const bolts: Bolt[] = [];
   const pools = new Map<FoeKind, AnimView[]>();
   const grid: Foe[][] = Array.from({ length: GRID_W * GRID_H }, () => []);
   const cellIndex = (x: number, y: number): number => {
@@ -340,8 +390,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
   let attackHold = 0;
   let attackBeat = 0;
+  /** 콤보 태그를 가진 시트(제로)에서 몇 단째를 틀 차례인지 */
+  let comboStep = 0;
+  /** 레벨업 카드 한 장 — 능력치이거나 특수무기(신규/강화)다 */
+  type PickOption =
+    | { kind: 'stat'; up: Upgrade }
+    | { kind: 'weapon'; def: SpecialDef; lv: number };
+
   let pickIndex = 0;
-  let pickList: Upgrade[] = [];
+  let pickList: PickOption[] = [];
   let deadTimer = 0;
 
   // 레벨업 카드는 손가락으로 직접 짚는 게 맞다. 가상 스틱으로 커서를 옮겨
@@ -605,7 +662,43 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       pierce: w.pierce,
       lastHit: null,
       alive: true,
+      shape: 'tracer',
+      color: shotColor,
+      r: 3,
+      spin: 0,
+      angle: 0,
+      homing: 0,
+      boomR: 0,
+      boomDmg: 0,
     });
+  }
+
+  /** 특수무기 탄 — 버스터와 달리 무기마다 모양·색·거동이 다르다 */
+  function addBullet(b: Partial<Bullet> & { x: number; y: number; vx: number; vy: number; dmg: number }): void {
+    if (bullets.length >= MAX_BULLETS) bullets.splice(0, bullets.length - MAX_BULLETS + 1);
+    bullets.push({
+      life: 1, pierce: 0, lastHit: null, alive: true,
+      shape: 'orb', color: 0xffffff, r: 4, spin: 0, angle: 0,
+      homing: 0, boomR: 0, boomDmg: 0,
+      ...b,
+    } as Bullet);
+  }
+
+  /** 반경 안의 적을 한꺼번에 때린다 (크래시 봄버·번개) */
+  function blast(x: number, y: number, radius: number, dmg: number, color: number): void {
+    rings.push({ x, y, r: radius, life: 0.24, max: 0.24, color });
+    spawnPart(x, y, 12, 0xff9a4c, 150);
+    shake = Math.max(shake, 3);
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const dx = f.x - x;
+      const dy = (f.y - 8 - y) * 1.2;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      f.hp -= dmg;
+      f.flash = 0.07;
+      f.view.tint = 0xff5c5c;
+      if (f.hp <= 0) killFoe(f);
+    }
   }
 
   function nearestFoe(fx: number, fy: number): Foe | null {
@@ -623,8 +716,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function shoot(): void {
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
-    // 쏘는 쪽을 본다. 이동 방향만 보면 등 뒤에서 탄이 나가는 그림이 된다.
-    if (target) facing = Math.cos(base) >= 0 ? 1 : -1;
     attackHold = 0.2;
     const muzX = px + facing * 9;
     const muzY = py - 10;
@@ -646,6 +737,206 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   let droneAngle = 0;
 
+  // ------------------------------------------------------------ 특수무기
+  //
+  // 이 장르의 뽑기는 능력치가 아니라 "무기가 하나 더 붙는" 데서 온다.
+  // 전부 록맨 시리즈에 실제로 나왔던 특수무기이고, 수치가 아니라 거동이
+  // 서로 다르게 잡았다 — 전방위/추적/관통/폭발/즉발/근접.
+  //
+  // 위력은 레벨업 카드 한 장 값에 맞췄다. 카드는 레벨당 한 장뿐이라
+  // 무기를 집으면 능력치를 못 집으므로, 둘의 값이 비슷해야 곡선이 안 깨진다.
+  interface SpecialDef {
+    id: string;
+    name: string;
+    /** 레벨을 받아 카드에 쓸 설명을 만든다 */
+    desc: (lv: number) => string;
+    color: number;
+    max: number;
+    /** 재사용 대기시간. passive 무기는 안 쓴다 */
+    interval?: (lv: number) => number;
+    fire?: (lv: number) => void;
+  }
+
+  const SPECIALS: SpecialDef[] = [
+    {
+      id: 'metal_blade',
+      name: '메탈 블레이드',
+      color: 0xd8e2f0,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '전방위로 관통하는 톱날' : `날 ${4 + lv + 1}개 · 위력 ${8 + 4 * (lv + 1)}`),
+      interval: (lv) => 0.55 - 0.05 * lv,
+      fire: (lv) => {
+        const n = 4 + lv;
+        const dmg = 8 + 4 * lv;
+        for (let i = 0; i < n; i++) {
+          const a = bladeSpin + (i / n) * Math.PI * 2;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 * 0.8,
+            life: 0.9, dmg, pierce: 2 + lv,
+            shape: 'blade', color: 0xd8e2f0, r: 5, spin: 16,
+          });
+        }
+        bladeSpin += 0.5;
+      },
+    },
+    {
+      id: 'rolling_shield',
+      name: '롤링 실드',
+      color: 0x6ec8ff,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '몸을 도는 방어막' : `구슬 ${lv + 2}개 · 접촉 ${6 + 4 * (lv + 1)}`),
+      // passive — interval/fire 없음. 아래 updateOrbs() 가 처리한다.
+    },
+    {
+      id: 'homing_torpedo',
+      name: '홈잉 토피도',
+      color: 0xffa8dc,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '알아서 쫓아가는 유도탄' : `유도탄 ${1 + Math.floor((lv + 1) / 2)}발 · 위력 ${26 + 12 * (lv + 1)}`),
+      interval: (lv) => 0.85 - 0.08 * lv,
+      fire: (lv) => {
+        const n = 1 + Math.floor(lv / 2);
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * 120, vy: Math.sin(a) * 120 * 0.8,
+            life: 2.4, dmg: 26 + 12 * lv, pierce: 0,
+            shape: 'orb', color: 0xffa8dc, r: 5, homing: 5.5,
+          });
+        }
+      },
+    },
+    {
+      id: 'storm_tornado',
+      name: '스톰 토네이도',
+      color: 0x9fe8ff,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '앞을 쓸어버리는 회오리' : `크기 ${18 + 3 * (lv + 1)} · 위력 ${7 + 4 * (lv + 1)}`),
+      interval: (lv) => 1.5 - 0.14 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        addBullet({
+          x: px, y: py - 10,
+          vx: Math.cos(a) * 95, vy: Math.sin(a) * 95 * 0.8,
+          life: 1.7, dmg: 7 + 4 * lv, pierce: 999,
+          shape: 'orb', color: 0x9fe8ff, r: 18 + 3 * lv, spin: 9,
+        });
+      },
+    },
+    {
+      id: 'crash_bomber',
+      name: '크래시 봄버',
+      color: 0xff8a5c,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '박히고 터지는 폭탄' : `폭발 ${34 + 7 * (lv + 1)} · 위력 ${22 + 11 * (lv + 1)}`),
+      interval: (lv) => 1.25 - 0.11 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        addBullet({
+          x: px, y: py - 10,
+          vx: Math.cos(a) * 200, vy: Math.sin(a) * 200 * 0.8,
+          life: 1.1, dmg: 0, pierce: 0,
+          shape: 'orb', color: 0xff8a5c, r: 5, spin: 7,
+          boomR: 34 + 7 * lv, boomDmg: 22 + 11 * lv,
+        });
+      },
+    },
+    {
+      id: 'triad_thunder',
+      name: '트라이어드 썬더',
+      color: 0xffe86b,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '주변을 내리치는 번개' : `${2 + lv + 1}발 · 위력 ${18 + 10 * (lv + 1)}`),
+      interval: (lv) => 1.8 - 0.16 * lv,
+      fire: (lv) => {
+        const n = 2 + lv;
+        const dmg = 18 + 10 * lv;
+        // 가까운 적부터 골라 때린다 — 무작위로 흩뿌리면 허공을 치는 일이 잦다
+        const near = foes
+          .filter((f) => Math.abs(f.x - px) < 200 && Math.abs(f.y - py) < 130)
+          .slice(0, n * 3);
+        for (let i = 0; i < n && near.length; i++) {
+          const f = near.splice(Math.floor(Math.random() * near.length), 1)[0];
+          bolts.push({ x: f.x, y: f.y - 8, life: 0.14, color: 0xffe86b });
+          blast(f.x, f.y - 8, 20, dmg, 0xffe86b);
+        }
+      },
+    },
+  ];
+
+  const MAX_SPECIALS = 4;
+  /** 보유 무기 id → 레벨(1부터) */
+  const owned = new Map<string, number>();
+  const cooldowns = new Map<string, number>();
+  const orbs: Orb[] = [];
+  let bladeSpin = 0;
+
+  function syncOrbs(): void {
+    const lv = owned.get('rolling_shield') ?? 0;
+    orbs.length = 0;
+    const n = lv ? lv + 1 : 0;
+    for (let i = 0; i < n; i++) orbs.push({ angle: (i / n) * Math.PI * 2, cd: 0 });
+  }
+
+  /** 실드 구슬 — 돌면서 닿는 적을 계속 깎는다 */
+  function updateOrbs(dt: number): void {
+    const lv = owned.get('rolling_shield') ?? 0;
+    if (!lv) return;
+    const dmg = 6 + 4 * lv;
+    for (const o of orbs) {
+      o.angle += dt * 2.6;
+      o.cd -= dt;
+      if (o.cd > 0) continue;
+      const ox = px + Math.cos(o.angle) * 36;
+      const oy = py - 12 + Math.sin(o.angle) * 24;
+      const ci = cellIndex(ox, oy);
+      if (ci < 0) continue;
+      const cx = Math.floor(ox / GRID_CELL);
+      const cy = Math.floor(oy / GRID_CELL);
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        if (gy < 0 || gy >= GRID_H) continue;
+        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+          if (gx < 0 || gx >= GRID_W) continue;
+          for (const f of grid[gy * GRID_W + gx]) {
+            if (!f.alive) continue;
+            const dx = f.x - ox;
+            const dy = f.y - 8 - oy;
+            const rr = f.def.r * f.scale + 6;
+            if (dx * dx + dy * dy > rr * rr) continue;
+            f.hp -= dmg;
+            f.flash = 0.07;
+            f.view.tint = 0xff5c5c;
+            spawnPart(ox, oy, 2, 0x8ef0ff, 90);
+            if (f.hp <= 0) killFoe(f);
+            o.cd = 0.12;
+            gy = cy + 2;
+            gx = cx + 2;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /** 시간이 된 무기를 쏜다 */
+  function fireSpecials(dt: number): void {
+    for (const def of SPECIALS) {
+      const lv = owned.get(def.id) ?? 0;
+      if (!lv || !def.fire || !def.interval) continue;
+      const left = (cooldowns.get(def.id) ?? 0) - dt;
+      if (left > 0) {
+        cooldowns.set(def.id, left);
+        continue;
+      }
+      cooldowns.set(def.id, Math.max(0.08, def.interval(lv)));
+      def.fire(lv);
+    }
+  }
+
   function levelUp(): void {
     level++;
     xp -= xpNeed;
@@ -653,11 +944,33 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 레벨이 초당 하나씩 올라 1분 만에 화력이 화면을 다 태워버린다.
     // 계수를 키워 후반 한 레벨이 10초 이상 걸리게 잡았다.
     xpNeed = Math.round(4 + level * 3 + level * level * 0.8);
-    const avail = UPGRADES.filter((u) => (taken[u.id] ?? 0) < u.max);
+
+    // 뽑기 후보 = 새 특수무기 + 보유 무기 강화 + 능력치.
+    // 무기 쪽에 가중치를 크게 줘서 뽑기가 이 게임의 중심으로 읽히게 한다.
+    const pool: { opt: PickOption; weight: number }[] = [];
+    for (const def of SPECIALS) {
+      const lv = owned.get(def.id) ?? 0;
+      if (lv === 0) {
+        if (owned.size < MAX_SPECIALS) pool.push({ opt: { kind: 'weapon', def, lv: 0 }, weight: 4 });
+      } else if (lv < def.max) {
+        pool.push({ opt: { kind: 'weapon', def, lv }, weight: 3 });
+      }
+    }
+    for (const u of UPGRADES) {
+      if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
+    }
+
     pickList = [];
-    const pool = [...avail];
     for (let i = 0; i < 3 && pool.length; i++) {
-      pickList.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      let total = 0;
+      for (const p of pool) total += p.weight;
+      let r = Math.random() * total;
+      let idx = 0;
+      for (let j = 0; j < pool.length; j++) {
+        r -= pool[j].weight;
+        if (r <= 0) { idx = j; break; }
+      }
+      pickList.push(pool.splice(idx, 1)[0].opt);
     }
     if (!pickList.length) return;
     pickIndex = 0;
@@ -686,10 +999,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   function choosePick(): void {
     if (phase !== 'pick') return;
-    const u = pickList[pickIndex];
-    if (!u) return;
-    taken[u.id] = (taken[u.id] ?? 0) + 1;
-    u.apply();
+    const o = pickList[pickIndex];
+    if (!o) return;
+    if (o.kind === 'stat') {
+      taken[o.up.id] = (taken[o.up.id] ?? 0) + 1;
+      o.up.apply();
+    } else {
+      owned.set(o.def.id, (owned.get(o.def.id) ?? 0) + 1);
+      if (o.def.id === 'rolling_shield') syncOrbs();
+      // 새로 얻은 무기는 바로 한 번 쏴준다 — 뽑은 게 뭔지 즉시 보여야 한다
+      if (o.lv === 0) cooldowns.set(o.def.id, 0);
+    }
     phase = 'play';
   }
 
@@ -705,6 +1025,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bullets.length = 0;
     gems.length = 0;
     parts.length = 0;
+    rings.length = 0;
+    bolts.length = 0;
+    owned.clear();
+    cooldowns.clear();
+    orbs.length = 0;
+    bladeSpin = 0;
+    comboStep = 0;
     px = ARENA_W / 2; py = ARENA_H / 2;
     // 캐릭터마다 체력과 탄이 다르다. 검증해 둔 곡선에서 크게 벗어나지 않도록
     // 원본 수치를 그대로 쓰지 않고 좁은 폭으로만 반영한다.
@@ -841,7 +1168,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     const len = Math.hypot(ix, iy);
     if (len > 0) { ix /= len; iy /= len; }
-    if (ix !== 0) facing = ix > 0 ? 1 : -1;
+
+    // 몸은 쏘는 쪽을 본다. 겨눌 적이 없을 때만 이동 방향을 따른다.
+    // (예전엔 여기서 이동 방향으로 정하고 shoot() 이 뒤늦게 덮어썼는데,
+    //  그러면 이동 중에는 매 프레임 이동 방향이 이겨서 등지고 쏜다.)
+    const aim = nearestFoe(px, py);
+    if (aim) facing = aim.x >= px ? 1 : -1;
+    else if (ix !== 0) facing = ix > 0 ? 1 : -1;
 
     const wantDash = input.pressed('dash') || touchDash;
     touchDash = false;
@@ -871,19 +1204,37 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (attackHold > 0) attackHold -= dt;
     attackBeat -= dt;
     const firing = attackHold > 0;
-    const wantTag = dashTimer > 0
-      ? (firing ? 'dash_attack' : 'dash')
-      : len > 0
-        ? (firing ? 'run_attack' : 'run')
-        : firing ? 'attack_main' : 'idle';
-    const fallback = dashTimer > 0 ? 'dash' : len > 0 ? 'run' : 'idle';
-    hv.play(wantTag, fallback);
-    // 제자리 사격 모션은 한 번 재생하고 끝나는 태그라, 계속 쏘는 동안에는
-    // 일정 간격으로 다시 틀어줘야 발사가 이어지는 것처럼 보인다.
-    // 발사 간격(후반 0.04초)에 맞추면 부들거리기만 해서 박자를 따로 잡는다.
-    if (firing && attackBeat <= 0) {
-      attackBeat = 0.17;
-      if (!hv.current.startsWith('run') && !hv.current.startsWith('dash')) hv.restart();
+    const moving = len > 0;
+    const idleTag = dashTimer > 0 ? 'dash' : moving ? 'run' : 'idle';
+    let wantTag = idleTag;
+    if (firing) {
+      // 이동/대시 전용 공격 태그가 있으면 그걸 쓰고, 없으면 제자리 공격을
+      // 그대로 튼다. 없다고 그냥 달리기로 흘려보내면 제로처럼 run_attack 이
+      // 없는 시트는 움직이는 내내 세이버를 안 휘두른다.
+      const moveTag = dashTimer > 0 ? 'dash_attack' : 'run_attack';
+      wantTag = dashTimer > 0 || moving
+        ? (hv.has(moveTag) ? moveTag : hv.has('attack_main') ? 'attack_main' : idleTag)
+        : 'attack_main';
+    }
+    // 콤보 중간 단(attack_main2/3)이 재생 중이면 끊지 않는다 — 매 프레임
+    // attack_main 으로 되돌리면 2단 이후가 첫 프레임에서 잘려 안 보인다.
+    const inCombo = hv.current.startsWith('attack_main') && !hv.finished;
+    if (!(firing && wantTag === 'attack_main' && inCombo)) hv.play(wantTag, idleTag);
+    // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
+    // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서
+    // 부들거리기만 하므로, 한 번 끝까지 재생된 뒤에만 다시 튼다.
+    if (firing && hv.finished && attackBeat <= 0) {
+      attackBeat = 0.05;
+      // 제로처럼 콤보 태그를 가진 시트는 돌려가며 틀어 같은 동작만
+      // 반복되지 않게 한다.
+      if (hv.current.startsWith('attack_main')) {
+        comboStep = (comboStep + 1) % 3;
+        const next = comboStep === 0 ? 'attack_main' : `attack_main${comboStep + 1}`;
+        if (hv.has(next)) hv.play(next, 'attack_main');
+        else { comboStep = 0; hv.restart(); }
+      } else {
+        hv.restart();
+      }
     }
     hv.scale.x = facing * heroScale;
     hv.scale.y = heroScale;
@@ -911,6 +1262,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       fireAcc -= w.interval;
       shoot();
     }
+    fireSpecials(dt);
 
     // ---- 적
     if (iframe > 0) iframe -= dt;
@@ -1003,10 +1355,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // ---- 탄
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
+
+      // 유도탄은 매 프레임 목표 쪽으로 조금씩 튼다. 각도를 즉시 맞춰버리면
+      // 절대 안 빗나가서 유도라는 느낌 자체가 사라진다.
+      if (b.homing > 0) {
+        const t = nearestFoe(b.x, b.y);
+        if (t) {
+          const want = Math.atan2((t.y - 8 - b.y) / 0.8, t.x - b.x);
+          const cur = Math.atan2(b.vy / 0.8, b.vx);
+          let d = want - cur;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          const turn = clamp(d, -b.homing * dt, b.homing * dt);
+          const sp = Math.min(320, Math.hypot(b.vx, b.vy / 0.8) + 240 * dt);
+          const na = cur + turn;
+          b.vx = Math.cos(na) * sp;
+          b.vy = Math.sin(na) * sp * 0.8;
+        }
+      }
+      if (b.spin !== 0) b.angle += b.spin * dt;
+
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
       if (b.life <= 0 || b.x < -20 || b.x > ARENA_W + 20 || b.y < -20 || b.y > ARENA_H + 20) {
+        if (b.boomR > 0) blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
         bullets.splice(i, 1);
         continue;
       }
@@ -1024,15 +1397,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             if (!f.alive || f === b.lastHit) continue;
             const dx = f.x - b.x;
             const dy = f.y - 8 - b.y;
-            const rr = f.def.r * f.scale + 3;
+            const rr = f.def.r * f.scale + b.r;
             if (dx * dx + dy * dy > rr * rr) continue;
+
+            if (b.boomR > 0) {
+              // 폭탄은 몸통 피해가 없다 — 터지는 것으로 끝낸다
+              blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
+              bullets.splice(i, 1);
+              consumed = true;
+              break;
+            }
 
             f.hp -= b.dmg;
             f.flash = 0.07;
             f.view.tint = 0xff5c5c;
             f.kx += (b.vx / w.speed) * 120;
             f.ky += (b.vy / w.speed) * 120;
-            spawnPart(b.x, b.y, 2, 0xfff0a0, 110);
+            spawnPart(b.x, b.y, 2, b.shape === 'tracer' ? 0xfff0a0 : b.color, 110);
             b.lastHit = f;
 
             if (f.hp <= 0) killFoe(f);
@@ -1045,6 +1426,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         }
       }
     }
+
+    updateOrbs(dt);
 
     // ---- 경험치
     for (let i = gems.length - 1; i >= 0; i--) {
@@ -1120,17 +1503,76 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bulletG.clear();
     let drew = false;
     for (const b of bullets) {
-      if (!onScreen(b.x, b.y)) continue;
+      if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
       bulletG.moveTo(b.x - b.vx * 0.028, b.y - b.vy * 0.028).lineTo(b.x, b.y);
       drew = true;
     }
     if (drew) {
       bulletG.stroke({ color: shotColor, width: 6, alpha: 0.4 });
       for (const b of bullets) {
-        if (!onScreen(b.x, b.y)) continue;
+        if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
         bulletG.moveTo(b.x - b.vx * 0.016, b.y - b.vy * 0.016).lineTo(b.x, b.y);
       }
       bulletG.stroke({ color: shotCore, width: 3 });
+    }
+
+    // 특수무기 탄 — 무기 색이 몇 개 안 되므로 색깔별로 묶어 한 번씩만 그린다
+    specialG.clear();
+    for (const color of SPECIAL_COLORS) {
+      let any = false;
+      for (const b of bullets) {
+        if (b.shape === 'tracer' || b.color !== color || !onScreen(b.x, b.y)) continue;
+        if (b.shape === 'blade') {
+          // 회전하는 마름모 — 톱날이 도는 게 보여야 한다
+          const c = Math.cos(b.angle) * b.r;
+          const s = Math.sin(b.angle) * b.r;
+          specialG.moveTo(b.x + c, b.y + s)
+            .lineTo(b.x - s, b.y + c)
+            .lineTo(b.x - c, b.y - s)
+            .lineTo(b.x + s, b.y - c)
+            .closePath();
+        } else {
+          specialG.circle(b.x, b.y, b.r);
+        }
+        any = true;
+      }
+      if (any) specialG.fill({ color, alpha: 0.85 });
+    }
+    // 큰 탄(토네이도)은 테두리를 덧그려 배경에 묻히지 않게 한다
+    let outline = false;
+    for (const b of bullets) {
+      if (b.shape === 'tracer' || b.r < 10 || !onScreen(b.x, b.y)) continue;
+      specialG.circle(b.x, b.y, b.r);
+      outline = true;
+    }
+    if (outline) specialG.stroke({ color: 0xffffff, width: 1, alpha: 0.5 });
+
+    // 실드 구슬
+    for (const o of orbs) {
+      const ox = px + Math.cos(o.angle) * 36;
+      const oy = py - 12 + Math.sin(o.angle) * 24;
+      specialG.circle(ox, oy, 6).fill({ color: 0x6ec8ff, alpha: 0.9 });
+      specialG.circle(ox, oy, 6).stroke({ color: 0xdff2ff, width: 1, alpha: 0.8 });
+    }
+
+    // 번개 — 내리꽂히는 세로 선
+    for (let i = bolts.length - 1; i >= 0; i--) {
+      const bl = bolts[i];
+      bl.life -= dt;
+      if (bl.life <= 0) { bolts.splice(i, 1); continue; }
+      if (!onScreen(bl.x, bl.y)) continue;
+      specialG.moveTo(bl.x, bl.y - 60).lineTo(bl.x + 3, bl.y - 30).lineTo(bl.x - 2, bl.y - 14).lineTo(bl.x, bl.y);
+      specialG.stroke({ color: bl.color, width: 2, alpha: 0.9 });
+    }
+
+    // 폭발 파문
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const rg = rings[i];
+      rg.life -= dt;
+      if (rg.life <= 0) { rings.splice(i, 1); continue; }
+      const k = 1 - rg.life / rg.max;
+      specialG.circle(rg.x, rg.y, rg.r * (0.45 + k * 0.55));
+      specialG.stroke({ color: rg.color, width: 2, alpha: (1 - k) * 0.85 });
     }
 
     // 경험치
@@ -1170,12 +1612,30 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hudBar.rect(0, 18, GAME_W, 2).fill({ color: 0x12203a });
     hudBar.rect(0, 18, Math.round(GAME_W * clamp(xp / xpNeed, 0, 1)), 2).fill({ color: 0x4fd6e8 });
 
+    // 보유 특수무기 — 색 칸과 레벨 눈금. 뭘 뽑았는지 한눈에 보여야 한다
+    let hx = 134;
+    for (const def of SPECIALS) {
+      const lv = owned.get(def.id) ?? 0;
+      if (!lv) continue;
+      hudBar.rect(hx, 12, 9, 8).fill({ color: def.color });
+      for (let i = 0; i < lv; i++) hudBar.rect(hx + i * 2, 9, 1, 2).fill({ color: 0xffffff });
+      hx += 13;
+    }
+
     // 튜닝용 계측 — 화면만 보고 "적당히 많네" 하고 넘기면 밀도를 못 맞춘다
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeTime = time;
     dbg.__hordeDead = phase === 'dead';
-    dbg.__hordeStat = { foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp), shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS) };
-    dbg.__hordePick = phase === 'pick' ? pickList.map((u) => u.id) : null;
+    dbg.__hordeStat = {
+      foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp),
+      shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS),
+      wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
+      face: facing,
+      anim: hero?.current ?? '',
+    };
+    dbg.__hordePick = phase === 'pick'
+      ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
+      : null;
     dbg.__hordePickIndex = pickIndex;
 
     timeLabel.text = `${Math.floor(time)}s`;
@@ -1252,19 +1712,39 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const x = x0 + i * (cw + gap);
       const on = i === pickIndex;
       cardRects.push({ x, y: cy, w: cw, h: ch });
+      const o = pickList[i];
+      const isNew = o.kind === 'weapon' && o.lv === 0;
       cardG.roundRect(x, cy, cw, ch, 5).fill({ color: on ? 0x1e3266 : 0x11172e });
       cardG.roundRect(x, cy, cw, ch, 5).stroke({ color: on ? 0x8ef0ff : 0x2b3560, width: on ? 2 : 1 });
+
+      // 무기 카드는 위쪽에 그 무기 색의 띠를 둘러 능력치 카드와 구분한다
+      if (o.kind === 'weapon') {
+        cardG.roundRect(x + 1, cy + 1, cw - 2, 5, 3).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
+      }
+
       const name = cardTexts[i * 2];
       const desc = cardTexts[i * 2 + 1];
-      name.text = pickList[i].name;
+      const badge = cardBadges[i];
+      if (o.kind === 'stat') {
+        name.text = o.up.name;
+        desc.text = o.up.desc;
+        badge.text = '';
+      } else {
+        name.text = o.def.name;
+        desc.text = o.def.desc(o.lv);
+        badge.text = isNew ? 'NEW' : `Lv.${o.lv} → ${o.lv + 1}`;
+        badge.style.fill = isNew ? 0xffd85c : 0x8ef0ff;
+        badge.position.set(x + cw / 2, cy + 20);
+      }
+      badge.visible = badge.text !== '';
       name.style.fill = on ? 0xffffff : 0x9fb0dd;
-      name.position.set(x + cw / 2, cy + 44);
-      desc.text = pickList[i].desc;
-      desc.position.set(x + cw / 2, cy + 70);
+      name.position.set(x + cw / 2, cy + 50);
+      desc.position.set(x + cw / 2, cy + 76);
     }
     for (let i = pickList.length; i < 3; i++) {
       cardTexts[i * 2].text = '';
       cardTexts[i * 2 + 1].text = '';
+      cardBadges[i].visible = false;
     }
   }
 }
