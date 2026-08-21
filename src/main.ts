@@ -83,9 +83,15 @@ async function boot(): Promise<void> {
 
   const input = new Input(canvas);
 
-  // 기획 프로토타입 — 본편과 완전히 분리해서 ?mook 으로만 들어간다.
-  // 재미가 검증되면 본편으로 승격하고, 아니면 이 두 줄만 지우면 된다.
-  if (new URLSearchParams(location.search).has('mook')) {
+  // 기획 프로토타입 — 본편과 완전히 분리해서 쿼리로만 들어간다.
+  // 재미가 검증되면 본편으로 승격하고, 아니면 이 블록만 지우면 된다.
+  const proto = new URLSearchParams(location.search);
+  if (proto.has('horde')) {
+    const { runHordeProto } = await import('./proto/horde');
+    await runHordeProto(app, input);
+    return;
+  }
+  if (proto.has('mook')) {
     const { runMookProto } = await import('./proto/mook');
     await runMookProto(app, input);
     return;
