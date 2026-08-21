@@ -382,6 +382,26 @@ function resolveShot(c: HordeChar): ShotInfo {
 const SHOTS = new Map<string, ShotInfo>(CHAR_DEFS.map((c) => [c.id, resolveShot(c)]));
 const STYLES = new Map<Style | string, Style>();
 for (const c of CHAR_DEFS) STYLES.set(c.id, STYLE_BY_ARCHETYPE[c.archetype ?? ''] ?? 'charge');
+/** 캐릭터별 최고 기록 — 다른 캐릭터를 굴려볼 이유가 된다 */
+interface Best { t: number; kills: number }
+const BEST_KEY = 'horde.best';
+
+function loadBest(): Record<string, Best> {
+  try {
+    return JSON.parse(localStorage.getItem(BEST_KEY) ?? '{}') as Record<string, Best>;
+  } catch {
+    return {};
+  }
+}
+
+function saveBest(all: Record<string, Best>): void {
+  try {
+    localStorage.setItem(BEST_KEY, JSON.stringify(all));
+  } catch {
+    // 저장이 안 되는 환경이면 이번 판 기록만 못 남길 뿐이다
+  }
+}
+
 const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
@@ -555,6 +575,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
   // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
   const sfx = createSfx();
+  const best = loadBest();
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -582,6 +603,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let bossAt = 70;
   let bossBanner = 0;
   let bossKills = 0;
+  let newRecord = false;
+  /** 보스를 잡으면 다음 카드는 무기만 나온다 */
+  let bossReward = false;
+  let paused = false;
   const pools = new Map<FoeKind, AnimView[]>();
   const grid: Foe[][] = Array.from({ length: GRID_W * GRID_H }, () => []);
   const cellIndex = (x: number, y: number): number => {
@@ -749,7 +774,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   }
   app.canvas.addEventListener('lostpointercapture', endPointer);
   // 화면이 가려지거나 포커스를 잃으면 up 이 아예 안 오는 경우가 있다
-  window.addEventListener('blur', releaseAll);
+  window.addEventListener('blur', () => { releaseAll(); if (phase === 'play') paused = true; });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) releaseAll();
   });
@@ -1134,7 +1159,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       shake = 9;
       spawnPart(px, py - 10, 16, 0xff5c5c, 160);
       sfx.hurt();
-      if (hp <= 0) { hp = 0; phase = 'dead'; deadTimer = 0; sfx.dead(); }
+      if (hp <= 0) { hp = 0; phase = 'dead'; deadTimer = 0; sfx.dead(); recordBest(); }
     }
   }
 
@@ -1149,6 +1174,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foeLayer.removeChild(b.view);
     boss = null;
     bossKills++;
+    // 보스를 잡았으면 무기를 하나 준다. 경험치만 주면 잡든 도망치든
+    // 결과가 비슷해서 굳이 싸울 이유가 없다.
+    bossReward = true;
+    openPick();
   }
 
   function nearestFoe(fx: number, fy: number): Foe | null {
@@ -1405,6 +1434,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 계수를 키워 후반 한 레벨이 10초 이상 걸리게 잡았다.
     xpNeed = Math.round(4 + level * 3 + level * level * 0.8);
 
+    openPick();
+  }
+
+  /** 카드 세 장을 뽑아 띄운다. bossReward 면 무기만 나온다. */
+  function openPick(): void {
     // 뽑기 후보 = 새 특수무기 + 보유 무기 강화 + 능력치.
     // 무기 쪽에 가중치를 크게 줘서 뽑기가 이 게임의 중심으로 읽히게 한다.
     const pool: { opt: PickOption; weight: number }[] = [];
@@ -1416,9 +1450,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         pool.push({ opt: { kind: 'weapon', def, lv }, weight: 3 });
       }
     }
-    for (const u of UPGRADES) {
-      if (u.only && !u.only.includes(w.style)) continue;
-      if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
+    if (!bossReward) {
+      for (const u of UPGRADES) {
+        if (u.only && !u.only.includes(w.style)) continue;
+        if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
+      }
     }
 
     pickList = [];
@@ -1433,7 +1469,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
       pickList.push(pool.splice(idx, 1)[0].opt);
     }
-    if (!pickList.length) return;
+    if (!pickList.length) {
+      if (bossReward) { bossReward = false; maxHp += 25; hp = maxHp; }
+      return;
+    }
     pickIndex = 0;
     phase = 'pick';
     sfx.level();
@@ -1464,6 +1503,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const o = pickList[pickIndex];
     if (!o) return;
     sfx.pick();
+    bossReward = false;
     if (o.kind === 'stat') {
       taken[o.up.id] = (taken[o.up.id] ?? 0) + 1;
       o.up.apply();
@@ -1474,6 +1514,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (o.lv === 0) cooldowns.set(o.def.id, 0);
     }
     phase = 'play';
+  }
+
+  /** 이번 판이 이 캐릭터 최고 기록이면 남긴다 */
+  function recordBest(): void {
+    const prev = best[charDef.id];
+    if (!prev || time > prev.t) {
+      best[charDef.id] = { t: Math.floor(time), kills };
+      saveBest(best);
+      newRecord = true;
+    }
   }
 
   function reset(): void {
@@ -1497,6 +1547,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossAt = 70;
     bossBanner = 0;
     bossKills = 0;
+    newRecord = false;
+    bossReward = false;
+    paused = false;
     owned.clear();
     cooldowns.clear();
     orbs.length = 0;
@@ -1609,8 +1662,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     const d = CHAR_DEFS[selIndex];
     const st = styleOf(d);
+    const rec = best[d.id];
     selHint.text =
-      `${d.name} — ${STYLE_NAME[st]}\n${STYLE_DESC[st]}\n체력 ${Math.round(d.base_stats.hp * 1.2)}   ▸ 눌러서 시작`;
+      `${d.name} — ${STYLE_NAME[st]}\n${STYLE_DESC[st]}\n` +
+      (rec ? `최고 ${rec.t}초 · ${rec.kills}킬   ` : '') + '▸ 눌러서 시작';
   }
 
   // 튜닝용 훅 — 매 프레임 다시 만들면 쓸데없는 할당이 된다. 한 번만 붙인다.
@@ -1656,6 +1711,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         if (input.pressed('menu') || input.pressed('weapon')) phase = 'select';
         else if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) reset();
       }
+      draw(dt);
+      input.endFrame();
+      return;
+    }
+
+    if (paused) {
+      if (input.pressed('menu') || input.pressed('jump') || input.pressed('shoot')) paused = false;
       draw(dt);
       input.endFrame();
       return;
@@ -1707,7 +1769,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    if (input.pressed('menu')) sfx.toggleMute();
+    if (input.pressed('weapon')) sfx.toggleMute();
+    if (input.pressed('menu')) paused = !paused;
 
     const wantDash = input.pressed('dash') || touchDash;
     touchDash = false;
@@ -1930,6 +1993,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           spawnPart(px, py - 10, 40, 0xffffff, 220);
           shake = 12;
           sfx.dead();
+          recordBest();
         }
       }
     }
@@ -2094,6 +2158,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         spawnPart(px, py - 10, 40, 0xffffff, 220);
         shake = 12;
         sfx.dead();
+        recordBest();
       }
     }
 
@@ -2461,24 +2526,36 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     lvLabel.text = `Lv.${level}`;
 
     if (phase === 'dead') {
-      centerLabel.position.set(W / 2, H / 2 - 20);
+      centerLabel.position.set(W / 2, H / 2 - 34);
       centerLabel.text = '격 파 당 함';
+      subLabel.position.set(W / 2, H / 2 + 2);
+      const b = best[charDef.id];
       subLabel.text =
         `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}` +
-        (bossKills ? ` · 보스 ${bossKills}` : '') + '\n화면을 누르면 재시도';
+        (bossKills ? ` · 보스 ${bossKills}` : '') +
+        (newRecord ? '\n★ 최고 기록 ★' : b ? `\n최고 ${b.t}초 · ${b.kills}킬` : '') +
+        '\n화면을 누르면 재시도';
       hintLabel.text = '';
       cardG.clear();
       // 밝아진 배경 위에서는 글자만 얹으면 안 읽힌다 — 판을 깔고 올린다
       for (const t of cardTexts) t.text = '';
       for (const b of cardBadges) b.visible = false;
-      cardG.roundRect(16, H / 2 - 46, W - 32, 92, 5).fill({ color: 0x05070f, alpha: 0.88 });
-      cardG.roundRect(16, H / 2 - 46, W - 32, 92, 5).stroke({ color: 0x3a4a90, width: 1 });
+      cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).fill({ color: 0x05070f, alpha: 0.9 });
+      cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).stroke({ color: 0x3a4a90, width: 1 });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).fill({ color: 0x16203f });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).stroke({ color: 0x4f6198, width: 1 });
       charBtnLabel.visible = true;
+    } else if (paused && phase === 'play') {
+      cardG.clear();
+      cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.7 });
+      centerLabel.position.set(W / 2, H / 2 - 10);
+      centerLabel.text = '일시정지';
+      subLabel.text = '아무 키나 눌러 계속';
+      hintLabel.text = '';
     } else if (phase === 'pick') {
       // drawPick() 이 먼저 돌고 draw() 가 나중이라, 여기서 비우면 제목이 지워진다
       centerLabel.position.set(W / 2, 42);
+      subLabel.position.set(W / 2, H / 2 + 8);
       centerLabel.text = 'LEVEL UP';
       subLabel.text = '';
       hintLabel.text = '카드를 눌러 선택';
