@@ -1676,12 +1676,33 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     return best;
   }
 
+  /**
+   * 옵션 유닛 발사 — 세이버는 탄이 없는 근접 방식이라, 이 호출이 shoot() 의
+   * 세이버 분기 안(early return 뒤)에 있으면 세이버 캐릭터는 옵션 유닛을
+   * 뽑아도 영원히 발동하지 않는다. 도는 것만 보이고 아무 것도 안 쏘는
+   * 장식이 돼버려서, 방식과 무관하게 shoot() 맨 앞에서 항상 부른다.
+   */
+  function fireDrones(base: number): void {
+    for (let d = 0; d < w.drones; d++) {
+      const ang = droneAngle + (d / w.drones) * Math.PI * 2;
+      const dx = px + Math.cos(ang) * 30;
+      const dy = py - 12 + Math.sin(ang) * 20;
+      const dt2 = nearestFoe(dx, dy);
+      const da = dt2 ? Math.atan2((dt2.y - 8) - dy, dt2.x - dx) : base;
+      fireOne(da, 0.5, dx, dy, Math.max(2, Math.round(w.dmg * 0.6)));
+      // 쏘는 순간 자체가 안 보이면 "도는 장식"과 구분이 안 된다 — 총구 섬광을 남긴다
+      spawnPart(dx, dy, 2, 0x8ef0ff, 70);
+    }
+  }
+
   function shoot(): void {
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
     attackHold = 0.2;
     const muzX = px + facing * 9;
     const muzY = py - 10;
+
+    fireDrones(base);
 
     if (w.style === 'saber') {
       swingSaber(base);
@@ -1697,15 +1718,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
     sfx.shot(w.style);
-
-    for (let d = 0; d < w.drones; d++) {
-      const ang = droneAngle + (d / w.drones) * Math.PI * 2;
-      const dx = px + Math.cos(ang) * 30;
-      const dy = py - 12 + Math.sin(ang) * 20;
-      const dt2 = nearestFoe(dx, dy);
-      const da = dt2 ? Math.atan2((dt2.y - 8) - dy, dt2.x - dx) : base;
-      fireOne(da, 0.5, dx, dy, Math.max(2, Math.round(w.dmg * 0.6)));
-    }
   }
 
   let droneAngle = 0;
@@ -3786,6 +3798,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 파이어 웨이브 — 혓바닥이 제각각 날름거리는 화염
     if (flameT > 0 && phase === 'play') {
       const half = flameSpan / 2;
+      // 캐릭터 자리(반지름 0)부터 부채꼴을 채우면 불투명한 화염이 그대로
+      // 캐릭터를 덮어버린다. 안쪽 반지름을 비워 캐릭터 주변에 숨구멍을
+      // 만든다 — 불이 캐릭터에서 뿜어져 나가는 게 아니라 캐릭터를
+      // 지나쳐 앞으로 뻗어나가는 모양이 된다.
+      const innerR = 20;
       // 겹 4장: 바깥 어두운 붉음 → 주황 → 노랑 → 흰 속심
       // 어두운 색을 넓게 깔면 파란 배경과 섞여 흙빛 삼각형이 된다.
       // 밝은 쪽을 넓게 쓰고 알파를 올려야 "타오른다"로 읽힌다.
@@ -3798,15 +3815,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         { k: 0.28, c: 0xffe9a8, a: 1 },
       ];
       for (const L of layers) {
+        const outerBase = flameR * L.k;
+        // 안쪽 여백보다 작은 겹은 캐릭터 위치에서 다 뭉개지므로 아예 건너뛴다
+        if (outerBase < innerR + 6) continue;
         // 부채꼴을 한 덩어리로 안 그리고 조각을 각각 다르게 흔든다
         const seg = 9;
-        specialG.moveTo(px, py - 10);
+        const a0 = aimAngle - half;
+        specialG.moveTo(px + Math.cos(a0) * innerR, py - 10 + Math.sin(a0) * innerR * 0.78);
         for (let i = 0; i <= seg; i++) {
           const a = aimAngle - half + (i / seg) * flameSpan;
           const n = Math.sin(animClock * 21 + i * 1.7) * 0.13 + Math.sin(animClock * 33 + i) * 0.07;
-          const rr = flameR * L.k * (1 + n);
+          const rr = outerBase * (1 + n);
           specialG.lineTo(px + Math.cos(a) * rr, py - 10 + Math.sin(a) * rr * 0.78);
         }
+        const a1 = aimAngle + half;
+        specialG.lineTo(px + Math.cos(a1) * innerR, py - 10 + Math.sin(a1) * innerR * 0.78);
         specialG.closePath().fill({ color: L.c, alpha: L.a });
       }
       // 끝에서 떨어져 나가는 불똥
