@@ -1456,6 +1456,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             shape: 'orb', color: 0xffe86b, r: 3,
           });
         }
+        // 발사 순간 장미꽃 모양 섬광 — 스무 발이 한꺼번에 나가는 게
+        // 탄만으로는 안 읽혀서 출발점에 표시를 남긴다
+        for (let i = 0; i < 3; i++) {
+          rings.push({ x: px, y: py - 10, r: 22 + i * 16, life: 0.26, max: 0.26, color: 0xffe86b });
+        }
+        spawnPart(px, py - 10, 10, 0xffe86b, 200);
         sfx.shot('rapid');
       },
     },
@@ -2053,12 +2059,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     if (phase === 'gacha') {
       reel.update(dt);
-      if (reel.ticked) sfx.reelTick(Math.min(1, reel.shake > 0 ? 1 : 0.5));
-      if (reel.shake > 0) {
-        shake = Math.max(shake, reel.shake);
-        const r = reel.result?.rarity ?? 'R';
-        sfx.reveal(r);
-      }
+      if (reel.ticked) sfx.reelTick(reel.near);
+      if (reel.shake > 0) shake = Math.max(shake, reel.shake);
+      if (reel.justBurst) sfx.reveal(reel.result?.rarity ?? 'R');
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash') || gachaTap) {
         gachaTap = false;
         if (reel.canDismiss) {
@@ -2726,6 +2729,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     for (const color of SPECIAL_COLORS) {
+      // 1) 꼬리 — 선이라 stroke 로 따로 그려야 한다. 점만 있으면 날아가는 게 안 보인다.
+      let trail = false;
+      for (const b of bullets) {
+        if (b.shape !== 'orb' || b.color !== color || !onScreen(b.x, b.y)) continue;
+        specialG.moveTo(b.x - b.vx * 0.055, b.y - b.vy * 0.055).lineTo(b.x, b.y);
+        trail = true;
+      }
+      if (trail) specialG.stroke({ color, width: 3, alpha: 0.4 });
+
+      // 2) 몸통
       let any = false;
       for (const b of bullets) {
         if (b.shape === 'tracer' || b.color !== color || !onScreen(b.x, b.y)) continue;
@@ -2744,6 +2757,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         any = true;
       }
       if (any) specialG.fill({ color, alpha: 0.85 });
+
+      // 3) 속심 — 가운데를 밝게 해서 덩어리가 아니라 발광체로 보이게
+      let core = false;
+      for (const b of bullets) {
+        if (b.shape !== 'orb' || b.color !== color || b.r < 3 || !onScreen(b.x, b.y)) continue;
+        specialG.circle(b.x, b.y, Math.max(1, b.r - 2));
+        core = true;
+      }
+      if (core) specialG.fill({ color: lighten(color, 0.6), alpha: 0.9 });
     }
     // 큰 탄(토네이도)은 테두리를 덧그려 배경에 묻히지 않게 한다
     let outline = false;
@@ -2772,48 +2794,139 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (hostiles.length) specialG.fill({ color: 0xffe0f4 });
 
     // --- 레전드 무기 이펙트
-    // 소울 바디 분신 — 플레이어를 닮은 잔상으로 그린다
+    //
+    // 레전드는 뽑기로만 나오는 물건이라 기본 무기와 같은 그림이면 안 된다.
+    // 도형 하나로 끝내지 않고 겹(속심/외곽/잔상/불티)을 쌓고, 전부 시간에
+    // 따라 일렁이게 했다 — 멈춰 있는 순간이 없어야 "특별한 것"으로 읽힌다.
+
+    // 소울 바디 — 일렁이는 유령 분신. 적을 끌어당기는 선까지 같이 보인다.
     if (decoy) {
-      const k = decoy.life / 2.4;
-      const pulse = 0.5 + Math.sin(animClock * 14) * 0.2;
-      specialG.circle(decoy.x, decoy.y - 10, decoy.r * (1 - k) * 0.5)
-        .stroke({ color: 0x8ef0d8, width: 1, alpha: 0.35 });
-      specialG.rect(decoy.x - 5, decoy.y - 24, 10, 24).fill({ color: 0x8ef0d8, alpha: pulse });
-      specialG.rect(decoy.x - 3, decoy.y - 22, 6, 8).fill({ color: 0xdcfff6, alpha: pulse });
+      const k = 1 - decoy.life / 2.4;
+      const wob = Math.sin(animClock * 9) * 2;
+      const pulse = 0.45 + Math.sin(animClock * 13) * 0.22;
+
+      // 빨려 들어오는 유인선 — 이게 있어야 "끌어모으는 중"이 보인다
+      for (let i = 0; i < 10; i++) {
+        const a = animClock * 1.3 + (i / 10) * Math.PI * 2;
+        const rr = decoy.r * (1 - ((animClock * 0.9 + i / 10) % 1)) * 0.9;
+        specialG.moveTo(decoy.x + Math.cos(a) * rr, decoy.y - 8 + Math.sin(a) * rr * 0.78)
+          .lineTo(decoy.x + Math.cos(a) * rr * 0.62, decoy.y - 8 + Math.sin(a) * rr * 0.48);
+      }
+      specialG.stroke({ color: 0x8ef0d8, width: 1, alpha: 0.4 });
+
+      // 터지기 직전 예고 고리 — 언제 터지는지 알 수 있어야 한다
+      specialG.circle(decoy.x, decoy.y - 8, decoy.r * k)
+        .stroke({ color: 0xdcfff6, width: 1 + k * 2, alpha: 0.25 + k * 0.5 });
+
+      // 분신 본체 — 겹쳐 그린 유령 실루엣
+      for (let i = 2; i >= 0; i--) {
+        const sp = 1 + i * 0.35;
+        const al = pulse * (i === 0 ? 1 : 0.22);
+        specialG.roundRect(decoy.x - 5 * sp + wob, decoy.y - 26 - i, 10 * sp, 26, 4)
+          .fill({ color: i === 0 ? 0x8ef0d8 : 0x4fd6b8, alpha: al });
+      }
+      specialG.rect(decoy.x - 3 + wob, decoy.y - 23, 6, 7).fill({ color: 0xdcfff6, alpha: pulse + 0.2 });
+      // 발밑 그림자 고리
+      specialG.circle(decoy.x, decoy.y, 9).fill({ color: 0x8ef0d8, alpha: 0.18 });
     }
 
-    // 차지 킥 자국
+    // 차지 킥 — 겹겹이 흔들리는 불길 + 위로 오르는 불티
     for (const kt of kickTrail) {
       if (!onScreen(kt.x, kt.y)) continue;
       const a = Math.min(1, kt.life / 2.2);
-      specialG.circle(kt.x, kt.y, kt.r * (0.7 + a * 0.3))
-        .fill({ color: 0xff5c9c, alpha: a * 0.25 });
-      specialG.circle(kt.x, kt.y, kt.r * 0.55)
-        .fill({ color: 0xffb0d4, alpha: a * 0.3 });
-    }
-
-    // 파이어 웨이브 — 조준 방향 부채꼴이 일렁인다
-    if (flameT > 0 && phase === 'play') {
-      const a0 = aimAngle - flameSpan / 2;
-      const a1 = aimAngle + flameSpan / 2;
+      const fl = 0.86 + Math.sin(animClock * 17 + kt.x * 0.3) * 0.14;
+      specialG.circle(kt.x, kt.y, kt.r * (0.75 + a * 0.35) * fl)
+        .fill({ color: 0x8c1a44, alpha: a * 0.3 });
+      specialG.circle(kt.x, kt.y, kt.r * 0.72 * fl)
+        .fill({ color: 0xff5c9c, alpha: a * 0.34 });
+      specialG.circle(kt.x, kt.y, kt.r * 0.42 * fl)
+        .fill({ color: 0xffb0d4, alpha: a * 0.42 });
+      // 오르는 불티
       for (let i = 0; i < 3; i++) {
-        const rr = flameR * (0.55 + i * 0.22) * (0.94 + Math.sin(animClock * 22 + i) * 0.06);
-        specialG.moveTo(px, py - 10).arc(px, py - 10, rr, a0, a1).closePath();
-        specialG.fill({ color: i === 0 ? 0xfff2c0 : i === 1 ? 0xffab3d : 0xff5c2c, alpha: 0.32 });
+        const ph = (animClock * 1.5 + i * 0.33 + kt.x * 0.05) % 1;
+        specialG.rect(
+          kt.x - kt.r * 0.5 + ((i * 7 + kt.y) % (kt.r)),
+          kt.y - ph * 22, 2, 2,
+        ).fill({ color: 0xffd0e4, alpha: a * (1 - ph) * 0.8 });
       }
     }
 
-    // 노바 스트라이크 — 지나간 자리에 플라스마 꼬리
+    // 파이어 웨이브 — 혓바닥이 제각각 날름거리는 화염
+    if (flameT > 0 && phase === 'play') {
+      const half = flameSpan / 2;
+      // 겹 4장: 바깥 어두운 붉음 → 주황 → 노랑 → 흰 속심
+      // 어두운 색을 넓게 깔면 파란 배경과 섞여 흙빛 삼각형이 된다.
+      // 밝은 쪽을 넓게 쓰고 알파를 올려야 "타오른다"로 읽힌다.
+      // 반투명으로 깔면 어두운 파란 바닥과 섞여 흙빛이 된다. 불은 원래
+      // 불투명하니 거의 꽉 채워서 그린다 — 그래야 주황이 주황으로 보인다.
+      const layers = [
+        { k: 1.0, c: 0xd93a10, a: 0.85 },
+        { k: 0.78, c: 0xff6a1e, a: 0.92 },
+        { k: 0.54, c: 0xffab3d, a: 0.96 },
+        { k: 0.28, c: 0xffe9a8, a: 1 },
+      ];
+      for (const L of layers) {
+        // 부채꼴을 한 덩어리로 안 그리고 조각을 각각 다르게 흔든다
+        const seg = 9;
+        specialG.moveTo(px, py - 10);
+        for (let i = 0; i <= seg; i++) {
+          const a = aimAngle - half + (i / seg) * flameSpan;
+          const n = Math.sin(animClock * 21 + i * 1.7) * 0.13 + Math.sin(animClock * 33 + i) * 0.07;
+          const rr = flameR * L.k * (1 + n);
+          specialG.lineTo(px + Math.cos(a) * rr, py - 10 + Math.sin(a) * rr * 0.78);
+        }
+        specialG.closePath().fill({ color: L.c, alpha: L.a });
+      }
+      // 끝에서 떨어져 나가는 불똥
+      for (let i = 0; i < 5; i++) {
+        const ph = (animClock * 2.2 + i * 0.2) % 1;
+        const a = aimAngle + (Math.sin(animClock * 5 + i * 2) * half);
+        const rr = flameR * (0.7 + ph * 0.5);
+        specialG.rect(
+          px + Math.cos(a) * rr, py - 10 + Math.sin(a) * rr * 0.78, 2, 2,
+        ).fill({ color: 0xffd08a, alpha: (1 - ph) * 0.9 });
+      }
+    }
+
+    // 노바 스트라이크 — 창처럼 뻗는 플라스마. 잔상까지 남긴다.
     if (novaTimer > 0) {
-      specialG.circle(px, py - 10, 22).fill({ color: 0x9ff0ff, alpha: 0.45 });
-      specialG.circle(px, py - 10, 13).fill({ color: 0xffffff, alpha: 0.8 });
       const c = Math.cos(novaAngle);
       const sn = Math.sin(novaAngle) * 0.78;
-      specialG.moveTo(px - c * 60 - sn * 14, py - 10 - sn * 60 + c * 14)
-        .lineTo(px + c * 16, py - 10 + sn * 16)
-        .lineTo(px - c * 60 + sn * 14, py - 10 - sn * 60 - c * 14)
+      const hy = py - 10;
+
+      // 뒤로 늘어지는 꼬리를 세 겹으로
+      const tails = [
+        { len: 92, w: 20, c: 0x2f7ba0, a: 0.3 },
+        { len: 68, w: 13, c: 0x9ff0ff, a: 0.45 },
+        { len: 42, w: 6, c: 0xffffff, a: 0.6 },
+      ];
+      for (const T of tails) {
+        const j = Math.sin(animClock * 40) * 2;
+        specialG.moveTo(px - c * T.len - sn * (T.w + j), hy - sn * T.len + c * (T.w + j))
+          .lineTo(px + c * 22, hy + sn * 22)
+          .lineTo(px - c * T.len + sn * (T.w + j), hy - sn * T.len - c * (T.w + j))
+          .closePath()
+          .fill({ color: T.c, alpha: T.a });
+      }
+
+      // 진행 방향으로 감기는 고리 — 돌진하는 느낌은 여기서 나온다
+      for (let i = 0; i < 4; i++) {
+        const back = ((animClock * 3 + i / 4) % 1) * 70;
+        const rr = 8 + back * 0.28;
+        specialG.circle(px - c * back, hy - sn * back, rr)
+          .stroke({ color: 0x9ff0ff, width: 2, alpha: (1 - back / 70) * 0.6 });
+      }
+
+      // 속심
+      specialG.circle(px, hy, 24).fill({ color: 0x2f7ba0, alpha: 0.4 });
+      specialG.circle(px, hy, 16).fill({ color: 0x9ff0ff, alpha: 0.75 });
+      specialG.circle(px, hy, 8).fill({ color: 0xffffff, alpha: 0.95 });
+      // 앞쪽 충격 쐐기
+      specialG.moveTo(px + c * 40, hy + sn * 40)
+        .lineTo(px + c * 8 - sn * 16, hy + sn * 8 + c * 16)
+        .lineTo(px + c * 8 + sn * 16, hy + sn * 8 - c * 16)
         .closePath()
-        .fill({ color: 0x9ff0ff, alpha: 0.5 });
+        .fill({ color: 0xffffff, alpha: 0.5 });
     }
 
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
@@ -2963,10 +3076,51 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
 
-    // 기가 크래시 섬광 — 화면 전체가 하얗게 날아간다
+    // 기가 크래시 — 흰 사각형 하나로 끝내면 "화면이 잠깐 밝았다"로만 보인다.
+    // 섬광 → 사방으로 뻗는 빛기둥 → 갈라지는 균열 → 잔광 순으로 겹친다.
     if (gigaFlash > 0) {
       const k = gigaFlash / 0.45;
-      hudBar.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: k * 0.85 });
+      const inv = 1 - k;
+      hudBar.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: Math.min(1, k * k * 1.4) });
+      hudBar.rect(0, 0, W, H).fill({ color: 0xfff2c0, alpha: k * 0.4 });
+
+      const cxs = W / 2;
+      const cys = H / 2;
+      // 빛기둥
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + gigaFlash * 3;
+        const c = Math.cos(a);
+        const sn = Math.sin(a);
+        const len = 60 + inv * 460;
+        const wdt = 6 + k * 26;
+        hudBar.moveTo(cxs + c * 10 - sn * wdt, cys + sn * 10 + c * wdt)
+          .lineTo(cxs + c * len, cys + sn * len)
+          .lineTo(cxs + c * 10 + sn * wdt, cys + sn * 10 - c * wdt)
+          .closePath();
+      }
+      hudBar.fill({ color: 0xffffff, alpha: k * 0.55 });
+
+      // 갈라지는 균열 — 꺾인 선이라야 "깨졌다"로 읽힌다
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + 0.4;
+        let x = cxs;
+        let y = cys;
+        hudBar.moveTo(x, y);
+        for (let seg = 0; seg < 5; seg++) {
+          const step = (40 + seg * 22) * inv;
+          x += Math.cos(a + Math.sin(seg * 3 + i) * 0.5) * step;
+          y += Math.sin(a + Math.sin(seg * 3 + i) * 0.5) * step;
+          hudBar.lineTo(x, y);
+        }
+      }
+      hudBar.stroke({ color: 0xfff2c0, width: 2, alpha: k * 0.85 });
+
+      // 잔광 고리
+      for (let i = 0; i < 3; i++) {
+        const kk = Math.min(1, inv * 1.5 + i * 0.16);
+        hudBar.circle(cxs, cys, kk * 300)
+          .stroke({ color: 0xffffff, width: 5 * (1 - kk), alpha: (1 - kk) * k * 2 });
+      }
     }
 
     // 가챠 코인 — 얼마나 모였는지가 보여야 다음 한 개가 급해진다
