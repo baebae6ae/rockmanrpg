@@ -970,11 +970,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'legs', name: '부스터 다리', desc: '이동속도 +12%', max: 5,
-      apply: () => { speedMul += 0.12; },
+      apply: () => { legsMul += 0.12; applyArmor(); },
     },
     {
       id: 'magnet', name: '자력 코어', desc: '경험치 흡수 범위 +40', max: 4,
-      apply: () => { w.magnet += 40; },
+      apply: () => { baseMagnet += 40; applyArmor(); },
     },
     {
       id: 'armor', name: '수리 팩', desc: '최대체력 +20, 전량 회복', max: 99,
@@ -983,6 +983,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   ];
 
   let speedMul = 1;
+  /** 아머와 카드 효과를 따로 들고 있다가 applyArmor() 에서 합친다 —
+      한쪽에 곱해서 쌓으면 아머를 먹을 때마다 카드 효과가 지워지거나 겹친다 */
+  let legsMul = 1;
+  let baseMagnet = 40;
+  /** 아머를 먹었을 때 띄우는 안내 */
+  let armorBanner = 0;
+  let armorGot: ArmorSlot | null = null;
 
   // ------------------------------------------------------------ 헬퍼
   function spawnPart(x: number, y: number, n: number, color: number, power: number): void {
@@ -1076,6 +1083,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (f.elite) {
       coins += 2;
       sfx.coin();
+      // E탱크는 드물어야 아껴 쓴다
+      if (eTanks < E_TANK_MAX && Math.random() < 0.22) {
+        eTanks++;
+        sfx.reveal('R');
+      }
     }
 
     // 아주 가끔 회복 캡슐 — 흔하면 긴장이 사라지고, 없으면 회복 수단이
@@ -1531,7 +1543,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 접촉 피해 — 은신 중엔 없다(안 보이는 걸로 아프면 불공평하다)
     if (iframe <= 0 && !b.hidden && d < 26) {
-      hp -= 15;
+      hp -= takeDmg(15);
       iframe = 0.85;
       hitstop = 0.06;
       shake = 9;
@@ -2165,6 +2177,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const orbs: Orb[] = [];
   let bladeSpin = 0;
 
+  /** 보디 파츠가 있으면 받는 피해가 줄어든다 */
+  const takeDmg = (raw: number): number => raw * (armor.has('body') ? 0.7 : 1);
+
   /** 화면에 보이는지 — draw() 와 같은 기준을 무기 쪽에서도 쓴다 */
   const inView = (x: number, y: number): boolean => {
     const cx = clamp(px - W / 2, 0, ARENA_W - W);
@@ -2198,6 +2213,32 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let beamDmg = 0;
   /** 크림슨 오빗 구슬이 도는 각도 */
   let orbitAngle = 0;
+
+  // --- E탱크
+  /**
+   * 지금까지 회복은 주우면 즉시 발동이라 아무 판단이 없었다. 모아뒀다가
+   * 내가 원할 때 터뜨리는 자원이 되면 "지금 쓸까 더 버틸까"가 생긴다.
+   */
+  let eTanks = 0;
+  const E_TANK_MAX = 3;
+
+  // --- 아머 파츠
+  /**
+   * data/characters 에 equipment_slots(head/body/arm/foot)가 이미 있는데
+   * 안 쓰고 있었다. 스테이지에 캡슐로 숨겨두고, 먹으면 그 판 내내 붙는다.
+   */
+  type ArmorSlot = 'head' | 'body' | 'arm' | 'foot';
+  const armor = new Set<ArmorSlot>();
+  interface Capsule { x: number; y: number; slot: ArmorSlot; bob: number }
+  const capsules: Capsule[] = [];
+  let capsuleAt = 26;
+
+  const ARMOR_INFO: Record<ArmorSlot, { name: string; desc: string; color: number }> = {
+    head: { name: '헤드 파츠', desc: '경험치·아이템 흡수 범위 크게', color: 0x8ef0ff },
+    body: { name: '보디 파츠', desc: '받는 피해 30% 감소', color: 0xffd85c },
+    arm: { name: '암 파츠', desc: '차지가 2배 빨리 찬다', color: 0xff7b3c },
+    foot: { name: '풋 파츠', desc: '이동 +18%, 대시 재사용 절반', color: 0x8ef0a0 },
+  };
 
   // --- 차지 샷
   /**
@@ -2549,6 +2590,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
   }
 
+  /** 아머 효과를 능력치에 반영한다. 먹은 즉시와 판 시작에 부른다. */
+  function applyArmor(): void {
+    // 곱해서 쌓지 않도록 기준값에서 다시 계산한다
+    speedMul = (armor.has('foot') ? 1.18 : 1) * legsMul;
+    w.magnet = baseMagnet * (armor.has('head') ? 2.2 : 1);
+  }
+
   function reset(): void {
     for (let i = foes.length - 1; i >= 0; i--) {
       foeLayer.removeChild(foes[i].view);
@@ -2573,6 +2621,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     newRecord = false;
     coins = 2;
     pityCount = 0;
+    eTanks = 0;
+    armor.clear();
+    legsMul = 1; baseMagnet = 40;
+    capsules.length = 0;
+    capsuleAt = 26;
     pendingPulls = 0;
     paused = false;
     owned.clear();
@@ -2599,6 +2652,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     w.elem = si.elem;
     w.speed = Math.round(si.speed * 1.25);
     w.drones = 0; w.magnet = 40;
+    legsMul = 1; baseMagnet = 40; armorBanner = 0; armorGot = null;
     w.arcR = 50; w.arcSpan = Math.PI * 1.1;
 
     // 초당 위력은 세 방식이 비슷하게 두고, 그 위력을 어떻게 꺼내느냐만
@@ -2623,6 +2677,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       w.shots = 1; w.spread = 0.06; w.pierce = 3;
       w.baseDmg = w.dmg;
     }
+    applyArmor();
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
     deadTimer = 0;
@@ -2702,6 +2757,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
+    dbg.__hordeCapsule = (): void => {
+      const left = (['head', 'body', 'arm', 'foot'] as ArmorSlot[]).filter((k) => !armor.has(k));
+      if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
+    };
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
     dbg.__hordeForcePull = (id: string): void => {
       const d = LEGENDS.find((x) => x.id === id);
@@ -2842,7 +2901,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const holdFire = input.down('shoot') || touchFire;
     if (holdFire) {
       const before = chargeLevel;
-      chargeT += dt;
+      chargeT += dt * (armor.has('arm') ? 2 : 1);
       chargeLevel = chargeT >= CHARGE_STEP[1] ? 2 : chargeT >= CHARGE_STEP[0] ? 1 : 0;
       if (chargeLevel !== before && chargeLevel > 0) {
         sfx.pick();
@@ -3003,6 +3062,53 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     fireSpecials(dt);
     updateLegends(dt);
     tryPull();
+
+    // --- 아머 캡슐 — 일정 시간마다 화면 밖 어딘가에 놓인다.
+    // 가만히 있으면 절대 못 먹는 자리에 둬야 "찾으러 간다"가 생긴다.
+    if (time >= capsuleAt && armor.size < 4 && capsules.length < 2) {
+      capsuleAt += 42;
+      const left = (['head', 'body', 'arm', 'foot'] as ArmorSlot[]).filter((k) => !armor.has(k));
+      if (left.length) {
+        const a = Math.random() * Math.PI * 2;
+        capsules.push({
+          x: clamp(px + Math.cos(a) * 250, 30, ARENA_W - 30),
+          y: clamp(py + Math.sin(a) * 340, 40, ARENA_H - 30),
+          slot: left[Math.floor(Math.random() * left.length)],
+          bob: 0,
+        });
+      }
+    }
+    for (let i = capsules.length - 1; i >= 0; i--) {
+      const cap = capsules[i];
+      cap.bob += dt;
+      // 캡슐 몸통은 cap.y 보다 8px 위에 그려진다 — 판정도 거기에 맞춰야
+      // "겹쳤는데 안 먹힌다"가 안 생긴다
+      const dx = px - cap.x;
+      const dy = py - cap.y;
+      if (dx * dx + dy * dy > 21 * 21) continue;
+      capsules.splice(i, 1);
+      armor.add(cap.slot);
+      armorBanner = 2.6;
+      armorGot = cap.slot;
+      applyArmor();
+      spawnPart(cap.x, cap.y, 26, ARMOR_INFO[cap.slot].color, 220);
+      for (let r = 0; r < 3; r++) {
+        rings.push({ x: cap.x, y: cap.y, r: 24 + r * 18, life: 0.5, max: 0.5, color: ARMOR_INFO[cap.slot].color });
+      }
+      shake = Math.max(shake, 8);
+      sfx.reveal('SR');
+    }
+
+    // --- E탱크 — 모아뒀다가 직접 터뜨린다
+    if (input.pressed('up') && eTanks > 0 && hp < maxHp) {
+      eTanks--;
+      hp = maxHp;
+      for (let r = 0; r < 3; r++) {
+        rings.push({ x: px, y: py - 10, r: 20 + r * 16, life: 0.45, max: 0.45, color: 0x8ef0a0 });
+      }
+      spawnPart(px, py - 10, 24, 0x8ef0a0, 200);
+      sfx.level();
+    }
 
     // ---- 적
     if (iframe > 0) iframe -= dt;
@@ -3269,7 +3375,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (dx * dx + dy * dy > rr * rr) continue;
       hostiles.splice(i, 1);
       if (iframe > 0) continue;
-      hp -= h.dmg;
+      hp -= takeDmg(h.dmg);
       iframe = 0.72;
       hitstop = 0.05;
       shake = 7;
@@ -3739,6 +3845,24 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    // 아머 캡슐 — 멀리서도 보여야 찾으러 갈 마음이 생긴다
+    for (const cap of capsules) {
+      if (!onScreen(cap.x, cap.y)) continue;
+      const info = ARMOR_INFO[cap.slot];
+      const bob = Math.sin(cap.bob * 3) * 3;
+      const pulse = 0.5 + Math.sin(cap.bob * 6) * 0.3;
+      // 바닥 빛
+      specialG.circle(cap.x, cap.y + 6, 12).fill({ color: info.color, alpha: 0.16 });
+      // 솟아오르는 빛기둥
+      specialG.rect(cap.x - 3, cap.y - 46 + bob, 6, 46).fill({ color: info.color, alpha: 0.18 });
+      // 캡슐 본체
+      specialG.roundRect(cap.x - 7, cap.y - 18 + bob, 14, 20, 4).fill({ color: 0x0a1024 });
+      specialG.roundRect(cap.x - 6, cap.y - 17 + bob, 12, 18, 3).fill({ color: info.color, alpha: 0.7 });
+      specialG.roundRect(cap.x - 4, cap.y - 15 + bob, 8, 6, 2).fill({ color: 0xffffff, alpha: pulse });
+      specialG.roundRect(cap.x - 7, cap.y - 18 + bob, 14, 20, 4)
+        .stroke({ color: 0xffffff, width: 1, alpha: 0.5 + pulse * 0.4 });
+    }
+
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
     if (phase === 'play' && (moveDirX !== 0 || moveDirY !== 0)) {
       const a = Math.atan2(moveDirY * 0.78, moveDirX);
@@ -3874,6 +3998,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordePickIndex = pickIndex;
     dbg.__hordeTheme = theme.id;
     dbg.__hordeGacha = phase === 'gacha';
+    dbg.__hordeArmor = [...armor].join(',');
+    dbg.__hordeETank = eTanks;
+    dbg.__hordeCaps = capsules.length;
+    dbg.__hordePos = [Math.round(px), Math.round(py)];
     dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
     dbg.__hordeHostiles = hostiles.length;
 
@@ -3885,6 +4013,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       stageLabel.alpha = Math.min(1, stageBanner / 0.6);
     }
     muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
+
+    // 아머를 먹으면 뭘 얻었는지 알려준다 — 안 알려주면 뭐가 좋아졌는지 모른다
+    if (armorBanner > 0 && armorGot && phase === 'play') {
+      armorBanner -= dt;
+      const info = ARMOR_INFO[armorGot];
+      stageLabel.visible = true;
+      stageLabel.text = `${info.name}\n${info.desc}`;
+      stageLabel.style.fill = info.color;
+      stageLabel.alpha = Math.min(1, armorBanner / 0.5);
+    }
 
     // 기가 크래시 — 흰 사각형 하나로 끝내면 "화면이 잠깐 밝았다"로만 보인다.
     // 섬광 → 사방으로 뻗는 빛기둥 → 갈라지는 균열 → 잔광 순으로 겹친다.
@@ -3930,6 +4068,27 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const kk = Math.min(1, inv * 1.5 + i * 0.16);
         hudBar.circle(cxs, cys, kk * 300)
           .stroke({ color: 0xffffff, width: 5 * (1 - kk), alpha: (1 - kk) * k * 2 });
+      }
+    }
+
+    // E탱크 — 몇 개 들고 있는지
+    if (phase !== 'select') {
+      for (let i = 0; i < E_TANK_MAX; i++) {
+        const ex = 6 + i * 9;
+        hudBar.rect(ex, 30, 7, 9).fill({ color: 0x14301f });
+        if (i < eTanks) {
+          hudBar.rect(ex + 1, 31, 5, 7).fill({ color: 0x3fd06a });
+          hudBar.rect(ex + 2, 32, 3, 2).fill({ color: 0xdcffe8 });
+        }
+        hudBar.rect(ex, 30, 7, 1).fill({ color: 0x8ef0a0, alpha: 0.5 });
+      }
+      // 아머 파츠 — 먹은 칸만 색이 들어온다
+      const slots: ArmorSlot[] = ['head', 'body', 'arm', 'foot'];
+      for (let i = 0; i < slots.length; i++) {
+        const ax = 42 + i * 8;
+        const on = armor.has(slots[i]);
+        hudBar.rect(ax, 31, 6, 7)
+          .fill({ color: on ? ARMOR_INFO[slots[i]].color : 0x1a2340, alpha: on ? 1 : 0.6 });
       }
     }
 
@@ -4008,7 +4167,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     } else {
       centerLabel.text = '';
       subLabel.text = '';
-      hintLabel.text = time < 9 ? (touchMode ? '끌어서 이동 · CHARGE 길게 눌러 차지' : '방향키 이동 · X 길게 눌러 차지') : '';
+      hintLabel.text = eTanks > 0 && hp < maxHp * 0.5
+        ? (touchMode ? 'E탱크 있음 — 위로 밀어 사용' : 'E탱크 있음 — ↑ 로 사용')
+        : time < 9 ? (touchMode ? '끌어서 이동 · CHARGE 길게 눌러 차지' : '방향키 이동 · X 길게 눌러 차지') : '';
     }
 
     if (phase !== 'pick' && phase !== 'dead') {
