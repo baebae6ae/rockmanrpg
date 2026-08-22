@@ -919,6 +919,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) releaseAll();
   });
+  // Pointer Events 는 카카오톡/네이버 인앱 브라우저 같은 웹뷰에서 터치와
+  // 어긋나는 경우가 있다 — pointerup 이 씹혀도 이 경로는 살아있다.
+  // pointerId 와 Touch.identifier 는 같은 값이라는 보장이 없으니 매칭하지
+  // 않고, "화면에 닿은 손가락이 진짜 하나도 없다"는 사실 자체만 신뢰한다.
+  // 그거면 스틱이 영구히 눌린 채로 남을 이유가 없다.
+  const reconcileTouches = (e: TouchEvent): void => {
+    if (e.touches.length === 0) releaseAll();
+  };
+  window.addEventListener('touchend', reconcileTouches, { passive: true });
+  window.addEventListener('touchcancel', reconcileTouches, { passive: true });
 
   // 시작은 1발이다. 처음부터 화면을 덮으면 도달점이 없어서 "확 늘었다"는
   // 순간이 안 생기고, 가만히 있어도 사방이 정리돼 버린다.
@@ -2801,6 +2811,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
     };
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
+    dbg.__hordeForceLevelUp = (): void => { levelUp(); };
     dbg.__hordeForcePull = (id: string): void => {
       const d = LEGENDS.find((x) => x.id === id);
       if (!d || phase !== 'play' || reel.active) return;
