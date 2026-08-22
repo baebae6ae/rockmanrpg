@@ -15,6 +15,7 @@ import type { Input } from '../input/input';
 import { AnimView, loadSheet, type Sheet } from '../anim/sheet';
 import { THEMES, buildTheme } from './stage_bg';
 import { createSfx } from './sfx';
+import { GachaReel, RARITY_COLOR, type Rarity, type ReelItem } from './gacha';
 
 /**
  * 이 모드는 본편(560×240 가로)과 화면 비율 자체가 다르다.
@@ -604,9 +605,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let bossBanner = 0;
   let bossKills = 0;
   let newRecord = false;
+  /** 가챠 코인 — 정예를 잡으면 하나, 보스는 셋. 모이면 자동으로 돌아간다 */
+  let coins = 2;
+  const COINS_PER_PULL = 5;
+  /** 연속으로 SSR 이 안 나온 횟수 — 천장 */
+  let pityCount = 0;
+  let pendingPulls = 0;
   /** 보스를 잡으면 다음 카드는 무기만 나온다 */
-  let bossReward = false;
   let paused = false;
+  /** 가챠 화면에서의 화면 탭 */
+  let gachaTap = false;
   const pools = new Map<FoeKind, AnimView[]>();
   const grid: Foe[][] = Array.from({ length: GRID_W * GRID_H }, () => []);
   const cellIndex = (x: number, y: number): number => {
@@ -642,7 +650,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let animClock = 0;
   let shake = 0;
   let hitstop = 0;
-  let phase: 'select' | 'play' | 'pick' | 'dead' = 'select';
+  let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' = 'select';
   let selIndex = 0;
   /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
   let attackHold = 0;
@@ -711,6 +719,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         startRun();
         break;
       }
+      return;
+    }
+    if (phase === 'gacha') {
+      gachaTap = true;
       return;
     }
     if (phase === 'pick') {
@@ -942,6 +954,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     f.alive = false;
     kills++;
     spawnPart(f.x, f.y - 8, f.elite ? 26 : 9, f.elite ? 0xffc45c : 0xff9a4c, f.elite ? 190 : 130);
+    if (f.elite) {
+      coins += 2;
+      sfx.coin();
+    }
+
     // 아주 가끔 회복 캡슐 — 흔하면 긴장이 사라지고, 없으면 회복 수단이
     // 레벨업 카드뿐이라 후반에 손쓸 방법이 없다.
     if (Math.random() < (f.elite ? 0.4 : 0.014) && heals.length < 6) {
@@ -1176,10 +1193,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foeLayer.removeChild(b.view);
     boss = null;
     bossKills++;
-    // 보스를 잡았으면 무기를 하나 준다. 경험치만 주면 잡든 도망치든
-    // 결과가 비슷해서 굳이 싸울 이유가 없다.
-    bossReward = true;
-    openPick();
+    // 보스를 잡았으면 가챠 코인을 크게 준다 — 확정 1회 이상이 나온다
+    coins += COINS_PER_PULL;
+    sfx.coin();
   }
 
   function nearestFoe(fx: number, fy: number): Foe | null {
@@ -1246,6 +1262,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     /** 재사용 대기시간. passive 무기는 안 쓴다 */
     interval?: (lv: number) => number;
     fire?: (lv: number) => void;
+    /** 가챠 전용 무기에만 있다. 레벨업 카드에는 안 나온다 */
+    rarity?: Rarity;
   }
 
   const SPECIALS: SpecialDef[] = [
@@ -1359,12 +1377,201 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
   ];
 
+  /**
+   * 가챠 전용 무기.
+   *
+   * 레벨업으로 얻는 여섯 개와 급이 달라야 뽑는 의미가 있다. 그래서 수치를
+   * 올린 게 아니라 **화면에서 벌어지는 일의 크기**를 다르게 잡았다 —
+   * 화면을 통째로 날리거나, 플레이어 자체가 무기가 되거나, 스무 발이
+   * 한꺼번에 흩어지거나. 보고 나서 "저건 다르다"가 바로 와야 한다.
+   */
+  const LEGENDS: SpecialDef[] = [
+    {
+      id: 'giga_crash',
+      name: '기가 크래시',
+      color: 0xfff2c0,
+      rarity: 'SSR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '화면 전체를 날려버린다' : `위력 ${90 + 55 * (lv + 1)} · 간격 ${(14 - 1.4 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 14 - 1.4 * lv,
+      fire: (lv) => {
+        // 화면에 보이는 것을 전부 지운다. 반경이 아니라 시야 전체다.
+        gigaFlash = 0.45;
+        shake = 16;
+        sfx.explode();
+        const dmg = 90 + 55 * lv;
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          if (!inView(f.x, f.y)) continue;
+          f.hp -= dmg;
+          f.flash = 0.08;
+          f.view.tint = 0xff5c5c;
+          spawnPart(f.x, f.y - 8, 3, 0xfff2c0, 200);
+          if (f.hp <= 0) killFoe(f);
+        }
+        if (boss && inView(boss.x, boss.y)) hurtBoss(dmg * 0.8);
+        for (let i = 0; i < 4; i++) {
+          rings.push({ x: px, y: py - 10, r: 90 + i * 70, life: 0.5, max: 0.5, color: 0xfff2c0 });
+        }
+      },
+    },
+    {
+      id: 'nova_strike',
+      name: '노바 스트라이크',
+      color: 0x9ff0ff,
+      rarity: 'SSR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '무적으로 꿰뚫는 돌진' : `위력 ${70 + 40 * (lv + 1)} · 간격 ${(9 - 0.9 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 9 - 0.9 * lv,
+      fire: (lv) => {
+        // 적이 제일 몰린 쪽으로 플레이어째 꽂는다
+        const t = densestDir();
+        novaAngle = t;
+        novaTimer = 0.42;
+        novaDmg = 70 + 40 * lv;
+        iframe = Math.max(iframe, 0.62);
+        shake = 10;
+        sfx.dash();
+      },
+    },
+    {
+      id: 'ray_splasher',
+      name: '레이 스플래셔',
+      color: 0xffe86b,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '유도 불꽃을 한꺼번에 흩뿌린다' : `${14 + 4 * (lv + 1)}발 · 위력 ${9 + 5 * (lv + 1)}`),
+      interval: (lv) => 2.8 - 0.22 * lv,
+      fire: (lv) => {
+        const n = 14 + 4 * lv;
+        const dmg = 9 + 5 * lv;
+        const base = Math.atan2(0, facing) + (Math.random() - 0.5) * 0.6;
+        for (let i = 0; i < n; i++) {
+          const a = base + (i / n) * Math.PI * 2;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * (150 + Math.random() * 90),
+            vy: Math.sin(a) * (150 + Math.random() * 90) * 0.8,
+            life: 1.9, dmg, pierce: 1, homing: 4.2,
+            shape: 'orb', color: 0xffe86b, r: 3,
+          });
+        }
+        sfx.shot('rapid');
+      },
+    },
+    {
+      id: 'soul_body',
+      name: '소울 바디',
+      color: 0x8ef0d8,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '분신이 적을 끌어모으고 터진다' : `폭발 ${60 + 12 * (lv + 1)} · 위력 ${45 + 30 * (lv + 1)}`),
+      interval: (lv) => 6.5 - 0.5 * lv,
+      fire: (lv) => {
+        decoy = {
+          x: px, y: py, life: 2.4,
+          r: 60 + 12 * lv,
+          dmg: 45 + 30 * lv,
+        };
+        sfx.pick();
+      },
+    },
+    {
+      id: 'fire_wave',
+      name: '파이어 웨이브',
+      color: 0xff8a2c,
+      rarity: 'R',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '앞을 계속 태우는 화염' : `사거리 ${52 + 8 * (lv + 1)} · 초당 ${Math.round((6 + 4 * (lv + 1)) / 0.12)}`),
+      // 계속 나가는 무기라 별도 쿨다운 없이 0.12초마다 판정한다
+      interval: () => 0.12,
+      fire: (lv) => {
+        const r = 52 + 8 * lv;
+        const dmg = 6 + 4 * lv;
+        const span = Math.PI * 0.5;
+        flameR = r;
+        flameSpan = span;
+        flameT = 0.14;
+        const half = span / 2;
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          const dx = f.x - px;
+          const dy = (f.y - 8 - (py - 10)) / 0.78;
+          if (dx * dx + dy * dy > (r + f.def.r) * (r + f.def.r)) continue;
+          let d = Math.atan2(dy, dx) - aimAngle;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          if (Math.abs(d) > half) continue;
+          f.hp -= dmg;
+          f.flash = 0.05;
+          f.view.tint = 0xffb060;
+          if (Math.random() < 0.3) spawnPart(f.x, f.y - 8, 1, 0xff9a4c, 90);
+          if (f.hp <= 0) killFoe(f);
+        }
+      },
+    },
+    {
+      id: 'charge_kick',
+      name: '차지 킥',
+      color: 0xff5c9c,
+      rarity: 'R',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '대시 자리에 불길이 남는다' : `자국 위력 ${14 + 9 * (lv + 1)}`),
+      // 대시할 때만 발동하므로 주기 발사가 없다 (아래 dash 처리에서 직접 남긴다)
+    },
+  ];
+
+  /** 주기 발사 루프가 한 번에 도는 전체 목록 */
+  const ALL_WEAPONS: SpecialDef[] = [...SPECIALS, ...LEGENDS];
+
   const MAX_SPECIALS = 4;
   /** 보유 무기 id → 레벨(1부터) */
   const owned = new Map<string, number>();
   const cooldowns = new Map<string, number>();
   const orbs: Orb[] = [];
   let bladeSpin = 0;
+
+  /** 화면에 보이는지 — draw() 와 같은 기준을 무기 쪽에서도 쓴다 */
+  const inView = (x: number, y: number): boolean => {
+    const cx = clamp(px - W / 2, 0, ARENA_W - W);
+    const cy = clamp(py - H / 2, 0, ARENA_H - H);
+    return x > cx - 24 && x < cx + W + 24 && y > cy - 24 && y < cy + H + 24;
+  };
+
+  // --- 레전드 무기용 상태
+  /** 기가 크래시 섬광 남은 시간 */
+  let gigaFlash = 0;
+  /** 노바 스트라이크 — 돌진 중이면 0보다 크다 */
+  let novaTimer = 0;
+  let novaAngle = 0;
+  let novaDmg = 0;
+  /** 소울 바디 분신 */
+  let decoy: { x: number; y: number; life: number; r: number; dmg: number } | null = null;
+  /** 파이어 웨이브 화염 표시 */
+  let flameT = 0;
+  let flameR = 0;
+  let flameSpan = 0;
+  /** 차지 킥이 남긴 불길 */
+  const kickTrail: { x: number; y: number; life: number; r: number; dmg: number }[] = [];
+
+  /** 적이 가장 몰려 있는 쪽 각도 — 노바 스트라이크가 헛돌지 않게 한다 */
+  function densestDir(): number {
+    const BINS = 12;
+    const score = new Array<number>(BINS).fill(0);
+    for (const f of foes) {
+      const dx = f.x - px;
+      const dy = (f.y - 8 - (py - 10)) / 0.78;
+      const d = Math.hypot(dx, dy);
+      if (d > 260) continue;
+      const b = (Math.floor(((Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2)) * BINS) + BINS) % BINS;
+      // 가까울수록 크게 친다
+      score[b] += 1 + (260 - d) / 260;
+    }
+    let bi = 0;
+    for (let i = 1; i < BINS; i++) if (score[i] > score[bi]) bi = i;
+    if (score[bi] === 0) return facing > 0 ? 0 : Math.PI;
+    return (bi + 0.5) / BINS * Math.PI * 2 - Math.PI;
+  }
 
   function syncOrbs(): void {
     const lv = owned.get('rolling_shield') ?? 0;
@@ -1415,7 +1622,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   /** 시간이 된 무기를 쏜다 */
   function fireSpecials(dt: number): void {
-    for (const def of SPECIALS) {
+    for (const def of ALL_WEAPONS) {
       const lv = owned.get(def.id) ?? 0;
       if (!lv || !def.fire || !def.interval) continue;
       const left = (cooldowns.get(def.id) ?? 0) - dt;
@@ -1428,8 +1635,145 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
   }
 
+  /** 레전드 무기의 지속 효과 — 돌진·분신·불길 */
+  function updateLegends(dt: number): void {
+    if (gigaFlash > 0) gigaFlash -= dt;
+    if (flameT > 0) flameT -= dt;
+
+    // 노바 스트라이크 — 무적으로 밀고 나가며 닿는 것을 지운다
+    if (novaTimer > 0) {
+      novaTimer -= dt;
+      const sp = 620;
+      px = clamp(px + Math.cos(novaAngle) * sp * dt, 12, ARENA_W - 12);
+      py = clamp(py + Math.sin(novaAngle) * sp * 0.78 * dt, 20, ARENA_H - 10);
+      iframe = Math.max(iframe, 0.12);
+      spawnPart(px, py - 10, 3, 0x9ff0ff, 200);
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - px;
+        const dy = f.y - 8 - (py - 10);
+        const rr = 26 + f.def.r * f.scale;
+        if (dx * dx + dy * dy > rr * rr) continue;
+        f.hp -= novaDmg;
+        f.flash = 0.06;
+        f.view.tint = 0xff5c5c;
+        if (f.hp <= 0) killFoe(f);
+      }
+      if (boss) {
+        const bdx = boss.x - px;
+        const bdy = boss.y - 14 - (py - 10);
+        if (bdx * bdx + bdy * bdy < 40 * 40) hurtBoss(novaDmg * dt * 4);
+      }
+    }
+
+    // 소울 바디 — 적을 끌어당기다가 터진다
+    if (decoy) {
+      decoy.life -= dt;
+      if (decoy.life <= 0) {
+        blast(decoy.x, decoy.y - 8, decoy.r, decoy.dmg, 0x8ef0d8);
+        for (let i = 0; i < 3; i++) {
+          rings.push({ x: decoy.x, y: decoy.y - 8, r: decoy.r * (0.5 + i * 0.3), life: 0.4, max: 0.4, color: 0x8ef0d8 });
+        }
+        decoy = null;
+      }
+    }
+
+    // 차지 킥 자국 — 남아서 계속 태운다
+    for (let i = kickTrail.length - 1; i >= 0; i--) {
+      const k = kickTrail[i];
+      k.life -= dt;
+      if (k.life <= 0) { kickTrail.splice(i, 1); continue; }
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - k.x;
+        const dy = (f.y - 8 - k.y) / 0.78;
+        if (dx * dx + dy * dy > k.r * k.r) continue;
+        f.hp -= k.dmg * dt * 3;
+        f.flash = 0.04;
+        f.view.tint = 0xff9ac0;
+        if (f.hp <= 0) killFoe(f);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ 가챠
+  const reel = new GachaReel(W, H);
+  ui.addChild(reel.view);
+  /** 이번 뽑기 결과 (릴이 멈춘 뒤 지급) */
+  let pullResult: SpecialDef | null = null;
+
+  const RARITY_WEIGHT: Record<Rarity, number> = { R: 62, SR: 28, SSR: 10 };
+  /** 이 횟수 안에 SSR 이 안 나오면 다음은 확정 — 없으면 계속 안 나오는 사람이 생긴다 */
+  const PITY = 8;
+
+  function rollRarity(): Rarity {
+    if (pityCount >= PITY - 1) return 'SSR';
+    let total = 0;
+    for (const r of ['R', 'SR', 'SSR'] as Rarity[]) total += RARITY_WEIGHT[r];
+    let x = Math.random() * total;
+    for (const r of ['R', 'SR', 'SSR'] as Rarity[]) {
+      x -= RARITY_WEIGHT[r];
+      if (x <= 0) return r;
+    }
+    return 'R';
+  }
+
+  /** 코인이 찼으면 릴을 돌린다 */
+  function tryPull(): void {
+    if (phase !== 'play' || reel.active) return;
+    if (pendingPulls <= 0 && coins >= COINS_PER_PULL) {
+      coins -= COINS_PER_PULL;
+      pendingPulls++;
+    }
+    if (pendingPulls <= 0) return;
+    pendingPulls--;
+
+    // 이미 최대까지 올린 무기는 후보에서 뺀다 — 다 찼으면 등급을 낮춰 찾는다
+    const rarity = rollRarity();
+    const avail = (r: Rarity): SpecialDef[] =>
+      LEGENDS.filter((d) => d.rarity === r && (owned.get(d.id) ?? 0) < d.max);
+    let pickPool = avail(rarity);
+    if (!pickPool.length) {
+      for (const r of ['SSR', 'SR', 'R'] as Rarity[]) {
+        pickPool = avail(r);
+        if (pickPool.length) break;
+      }
+    }
+    if (!pickPool.length) {
+      // 레전드를 전부 최대로 올렸다 — 그때는 체력으로 돌려준다
+      maxHp += 40;
+      hp = maxHp;
+      sfx.pick();
+      return;
+    }
+
+    const chosen = pickPool[Math.floor(Math.random() * pickPool.length)];
+    pullResult = chosen;
+    pityCount = chosen.rarity === 'SSR' ? 0 : pityCount + 1;
+
+    // 릴에는 레전드 전체를 올리고 결과 위치만 지정한다 — 뭘 놓쳤는지가
+    // 같이 보여야 다음 뽑기가 기대된다
+    const items: ReelItem[] = LEGENDS.map((d) => ({
+      name: d.name, color: d.color, rarity: d.rarity ?? 'R',
+    }));
+    reel.start(items, LEGENDS.indexOf(chosen), `가챠 · 남은 코인 ${coins}`);
+    phase = 'gacha';
+  }
+
+  /** 릴이 끝나고 실제로 지급 */
+  function grantPull(): void {
+    const d = pullResult;
+    pullResult = null;
+    if (!d) return;
+    owned.set(d.id, (owned.get(d.id) ?? 0) + 1);
+    cooldowns.set(d.id, 0);
+    if (d.id === 'rolling_shield') syncOrbs();
+  }
+
   function levelUp(): void {
     level++;
+    coins++;
+    sfx.coin();
     xp -= xpNeed;
     // 2차식으로 올린다. 선형이면 킬 수가 초당 수십으로 불어나는 순간
     // 레벨이 초당 하나씩 올라 1분 만에 화력이 화면을 다 태워버린다.
@@ -1439,7 +1783,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     openPick();
   }
 
-  /** 카드 세 장을 뽑아 띄운다. bossReward 면 무기만 나온다. */
+  /** 레벨업 카드 세 장을 뽑아 띄운다 */
   function openPick(): void {
     // 뽑기 후보 = 새 특수무기 + 보유 무기 강화 + 능력치.
     // 무기 쪽에 가중치를 크게 줘서 뽑기가 이 게임의 중심으로 읽히게 한다.
@@ -1452,11 +1796,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         pool.push({ opt: { kind: 'weapon', def, lv }, weight: 3 });
       }
     }
-    if (!bossReward) {
-      for (const u of UPGRADES) {
-        if (u.only && !u.only.includes(w.style)) continue;
-        if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
-      }
+    for (const u of UPGRADES) {
+      if (u.only && !u.only.includes(w.style)) continue;
+      if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
     }
 
     pickList = [];
@@ -1471,10 +1813,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
       pickList.push(pool.splice(idx, 1)[0].opt);
     }
-    if (!pickList.length) {
-      if (bossReward) { bossReward = false; maxHp += 25; hp = maxHp; }
-      return;
-    }
+    if (!pickList.length) return;
     pickIndex = 0;
     phase = 'pick';
     sfx.level();
@@ -1505,7 +1844,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const o = pickList[pickIndex];
     if (!o) return;
     sfx.pick();
-    bossReward = false;
     if (o.kind === 'stat') {
       taken[o.up.id] = (taken[o.up.id] ?? 0) + 1;
       o.up.apply();
@@ -1550,7 +1888,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossBanner = 0;
     bossKills = 0;
     newRecord = false;
-    bossReward = false;
+    coins = 2;
+    pityCount = 0;
+    pendingPulls = 0;
     paused = false;
     owned.clear();
     cooldowns.clear();
@@ -1677,6 +2017,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
+    dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
+    dbg.__hordeForcePull = (id: string): void => {
+      const d = LEGENDS.find((x) => x.id === id);
+      if (!d || phase !== 'play' || reel.active) return;
+      pullResult = d;
+      reel.start(
+        LEGENDS.map((x) => ({ name: x.name, color: x.color, rarity: x.rarity ?? 'R' })),
+        LEGENDS.indexOf(d),
+        '가챠 · 남은 코인 ' + coins,
+      );
+      phase = 'gacha';
+    };
   }
 
   // ------------------------------------------------------------ 루프
@@ -1698,6 +2050,32 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 캐릭터를 고르기 전에는 아래 로직이 돌 일이 없다
     const hv = hero;
     if (!hv) { input.endFrame(); return; }
+
+    if (phase === 'gacha') {
+      reel.update(dt);
+      if (reel.ticked) sfx.reelTick(Math.min(1, reel.shake > 0 ? 1 : 0.5));
+      if (reel.shake > 0) {
+        shake = Math.max(shake, reel.shake);
+        const r = reel.result?.rarity ?? 'R';
+        sfx.reveal(r);
+      }
+      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash') || gachaTap) {
+        gachaTap = false;
+        if (reel.canDismiss) {
+          grantPull();
+          reel.dismiss();
+          phase = 'play';
+          // 코인이 더 있으면 연달아 돌린다
+          tryPull();
+        } else {
+          reel.skip();
+        }
+      }
+      gachaTap = false;
+      draw(dt);
+      input.endFrame();
+      return;
+    }
 
     if (phase === 'pick') {
       if (input.pressed('left')) pickIndex = (pickIndex + pickList.length - 1) % pickList.length;
@@ -1793,6 +2171,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       iframe = Math.max(iframe, DASH_TIME + 0.08);
       spawnPart(px, py - 10, 8, 0x8ef0ff, 90);
       sfx.dash();
+      const ck = owned.get('charge_kick') ?? 0;
+      if (ck) kickTrail.push({ x: px, y: py - 8, life: 2.2, r: 20, dmg: 14 + 9 * ck });
     }
 
     if (dashTimer > 0) {
@@ -1905,19 +2285,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       shoot();
     }
     fireSpecials(dt);
+    updateLegends(dt);
+    tryPull();
 
     // ---- 적
     if (iframe > 0) iframe -= dt;
 
+    // 분신이 서 있으면 적은 그쪽으로 간다. 이게 소울 바디의 본체다 —
+    // 유인이 없으면 그냥 시간차 폭탄이라 뽑을 이유가 없다.
+    const lureX = decoy ? decoy.x : px;
+    const lureY = decoy ? decoy.y : py;
+
     for (let i = foes.length - 1; i >= 0; i--) {
       const f = foes[i];
-      const dx = px - f.x;
-      const dy = py - f.y;
+      const dx = lureX - f.x;
+      const dy = lureY - f.y;
 
       // 뒤처진 개체는 조용히 치운다. 안 치우면 못 죽인 적이 영원히 따라와
       // 쌓이기만 해서, 한 번 밀리는 순간 회복이 불가능한 죽음의 나선이 된다.
       // 스폰 반경보다 넉넉히 바깥이라 화면에서 사라지는 게 보이지는 않는다.
-      if (!f.elite && (Math.abs(dx) > 360 || Math.abs(dy) > 620)) {
+      if (!f.elite && (Math.abs(px - f.x) > 360 || Math.abs(py - f.y) > 620)) {
         retire(f);
         continue;
       }
@@ -2384,6 +2771,51 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     if (hostiles.length) specialG.fill({ color: 0xffe0f4 });
 
+    // --- 레전드 무기 이펙트
+    // 소울 바디 분신 — 플레이어를 닮은 잔상으로 그린다
+    if (decoy) {
+      const k = decoy.life / 2.4;
+      const pulse = 0.5 + Math.sin(animClock * 14) * 0.2;
+      specialG.circle(decoy.x, decoy.y - 10, decoy.r * (1 - k) * 0.5)
+        .stroke({ color: 0x8ef0d8, width: 1, alpha: 0.35 });
+      specialG.rect(decoy.x - 5, decoy.y - 24, 10, 24).fill({ color: 0x8ef0d8, alpha: pulse });
+      specialG.rect(decoy.x - 3, decoy.y - 22, 6, 8).fill({ color: 0xdcfff6, alpha: pulse });
+    }
+
+    // 차지 킥 자국
+    for (const kt of kickTrail) {
+      if (!onScreen(kt.x, kt.y)) continue;
+      const a = Math.min(1, kt.life / 2.2);
+      specialG.circle(kt.x, kt.y, kt.r * (0.7 + a * 0.3))
+        .fill({ color: 0xff5c9c, alpha: a * 0.25 });
+      specialG.circle(kt.x, kt.y, kt.r * 0.55)
+        .fill({ color: 0xffb0d4, alpha: a * 0.3 });
+    }
+
+    // 파이어 웨이브 — 조준 방향 부채꼴이 일렁인다
+    if (flameT > 0 && phase === 'play') {
+      const a0 = aimAngle - flameSpan / 2;
+      const a1 = aimAngle + flameSpan / 2;
+      for (let i = 0; i < 3; i++) {
+        const rr = flameR * (0.55 + i * 0.22) * (0.94 + Math.sin(animClock * 22 + i) * 0.06);
+        specialG.moveTo(px, py - 10).arc(px, py - 10, rr, a0, a1).closePath();
+        specialG.fill({ color: i === 0 ? 0xfff2c0 : i === 1 ? 0xffab3d : 0xff5c2c, alpha: 0.32 });
+      }
+    }
+
+    // 노바 스트라이크 — 지나간 자리에 플라스마 꼬리
+    if (novaTimer > 0) {
+      specialG.circle(px, py - 10, 22).fill({ color: 0x9ff0ff, alpha: 0.45 });
+      specialG.circle(px, py - 10, 13).fill({ color: 0xffffff, alpha: 0.8 });
+      const c = Math.cos(novaAngle);
+      const sn = Math.sin(novaAngle) * 0.78;
+      specialG.moveTo(px - c * 60 - sn * 14, py - 10 - sn * 60 + c * 14)
+        .lineTo(px + c * 16, py - 10 + sn * 16)
+        .lineTo(px - c * 60 + sn * 14, py - 10 - sn * 60 - c * 14)
+        .closePath()
+        .fill({ color: 0x9ff0ff, alpha: 0.5 });
+    }
+
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
     if (phase === 'play' && (moveDirX !== 0 || moveDirY !== 0)) {
       const a = Math.atan2(moveDirY * 0.78, moveDirX);
@@ -2484,9 +2916,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 보유 특수무기 — 색 칸과 레벨 눈금. 뭘 뽑았는지 한눈에 보여야 한다
     let hx = 134;
-    for (const def of SPECIALS) {
+    for (const def of ALL_WEAPONS) {
       const lv = owned.get(def.id) ?? 0;
       if (!lv) continue;
+      // 레전드는 등급색 테두리를 둘러 기본 무기와 한눈에 구분되게 한다
+      if (def.rarity) {
+        hudBar.rect(hx - 1, 15, 12, 9).fill({ color: RARITY_COLOR[def.rarity] });
+      }
       hudBar.rect(hx, 16, 10, 7).fill({ color: def.color });
       for (let i = 0; i < lv; i++) hudBar.rect(hx + i * 2, 13, 1, 2).fill({ color: 0xffffff });
       hx += 14;
@@ -2506,12 +2942,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       dmg: w.dmg,
       char: charDef.id,
       stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
+      coins,
+      pity: pityCount,
     };
     dbg.__hordePick = phase === 'pick'
       ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
       : null;
     dbg.__hordePickIndex = pickIndex;
     dbg.__hordeTheme = theme.id;
+    dbg.__hordeGacha = phase === 'gacha';
     dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp } : null;
     dbg.__hordeHostiles = hostiles.length;
 
@@ -2523,6 +2962,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       stageLabel.alpha = Math.min(1, stageBanner / 0.6);
     }
     muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
+
+    // 기가 크래시 섬광 — 화면 전체가 하얗게 날아간다
+    if (gigaFlash > 0) {
+      const k = gigaFlash / 0.45;
+      hudBar.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: k * 0.85 });
+    }
+
+    // 가챠 코인 — 얼마나 모였는지가 보여야 다음 한 개가 급해진다
+    if (phase !== 'select') {
+      const cw = 46;
+      const cx0 = W - cw - 6;
+      hudBar.rect(cx0, 30, cw, 7).fill({ color: 0x2a2410 });
+      hudBar.rect(cx0, 30, Math.round(cw * clamp(coins / COINS_PER_PULL, 0, 1)), 7)
+        .fill({ color: 0xffd05c });
+      hudBar.rect(cx0, 30, cw, 1).fill({ color: 0xfff2c0, alpha: 0.5 });
+    }
 
     // 보스 체력 — 화면 위에 따로 붙인다. 얼마나 남았는지가 안 보이면
     // 언제까지 버텨야 하는지를 몰라서 그냥 도망만 다니게 된다.

@@ -23,6 +23,11 @@ export interface Sfx {
   pick(): void;
   boss(): void;
   explode(): void;
+  /** 릴이 한 칸 넘어갈 때 — near 가 1에 가까울수록 음이 높아진다 */
+  reelTick(near: number): void;
+  /** 결과 공개. 등급이 높을수록 길고 화려하게 */
+  reveal(rarity: 'R' | 'SR' | 'SSR'): void;
+  coin(): void;
   dead(): void;
   /** 첫 입력에서 불러야 한다 — 브라우저는 사용자 동작 전에 소리를 못 낸다 */
   unlock(): void;
@@ -212,6 +217,38 @@ export function createSfx(): Sfx {
         tone('square', 240, 240, 0.16, 0.13, d);
         tone('square', 180, 180, 0.16, 0.1, d + 0.08);
       });
+    },
+
+    reelTick(near): void {
+      // 최소 간격을 거의 안 둔다 — 딸깍이 촘촘해야 "돌아간다"가 느껴진다
+      if (!ensure() || !gate('reel', 0.022)) return;
+      const f = 620 + near * 900;
+      tone('square', f, f, 0.028, 0.05);
+    },
+
+    reveal(rarity): void {
+      if (!ensure()) return;
+      if (rarity === 'SSR') {
+        // 상승 아르페지오 + 길게 끄는 저음 — 제일 큰 보상 신호
+        [0, 0.09, 0.18, 0.27, 0.36].forEach((d, i) => {
+          tone('square', 523 * Math.pow(1.26, i), 523 * Math.pow(1.26, i), 0.2, 0.1, d);
+        });
+        tone('sawtooth', 130, 260, 0.9, 0.1);
+        noise(0.5, 0.16, 3000, 700);
+      } else if (rarity === 'SR') {
+        [0, 0.1, 0.2].forEach((d, i) => {
+          tone('square', 494 * Math.pow(1.25, i), 494 * Math.pow(1.25, i), 0.17, 0.09, d);
+        });
+        noise(0.3, 0.11, 2200, 700);
+      } else {
+        tone('square', 660, 880, 0.16, 0.08);
+        noise(0.16, 0.08, 1600, 700);
+      }
+    },
+
+    coin(): void {
+      if (!ensure() || !gate('coin', 0.05)) return;
+      tone('square', 1180, 1760, 0.08, 0.06);
     },
 
     dead(): void {
