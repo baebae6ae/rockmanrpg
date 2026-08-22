@@ -50,6 +50,7 @@ interface KindDef {
   touch: number;
   xp: number;
   scale: number;
+  elem: Element;
 }
 
 /**
@@ -68,14 +69,49 @@ const BEHAVIOR: Record<FoeKind, Behavior> = {
 };
 
 const KINDS: Record<FoeKind, KindDef> = {
-  crawler: { hp: 6, speed: 34, r: 9, touch: 7, xp: 1, scale: 0.9 },
-  walker: { hp: 10, speed: 44, r: 10, touch: 9, xp: 1, scale: 1 },
-  hopper: { hp: 5, speed: 62, r: 8, touch: 7, xp: 1, scale: 0.85 },
-  fang_rusher: { hp: 14, speed: 78, r: 10, touch: 9, xp: 2, scale: 1 },
-  sniper_drone: { hp: 8, speed: 50, r: 9, touch: 8, xp: 2, scale: 0.9 },
+  crawler: { hp: 6, speed: 34, r: 9, touch: 7, xp: 1, scale: 0.9, elem: 'aqua' },
+  walker: { hp: 10, speed: 44, r: 10, touch: 9, xp: 1, scale: 1, elem: 'elec' },
+  hopper: { hp: 5, speed: 62, r: 8, touch: 7, xp: 1, scale: 0.85, elem: 'ice' },
+  fang_rusher: { hp: 14, speed: 78, r: 10, touch: 9, xp: 2, scale: 1, elem: 'fire' },
+  sniper_drone: { hp: 8, speed: 50, r: 9, touch: 8, xp: 2, scale: 0.9, elem: 'elec' },
 };
 
 const KIND_LIST = Object.keys(KINDS) as FoeKind[];
+
+/**
+ * 속성 — 록맨에서 보스 순서가 의미 있는 이유가 이것이다.
+ *
+ * 지금까지 무기는 전부 "그냥 딜"이라 뭘 뽑든 비슷했다. 속성을 넣으면
+ * 수집이 "더 센 것"에서 **"맞는 걸 골라 쓰는 것"**으로 바뀐다.
+ * 상성은 한 바퀴 도는 고리로 잡았다 — 외우기 쉬워야 쓸 수 있다.
+ *
+ *   전기 → 물 → 불 → 얼음 → 전기   (각각 다음 것에 강하다)
+ *   무속성은 상성이 없고 아무에게도 안 밀린다.
+ */
+type Element = 'none' | 'elec' | 'aqua' | 'fire' | 'ice';
+
+const BEATS: Record<Element, Element> = {
+  elec: 'aqua', aqua: 'fire', fire: 'ice', ice: 'elec', none: 'none',
+};
+
+const ELEM_COLOR: Record<Element, number> = {
+  none: 0xcfe0ff, elec: 0xffe86b, aqua: 0x6ec8ff, fire: 0xff7b3c, ice: 0xa8e8ff,
+};
+
+const ELEM_NAME: Record<Element, string> = {
+  none: '무', elec: '전기', aqua: '수', fire: '화', ice: '빙',
+};
+
+/** 상성 배율 — 3배는 눈에 확 띄어야 "골라 쓴다"는 판단이 생긴다 */
+const WEAK_MULT = 3;
+const RESIST_MULT = 0.55;
+
+function elemMult(atk: Element, def: Element): number {
+  if (atk === 'none' || def === 'none') return 1;
+  if (BEATS[atk] === def) return WEAK_MULT;
+  if (BEATS[def] === atk) return RESIST_MULT;
+  return 1;
+}
 
 /**
  * 스폰 비율. 균등하게 뽑으면 사격형이 다섯 중 하나가 되는데, 화면에 100
@@ -122,19 +158,20 @@ interface BossDef {
   id: string;
   pattern: BossPattern;
   color: number;
+  elem: Element;
   /** 잡으면 주는 무기 id (LEGENDS 안에 있다) */
   drop: string;
 }
 
 const BOSS_DEFS: BossDef[] = [
-  { id: 'spark_mandriller', pattern: 'slam', color: 0xffe86b, drop: 'electric_spark' },
-  { id: 'sting_chameleon', pattern: 'blink', color: 0x8ef0a0, drop: 'chameleon_sting' },
-  { id: 'boomer_kuwanger', pattern: 'boomer', color: 0xc98cff, drop: 'boomerang_cutter' },
-  { id: 'titan_breaker', pattern: 'charge', color: 0xff9a4c, drop: 'titan_crush' },
-  { id: 'guard_turtlan', pattern: 'guard', color: 0x6ec8ff, drop: 'guard_shell' },
-  { id: 'rapier_phantom', pattern: 'dasher', color: 0xff5c9c, drop: 'phantom_edge' },
-  { id: 'longshot_eaglet', pattern: 'sniper', color: 0xdcf4ff, drop: 'longshot_beam' },
-  { id: 'crimson_barrier', pattern: 'barrier', color: 0xff5c5c, drop: 'crimson_orbit' },
+  { id: 'spark_mandriller', pattern: 'slam', color: 0xffe86b, elem: 'elec', drop: 'electric_spark' },
+  { id: 'sting_chameleon', pattern: 'blink', color: 0x8ef0a0, elem: 'aqua', drop: 'chameleon_sting' },
+  { id: 'boomer_kuwanger', pattern: 'boomer', color: 0xc98cff, elem: 'none', drop: 'boomerang_cutter' },
+  { id: 'titan_breaker', pattern: 'charge', color: 0xff9a4c, elem: 'fire', drop: 'titan_crush' },
+  { id: 'guard_turtlan', pattern: 'guard', color: 0x6ec8ff, elem: 'aqua', drop: 'guard_shell' },
+  { id: 'rapier_phantom', pattern: 'dasher', color: 0xff5c9c, elem: 'none', drop: 'phantom_edge' },
+  { id: 'longshot_eaglet', pattern: 'sniper', color: 0xdcf4ff, elem: 'ice', drop: 'longshot_beam' },
+  { id: 'crimson_barrier', pattern: 'barrier', color: 0xff5c5c, elem: 'fire', drop: 'crimson_orbit' },
 ];
 
 
@@ -232,6 +269,8 @@ interface Bullet {
   boomDmg: number;
   /** 0보다 크면 이 시간 뒤 플레이어 쪽으로 되돌아온다 (부메랑) */
   back: number;
+  /** 상성 계산용 */
+  elem: Element;
 }
 
 /** 번개 — 즉발이라 탄이 아니고, 잠깐 보이는 선으로만 남는다 */
@@ -327,6 +366,8 @@ interface Weapon {
   arcSpan: number;
   /** 방식별 기본 위력. 위력 카드를 여기 비례해서 올린다 */
   baseDmg: number;
+  /** 기본 사격의 속성 */
+  elem: Element;
 }
 
 /** 세이버 참격 자국 — 잠깐 보이고 사라진다 */
@@ -380,12 +421,13 @@ interface HordeChar {
   archetype?: string;
   base_stats: { hp: number };
   /** X·제로만 갖고 있다. 나머지는 시작 스킬에서 탄을 가져온다 */
-  shot?: { speed: number; color: string; power: number };
+  shot?: { speed: number; color: string; power: number; element?: string };
   starting_skills?: string[];
 }
 
 interface SkillLite {
   id: string;
+  element?: string;
   effects?: { type: string; speed?: number; color?: number; power?: number }[];
 }
 
@@ -404,6 +446,7 @@ interface ShotInfo {
   speed: number;
   color: number;
   power: number;
+  elem: Element;
 }
 
 /**
@@ -411,15 +454,34 @@ interface ShotInfo {
  * 스킬의 projectile 효과에서 가져온다 — 9명 중 7명이 후자다.
  * color 는 데이터마다 "0x..." 문자열이거나 십진수라 Number() 로 통일한다.
  */
+/** 데이터의 element 문자열을 이 게임의 속성으로 옮긴다 */
+function toElement(raw: string | undefined): Element {
+  switch (raw) {
+    case 'elec': case 'electric': case 'thunder': return 'elec';
+    case 'aqua': case 'water': case 'bubble': return 'aqua';
+    case 'fire': case 'flame': case 'heat': return 'fire';
+    case 'ice': case 'chill': case 'freeze': return 'ice';
+    default: return 'none';
+  }
+}
+
 function resolveShot(c: HordeChar): ShotInfo {
-  if (c.shot) return { speed: c.shot.speed, color: Number(c.shot.color), power: c.shot.power };
+  if (c.shot) {
+    return {
+      speed: c.shot.speed, color: Number(c.shot.color), power: c.shot.power,
+      elem: toElement(c.shot.element),
+    };
+  }
   const sk = SKILLS[c.starting_skills?.[0] ?? ''];
   const proj = sk?.effects?.find((e) => e.type === 'projectile');
   const dmg = sk?.effects?.find((e) => e.type === 'damage');
   // 세이버 스킬은 melee_hitbox 라 projectile 이 없다 — 참격 색이라도
   // 세이버답게 잡아준다. 안 그러면 전부 기본 하늘색으로 나온다.
   const fallback = c.archetype === 'saber' ? 0x8ef0d8 : 0x9fe8ff;
-  return { speed: proj?.speed ?? 300, color: Number(proj?.color ?? fallback), power: dmg?.power ?? 8 };
+  return {
+    speed: proj?.speed ?? 300, color: Number(proj?.color ?? fallback), power: dmg?.power ?? 8,
+    elem: toElement(sk?.element),
+  };
 }
 
 const SHOTS = new Map<string, ShotInfo>(CHAR_DEFS.map((c) => [c.id, resolveShot(c)]));
@@ -855,6 +917,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const w: Weapon = {
     style: 'charge',
     baseDmg: 6,
+    elem: 'none',
     arcR: 50,
     arcSpan: Math.PI * 1.1,
     interval: 0.16,
@@ -1050,6 +1113,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       boomR: 0,
       boomDmg: 0,
       back: 0,
+      elem: w.elem,
     });
   }
 
@@ -1059,27 +1123,53 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bullets.push({
       life: 1, pierce: 0, lastHit: null, alive: true,
       shape: 'orb', color: 0xffffff, r: 4, spin: 0, angle: 0,
-      homing: 0, boomR: 0, boomDmg: 0, back: 0,
+      homing: 0, boomR: 0, boomDmg: 0, back: 0, elem: 'none',
       ...b,
     } as Bullet);
   }
 
+  /**
+   * 잡몹 피해 — 상성을 여기 한 곳에서만 계산한다.
+   * 여러 군데서 f.hp 를 직접 깎으면 어디는 적용되고 어디는 안 되는 일이 생긴다.
+   */
+  function hurtFoe(f: Foe, amount: number, elem: Element, fx?: number, fy?: number): void {
+    const m = elemMult(elem, f.def.elem);
+    f.hp -= amount * m;
+    f.flash = 0.07;
+    f.view.tint = m >= WEAK_MULT ? 0xffffa0 : 0xff5c5c;
+    if (m >= WEAK_MULT) {
+      // 약점이 터졌다는 걸 눈으로 알려준다 — 안 보이면 상성이 있는 줄도 모른다
+      spawnPart(fx ?? f.x, fy ?? f.y - 8, 3, ELEM_COLOR[elem], 200);
+      if (Math.random() < 0.25) {
+        rings.push({ x: f.x, y: f.y - 8, r: 16, life: 0.2, max: 0.2, color: ELEM_COLOR[elem] });
+      }
+    }
+    if (f.hp <= 0) killFoe(f);
+  }
+
   /** 보스에게 피해를 준다 — 죽으면 정리까지 */
-  function hurtBoss(amount: number): void {
+  function hurtBoss(amount: number, elem: Element = 'none'): void {
     const b = boss;
     if (!b) return;
+    const m = elemMult(elem, b.def.elem);
+    amount *= m;
+    if (m >= WEAK_MULT) {
+      spawnPart(b.x, b.y - 14, 4, ELEM_COLOR[elem], 200);
+      b.flash = 0.1;
+    }
     // 은신 중엔 못 맞히고, 방패를 든 동안은 대부분 튕긴다 —
     // "지금은 때릴 때가 아니다"를 몸으로 알게 하는 구간이다
     if (b.hidden) return;
     b.hp -= b.guarding ? amount * 0.18 : amount;
     if (b.guarding) spawnPart(b.x, b.y - 14, 1, 0x9fd0ff, 90);
-    b.flash = 0.07;
-    b.view.tint = 0xff5c5c;
+    b.flash = Math.max(b.flash, 0.07);
+    // 약점이면 노랗게 — 빨강이면 상성이 걸렸는지 알 수가 없다
+    b.view.tint = m >= WEAK_MULT ? 0xffffa0 : 0xff5c5c;
     if (b.hp <= 0) killBoss();
   }
 
   /** 반경 안의 적을 한꺼번에 때린다 (크래시 봄버·번개) */
-  function blast(x: number, y: number, radius: number, dmg: number, color: number): void {
+  function blast(x: number, y: number, radius: number, dmg: number, color: number, elem: Element = 'none'): void {
     rings.push({ x, y, r: radius, life: 0.24, max: 0.24, color });
     sfx.explode();
     spawnPart(x, y, 12, 0xff9a4c, 150);
@@ -1089,10 +1179,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const dx = f.x - x;
       const dy = (f.y - 8 - y) * 1.2;
       if (dx * dx + dy * dy > radius * radius) continue;
-      f.hp -= dmg;
-      f.flash = 0.07;
-      f.view.tint = 0xff5c5c;
-      if (f.hp <= 0) killFoe(f);
+      hurtFoe(f, dmg, elem);
+    }
+    const b = boss;
+    if (b) {
+      const bx = b.x - x;
+      const by = (b.y - 14 - y) * 1.2;
+      if (bx * bx + by * by <= (radius + 16) * (radius + 16)) hurtBoss(dmg, elem);
     }
   }
 
@@ -1118,14 +1211,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       while (d < -Math.PI) d += Math.PI * 2;
       if (Math.abs(d) > half) continue;
 
-      f.hp -= w.dmg;
-      f.flash = 0.07;
-      f.view.tint = 0xff5c5c;
       const len = Math.hypot(dx, dy) || 1;
       f.kx += (dx / len) * 190;
       f.ky += (dy / len) * 190 * 0.78;
       spawnPart(f.x, f.y - 8, 3, 0xfff2c0, 120);
-      if (f.hp <= 0) killFoe(f);
+      hurtFoe(f, w.dmg, w.elem);
     }
 
     const b = boss;
@@ -1138,7 +1228,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         if (Math.abs(d) <= half) {
-          hurtBoss(w.dmg);
+          hurtBoss(w.dmg, w.elem);
           spawnPart(b.x, b.y - 14, 4, 0xfff2c0, 140);
         }
       }
@@ -1510,18 +1600,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         while (dd > Math.PI) dd -= Math.PI * 2;
         while (dd < -Math.PI) dd += Math.PI * 2;
         if (Math.abs(dd) > half) continue;
-        f.hp -= dmg;
-        f.flash = 0.08;
-        f.view.tint = 0xff5c5c;
         const len = Math.hypot(dx, dy) || 1;
         f.kx += (dx / len) * 260;
         f.ky += (dy / len) * 260 * 0.78;
-        if (f.hp <= 0) killFoe(f);
+        hurtFoe(f, dmg, w.elem);
       }
       if (boss) {
         const dx = boss.x - px;
         const dy = (boss.y - 14 - (py - 10)) / 0.78;
-        if (dx * dx + dy * dy < (r + 18) * (r + 18)) hurtBoss(dmg);
+        if (dx * dx + dy * dy < (r + 18) * (r + 18)) hurtBoss(dmg, w.elem);
       }
     } else if (w.style === 'rapid') {
       // 폭주 — 잠깐 발사 간격이 무너진다
@@ -1609,6 +1696,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     fire?: (lv: number) => void;
     /** 가챠 전용 무기에만 있다. 레벨업 카드에는 안 나온다 */
     rarity?: Rarity;
+    /** 상성 계산에 쓴다. 없으면 무속성 */
+    elem?: Element;
   }
 
   const SPECIALS: SpecialDef[] = [
@@ -1664,6 +1753,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'storm_tornado',
+      elem: 'ice',
       name: '스톰 토네이도',
       color: 0x9fe8ff,
       max: 5,
@@ -1682,6 +1772,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'crash_bomber',
+      elem: 'fire',
       name: '크래시 봄버',
       color: 0xff8a5c,
       max: 5,
@@ -1701,6 +1792,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'triad_thunder',
+      elem: 'elec',
       name: '트라이어드 썬더',
       color: 0xffe86b,
       max: 5,
@@ -1716,7 +1808,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         for (let i = 0; i < n && near.length; i++) {
           const f = near.splice(Math.floor(Math.random() * near.length), 1)[0];
           bolts.push({ x: f.x, y: f.y - 8, life: 0.14, color: 0xffe86b });
-          blast(f.x, f.y - 8, 20, dmg, 0xffe86b);
+          blast(f.x, f.y - 8, 20, dmg, 0xffe86b, 'elec');
         }
       },
     },
@@ -1748,11 +1840,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         for (let j = foes.length - 1; j >= 0; j--) {
           const f = foes[j];
           if (!inView(f.x, f.y)) continue;
-          f.hp -= dmg;
-          f.flash = 0.08;
-          f.view.tint = 0xff5c5c;
           spawnPart(f.x, f.y - 8, 3, 0xfff2c0, 200);
-          if (f.hp <= 0) killFoe(f);
+          hurtFoe(f, dmg, 'none');
         }
         if (boss && inView(boss.x, boss.y)) hurtBoss(dmg * 0.8);
         for (let i = 0; i < 4; i++) {
@@ -1829,6 +1918,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'fire_wave',
+      elem: 'fire',
       name: '파이어 웨이브',
       color: 0xff8a2c,
       rarity: 'R',
@@ -1853,11 +1943,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           while (d > Math.PI) d -= Math.PI * 2;
           while (d < -Math.PI) d += Math.PI * 2;
           if (Math.abs(d) > half) continue;
-          f.hp -= dmg;
-          f.flash = 0.05;
-          f.view.tint = 0xffb060;
           if (Math.random() < 0.3) spawnPart(f.x, f.y - 8, 1, 0xff9a4c, 90);
-          if (f.hp <= 0) killFoe(f);
+          hurtFoe(f, dmg, 'fire');
         }
       },
     },
@@ -1882,6 +1969,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const BOSS_WEAPONS: SpecialDef[] = [
     {
       id: 'electric_spark',
+      elem: 'elec',
       name: '일렉트릭 스파크',
       color: 0xffe86b,
       rarity: 'SR',
@@ -1904,14 +1992,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             r: Math.hypot(cur.x - fromX, cur.y - 8 - fromY), span: 0.14,
             life: 0.16, max: 0.16, color: 0xffe86b,
           });
-          cur.hp -= dmg;
-          cur.flash = 0.08;
-          cur.view.tint = 0xfff2a0;
           spawnPart(cur.x, cur.y - 8, 3, 0xffe86b, 150);
           fromX = cur.x;
           fromY = cur.y - 8;
-          const prev = cur;
-          if (prev.hp <= 0) killFoe(prev);
+          hurtFoe(cur, dmg, 'elec');
           // 다음 이웃 찾기
           let best: Foe | null = null;
           let bd = 150 * 150;
@@ -1929,6 +2013,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'chameleon_sting',
+      elem: 'aqua',
       name: '카멜레온 스팅',
       color: 0x8ef0a0,
       rarity: 'SSR',
@@ -1971,6 +2056,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'titan_crush',
+      elem: 'fire',
       name: '타이탄 크러시',
       color: 0xff9a4c,
       rarity: 'SR',
@@ -1979,7 +2065,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       interval: (lv) => 3.4 - 0.28 * lv,
       fire: (lv) => {
         const r = 64 + 12 * lv;
-        blast(px, py - 8, r, 34 + 22 * lv, 0xff9a4c);
+        blast(px, py - 8, r, 34 + 22 * lv, 0xff9a4c, 'fire');
         for (let i = 0; i < 3; i++) {
           rings.push({ x: px, y: py - 8, r: r * (0.5 + i * 0.3), life: 0.4, max: 0.4, color: 0xff9a4c });
         }
@@ -1988,6 +2074,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'guard_shell',
+      elem: 'aqua',
       name: '가드 셸',
       color: 0x6ec8ff,
       rarity: 'SSR',
@@ -2006,6 +2093,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'longshot_beam',
+      elem: 'ice',
       name: '롱쇼트 빔',
       color: 0xdcf4ff,
       rarity: 'SSR',
@@ -2028,18 +2116,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           if (along < 0 || along > 420) continue;
           const perp = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
           if (perp > 12 + f.def.r) continue;
-          f.hp -= dmg;
-          f.flash = 0.08;
-          f.view.tint = 0xffffff;
           spawnPart(f.x, f.y - 8, 3, 0xdcf4ff, 170);
-          if (f.hp <= 0) killFoe(f);
+          hurtFoe(f, dmg, 'ice');
         }
         if (boss) {
           const rx = boss.x - px;
           const ry = (boss.y - 14 - (py - 10)) / 0.78;
           const along = rx * Math.cos(a) + ry * Math.sin(a);
           const perp = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
-          if (along > 0 && along < 420 && perp < 26) hurtBoss(dmg);
+          if (along > 0 && along < 420 && perp < 26) hurtBoss(dmg, 'ice');
         }
         shake = Math.max(shake, 5);
         sfx.shot('charge');
@@ -2047,6 +2132,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     },
     {
       id: 'crimson_orbit',
+      elem: 'fire',
       name: '크림슨 오빗',
       color: 0xff5c5c,
       rarity: 'SR',
@@ -2177,11 +2263,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             const dy = f.y - 8 - oy;
             const rr = f.def.r * f.scale + 6;
             if (dx * dx + dy * dy > rr * rr) continue;
-            f.hp -= dmg;
-            f.flash = 0.07;
-            f.view.tint = 0xff5c5c;
             spawnPart(ox, oy, 2, 0x8ef0ff, 90);
-            if (f.hp <= 0) killFoe(f);
+            hurtFoe(f, dmg, 'none');
             o.cd = 0.12;
             gy = cy + 2;
             gx = cx + 2;
@@ -2224,10 +2307,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const dx = f.x - px;
         const dy = (f.y - 8 - (py - 10)) / 0.78;
         if (dx * dx + dy * dy > 46 * 46) continue;
-        f.hp -= stingDmg * dt * 2.4;
-        f.flash = 0.04;
-        f.view.tint = 0xa0ffb8;
-        if (f.hp <= 0) killFoe(f);
+        hurtFoe(f, stingDmg * dt * 2.4, 'aqua');
       }
     }
 
@@ -2263,10 +2343,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const dy = f.y - 8 - (py - 10);
         const rr = 26 + f.def.r * f.scale;
         if (dx * dx + dy * dy > rr * rr) continue;
-        f.hp -= novaDmg;
-        f.flash = 0.06;
-        f.view.tint = 0xff5c5c;
-        if (f.hp <= 0) killFoe(f);
+        hurtFoe(f, novaDmg, 'none');
       }
       if (boss) {
         const bdx = boss.x - px;
@@ -2297,10 +2374,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const dx = f.x - k.x;
         const dy = (f.y - 8 - k.y) / 0.78;
         if (dx * dx + dy * dy > k.r * k.r) continue;
-        f.hp -= k.dmg * dt * 3;
-        f.flash = 0.04;
-        f.view.tint = 0xff9ac0;
-        if (f.hp <= 0) killFoe(f);
+        hurtFoe(f, k.dmg * dt * 3, 'fire');
       }
     }
   }
@@ -2522,6 +2596,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     w.interval = 0.16; w.shots = 1; w.spread = 0.06;
     const si = SHOTS.get(charDef.id)!;
     w.style = styleOf(charDef);
+    w.elem = si.elem;
     w.speed = Math.round(si.speed * 1.25);
     w.drones = 0; w.magnet = 40;
     w.arcR = 50; w.arcSpan = Math.PI * 1.1;
@@ -3112,7 +3187,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       b.y += b.vy * dt;
       b.life -= dt;
       if (b.life <= 0 || b.x < -20 || b.x > ARENA_W + 20 || b.y < -20 || b.y > ARENA_H + 20) {
-        if (b.boomR > 0) blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
+        if (b.boomR > 0) blast(b.x, b.y, b.boomR, b.boomDmg, b.color, b.elem);
         bullets.splice(i, 1);
         continue;
       }
@@ -3124,9 +3199,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const brr = 18 + b.r;
         if (bdx * bdx + bdy * bdy <= brr * brr) {
           if (b.boomR > 0) {
-            blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
+            blast(b.x, b.y, b.boomR, b.boomDmg, b.color, b.elem);
           } else {
-            hurtBoss(b.dmg);
+            hurtBoss(b.dmg, b.elem);
             spawnPart(b.x, b.y, 3, 0xfff0a0, 120);
             sfx.hit();
           }
@@ -3154,22 +3229,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
             if (b.boomR > 0) {
               // 폭탄은 몸통 피해가 없다 — 터지는 것으로 끝낸다
-              blast(b.x, b.y, b.boomR, b.boomDmg, b.color);
+              blast(b.x, b.y, b.boomR, b.boomDmg, b.color, b.elem);
               bullets.splice(i, 1);
               consumed = true;
               break;
             }
 
-            f.hp -= b.dmg;
-            f.flash = 0.07;
-            f.view.tint = 0xff5c5c;
             f.kx += (b.vx / w.speed) * 120;
             f.ky += (b.vy / w.speed) * 120;
             spawnPart(b.x, b.y, 2, b.shape === 'tracer' ? 0xfff0a0 : b.color, 110);
             sfx.hit();
             b.lastHit = f;
-
-            if (f.hp <= 0) killFoe(f);
+            hurtFoe(f, b.dmg, b.elem, b.x, b.y);
 
             if (b.pierce > 0) b.pierce--;
             else bullets.splice(i, 1);
@@ -3803,7 +3874,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordePickIndex = pickIndex;
     dbg.__hordeTheme = theme.id;
     dbg.__hordeGacha = phase === 'gacha';
-    dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp } : null;
+    dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
     dbg.__hordeHostiles = hostiles.length;
 
     // 구역 배너 — 바뀐 직후 잠깐 뜬다
@@ -3876,7 +3947,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 언제까지 버텨야 하는지를 몰라서 그냥 도망만 다니게 된다.
     bossLabel.visible = !!boss && phase === 'play';
     if (boss && phase === 'play') {
-      bossLabel.text = boss.name;
+      const be = boss.def.elem;
+      // 무엇으로 때려야 잘 들어가는지 같이 보여준다.
+      // 이게 없으면 상성이 있다는 사실 자체를 모른 채 끝난다.
+      const counter = (Object.keys(BEATS) as Element[]).find((e) => e !== 'none' && BEATS[e] === be);
+      bossLabel.text = be === 'none'
+        ? boss.name
+        : `${boss.name}  [${ELEM_NAME[be]}]` + (counter ? `  약점 ${ELEM_NAME[counter]}` : '');
+      bossLabel.style.fill = ELEM_COLOR[be];
       const bw = W - 40;
       hudBar.rect(20, 42, bw, 6).fill({ color: 0x2a1420 });
       hudBar.rect(20, 42, Math.round(bw * clamp(boss.hp / boss.maxHp, 0, 1)), 6).fill({ color: 0xff5c78 });
