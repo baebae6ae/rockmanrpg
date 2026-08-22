@@ -711,6 +711,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let bossAt = 70;
   let bossBanner = 0;
   let bossKills = 0;
+  /**
+   * 보스 러시 — 판의 절정. 3분 30초를 버티면 여덟이 연달아 나온다.
+   * 지금까지 판이 끝없이 같은 밀도로만 이어져서 "끝까지 갔다"는 지점이
+   * 없었다. 여기가 그 지점이다.
+   */
+  let rushT = 0;
+  let rushIndex = 0;
+  const RUSH_AT = 210;
+  let rushBanner = 0;
   let newRecord = false;
   /** 가챠 코인 — 정예를 잡으면 하나, 보스는 셋. 모이면 자동으로 돌아간다 */
   let coins = 2;
@@ -991,6 +1000,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let armorBanner = 0;
   let armorGot: ArmorSlot | null = null;
 
+  // --- 라이드 아머
+  /**
+   * X 시리즈의 탑승 메카. 몰이사냥에 딱 맞는 "잠깐 압도적으로 세지는" 순간이
+   * 지금 없다 — 판이 계속 같은 밀도로만 흐른다. 20초 동안 거대하고 무겁고
+   * 다 밟고 다니는 구간을 넣으면 판에 굴곡이 생긴다.
+   */
+  let rideT = 0;
+  let ridePunch = 0;
+  const RIDE_TIME = 18;
+  interface RidePod { x: number; y: number; bob: number }
+  const ridePods: RidePod[] = [];
+  let rideAt = 55;
+
   // ------------------------------------------------------------ 헬퍼
   function spawnPart(x: number, y: number, n: number, color: number, power: number): void {
     if (parts.length + n > MAX_PARTS) parts.splice(0, parts.length + n - MAX_PARTS);
@@ -1255,12 +1277,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     });
   }
 
-  async function spawnBoss(): Promise<void> {
+  async function spawnBoss(pick?: BossDef): Promise<void> {
     if (boss) return;
     // 이미 잡아서 무기를 받은 보스는 뒤로 미룬다 — 같은 놈만 계속 나오면
     // Weapon Get 이 성립을 안 한다
     const fresh = BOSS_DEFS.filter((d) => !owned.has(d.drop));
-    const bd = (fresh.length ? fresh : BOSS_DEFS)[
+    const bd = pick ?? (fresh.length ? fresh : BOSS_DEFS)[
       Math.floor(Math.random() * (fresh.length ? fresh.length : BOSS_DEFS.length))
     ];
     const id = bd.id;
@@ -2178,7 +2200,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let bladeSpin = 0;
 
   /** 보디 파츠가 있으면 받는 피해가 줄어든다 */
-  const takeDmg = (raw: number): number => raw * (armor.has('body') ? 0.7 : 1);
+  const takeDmg = (raw: number): number =>
+    raw * (armor.has('body') ? 0.7 : 1) * (rideT > 0 ? 0.25 : 1);
 
   /** 화면에 보이는지 — draw() 와 같은 기준을 무기 쪽에서도 쓴다 */
   const inView = (x: number, y: number): boolean => {
@@ -2618,10 +2641,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossAt = 70;
     bossBanner = 0;
     bossKills = 0;
+    rushT = 0; rushIndex = 0; rushBanner = 0;
     newRecord = false;
     coins = 2;
     pityCount = 0;
     eTanks = 0;
+    rideT = 0; ridePunch = 0; ridePods.length = 0; rideAt = 55;
     armor.clear();
     legsMul = 1; baseMagnet = 40;
     capsules.length = 0;
@@ -2757,6 +2782,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
+    dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
+    dbg.__hordeRush = (): void => { rushT = 1; rushIndex = 0; rushBanner = 3; };
     dbg.__hordeCapsule = (): void => {
       const left = (['head', 'body', 'arm', 'foot'] as ArmorSlot[]).filter((k) => !armor.has(k));
       if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
@@ -3034,10 +3061,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sfx.stage();
     }
 
-    if (time >= bossAt && !boss) {
+    // 보스 러시 진입 — 한 번만
+    if (time >= RUSH_AT && rushT <= 0 && rushIndex === 0) {
+      rushT = 1;
+      rushIndex = 0;
+      rushBanner = 3;
+      shake = Math.max(shake, 14);
+      sfx.boss();
+    }
+
+    if (rushT > 0) {
+      // 하나 잡히면 곧바로 다음이 나온다
+      if (!boss && rushIndex < BOSS_DEFS.length) {
+        void spawnBoss(BOSS_DEFS[rushIndex]);
+        rushIndex++;
+      } else if (!boss && rushIndex >= BOSS_DEFS.length) {
+        rushT = 0;
+      }
+    } else if (time >= bossAt && !boss) {
       bossAt += 62;
       void spawnBoss();
     }
+    if (rushBanner > 0) rushBanner -= dt;
     if (bossBanner > 0) bossBanner -= dt;
     updateBoss(dt);
 
@@ -3097,6 +3142,62 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
       shake = Math.max(shake, 8);
       sfx.reveal('SR');
+    }
+
+    // --- 라이드 아머 — 포드가 놓이고, 타면 잠깐 압도적으로 세진다
+    if (time >= rideAt && rideT <= 0 && ridePods.length === 0) {
+      rideAt += 70;
+      const a = Math.random() * Math.PI * 2;
+      ridePods.push({
+        x: clamp(px + Math.cos(a) * 200, 30, ARENA_W - 30),
+        y: clamp(py + Math.sin(a) * 280, 40, ARENA_H - 30),
+        bob: 0,
+      });
+    }
+    for (let i = ridePods.length - 1; i >= 0; i--) {
+      const pod = ridePods[i];
+      pod.bob += dt;
+      const dx = px - pod.x;
+      const dy = py - pod.y;
+      if (dx * dx + dy * dy > 24 * 24) continue;
+      ridePods.splice(i, 1);
+      rideT = RIDE_TIME;
+      hp = Math.min(maxHp, hp + 30);
+      shake = Math.max(shake, 12);
+      for (let r = 0; r < 4; r++) {
+        rings.push({ x: px, y: py - 10, r: 24 + r * 22, life: 0.5, max: 0.5, color: 0xffd85c });
+      }
+      spawnPart(px, py - 10, 34, 0xffd85c, 240);
+      sfx.reveal('SSR');
+    }
+
+    if (rideT > 0) {
+      rideT -= dt;
+      ridePunch -= dt;
+      // 밟고 지나가는 것만으로 아프다 — 거대하다는 걸 몸으로 알린다
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - px;
+        const dy = (f.y - 8 - (py - 10)) / 0.78;
+        if (dx * dx + dy * dy > 34 * 34) continue;
+        hurtFoe(f, 90 * dt * 3, 'none');
+        f.kx += (dx > 0 ? 1 : -1) * 260 * dt * 3;
+      }
+      // 주기적으로 앞으로 내지르는 주먹
+      if (ridePunch <= 0) {
+        ridePunch = 0.85;
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const fx = px + Math.cos(a) * 46;
+        const fy = py - 10 + Math.sin(a) * 36;
+        blast(fx, fy, 44, 160, 0xffd85c, 'none');
+        rings.push({ x: fx, y: fy, r: 44, life: 0.3, max: 0.3, color: 0xffd85c });
+        shake = Math.max(shake, 7);
+      }
+      if (rideT <= 0) {
+        spawnPart(px, py - 10, 22, 0xffd85c, 200);
+        shake = Math.max(shake, 8);
+      }
     }
 
     // --- E탱크 — 모아뒀다가 직접 터뜨린다
@@ -3845,6 +3946,44 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    // 라이드 아머 포드
+    for (const pod of ridePods) {
+      if (!onScreen(pod.x, pod.y)) continue;
+      const bob = Math.sin(pod.bob * 2.6) * 3;
+      const pulse = 0.5 + Math.sin(pod.bob * 5) * 0.3;
+      specialG.circle(pod.x, pod.y + 8, 18).fill({ color: 0xffd85c, alpha: 0.16 });
+      specialG.rect(pod.x - 4, pod.y - 60 + bob, 8, 60).fill({ color: 0xffd85c, alpha: 0.2 });
+      // 웅크린 메카 실루엣
+      specialG.roundRect(pod.x - 14, pod.y - 26 + bob, 28, 26, 5).fill({ color: 0x3a2a10 });
+      specialG.roundRect(pod.x - 12, pod.y - 24 + bob, 24, 22, 4).fill({ color: 0xffd85c, alpha: 0.85 });
+      specialG.rect(pod.x - 7, pod.y - 20 + bob, 14, 6).fill({ color: 0x1a1408, alpha: 0.9 });
+      specialG.rect(pod.x - 6, pod.y - 19 + bob, 12, 4).fill({ color: 0xfff2c0, alpha: pulse });
+      specialG.rect(pod.x - 14, pod.y - 6 + bob, 8, 8).fill({ color: 0xc9a040 });
+      specialG.rect(pod.x + 6, pod.y - 6 + bob, 8, 8).fill({ color: 0xc9a040 });
+    }
+
+    // 라이드 아머 탑승 중 — 플레이어를 감싼 거대한 골격
+    if (rideT > 0 && phase === 'play') {
+      const stomp = Math.sin(animClock * 9) * 2;
+      const warn = rideT < 3 && Math.floor(rideT * 6) % 2 === 0;
+      const body = warn ? 0xfff2c0 : 0xffd85c;
+      // 뒤쪽 몸통
+      specialG.roundRect(px - 20, py - 40 + stomp, 40, 40, 7).fill({ color: 0x3a2a10, alpha: 0.95 });
+      specialG.roundRect(px - 17, py - 37 + stomp, 34, 34, 6).fill({ color: body, alpha: 0.9 });
+      // 어깨
+      specialG.roundRect(px - 30, py - 34 + stomp, 13, 18, 4).fill({ color: 0xc9a040 });
+      specialG.roundRect(px + 17, py - 34 + stomp, 13, 18, 4).fill({ color: 0xc9a040 });
+      // 발
+      specialG.rect(px - 22, py - 4, 16, 8).fill({ color: 0x3a2a10 });
+      specialG.rect(px + 6, py - 4, 16, 8).fill({ color: 0x3a2a10 });
+      // 조종석 창
+      specialG.rect(px - 9, py - 32 + stomp, 18, 9).fill({ color: 0x1a1408 });
+      specialG.rect(px - 8, py - 31 + stomp, 16, 7).fill({ color: 0x9fe8ff, alpha: 0.5 });
+      // 남은 시간 고리
+      specialG.circle(px, py - 16, 42)
+        .stroke({ color: body, width: 2, alpha: 0.3 + (rideT / RIDE_TIME) * 0.4 });
+    }
+
     // 아머 캡슐 — 멀리서도 보여야 찾으러 갈 마음이 생긴다
     for (const cap of capsules) {
       if (!onScreen(cap.x, cap.y)) continue;
@@ -4001,6 +4140,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeArmor = [...armor].join(',');
     dbg.__hordeETank = eTanks;
     dbg.__hordeCaps = capsules.length;
+    dbg.__hordeRideT = Math.round(rideT);
+    dbg.__hordeRushIdx = rushIndex;
     dbg.__hordePos = [Math.round(px), Math.round(py)];
     dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
     dbg.__hordeHostiles = hostiles.length;
@@ -4121,9 +4262,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     if (bossBanner > 0 && phase === 'play') {
       stageLabel.visible = true;
-      stageLabel.text = '경 고';
-      stageLabel.style.fill = 0xff5c78;
+      stageLabel.text = rushT > 0 ? `보스 러시  ${rushIndex}/${BOSS_DEFS.length}` : '경 고';
+      stageLabel.style.fill = rushT > 0 ? 0xffd05c : 0xff5c78;
       stageLabel.alpha = Math.floor(bossBanner * 8) % 2 === 0 ? 1 : 0.25;
+    }
+    if (rushBanner > 0 && phase === 'play') {
+      stageLabel.visible = true;
+      stageLabel.text = '보 스  러 시';
+      stageLabel.style.fill = 0xffd05c;
+      stageLabel.alpha = Math.floor(rushBanner * 7) % 2 === 0 ? 1 : 0.3;
+    }
+    // 러시 중에는 몇 마리째인지 계속 보여준다
+    if (rushT > 0 && boss && phase === 'play') {
+      killLabel.text = `러시 ${rushIndex}/${BOSS_DEFS.length}`;
     }
 
     timeLabel.text = `${Math.floor(time)}s`;
@@ -4138,6 +4289,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       subLabel.text =
         `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}` +
         (bossKills ? ` · 보스 ${bossKills}` : '') +
+        (rushIndex >= BOSS_DEFS.length ? ' · 러시 완주' : '') +
         (newRecord ? '\n★ 최고 기록 ★' : b ? `\n최고 ${b.t}초 · ${b.kills}킬` : '') +
         '\n화면을 누르면 재시도';
       hintLabel.text = '';
