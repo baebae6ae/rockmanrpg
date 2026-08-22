@@ -629,7 +629,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'monospace', fontSize: 8, fill: 0x8ef0ff } });
   dashLabel.anchor.set(0.5);
   dashLabel.visible = false;
-  ui.addChild(padG, dashLabel);
+  const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: 'monospace', fontSize: 7, fill: 0xffd85c } });
+  fireLabel.anchor.set(0.5);
+  fireLabel.visible = false;
+  ui.addChild(padG, dashLabel, fireLabel);
 
   // ------------------------------------------------------------ 상태
   const foes: Foe[] = [];
@@ -734,9 +737,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 패드는 손가락이 조금만 미끄러져도 입력이 끊긴다.
   const STICK = { dead: 5, radius: 24, drag: 28 };
   const DASH_BTN = { x: W - 44, y: H - 44, r: 27 };
+  /** 차지 버튼 — 누르고 있으면 모이고 떼면 나간다. 대시 위에 둔다. */
+  const FIRE_BTN = { x: W - 52, y: H - 104, r: 25 };
   let stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
   let dashId: number | null = null;
   let touchDash = false;
+  let fireId: number | null = null;
+  let touchFire = false;
   let touchMode = false;
 
   // 브라우저가 드래그를 스크롤/확대 제스처로 가져가면 pointercancel 이 나거나
@@ -786,6 +793,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (Math.hypot(p.x - DASH_BTN.x, p.y - DASH_BTN.y) <= DASH_BTN.r * 1.25) {
       dashId = e.pointerId;
       touchDash = true;
+    } else if (Math.hypot(p.x - FIRE_BTN.x, p.y - FIRE_BTN.y) <= FIRE_BTN.r * 1.25) {
+      fireId = e.pointerId;
+      touchFire = true;
     } else if (stick === null) {
       stick = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
     }
@@ -816,11 +826,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const endPointer = (e: PointerEvent): void => {
     if (stick && e.pointerId === stick.id) stick = null;
     if (dashId === e.pointerId) dashId = null;
+    // 차지는 "떼는 것"이 발사라 여기서 반드시 풀려야 한다
+    if (fireId === e.pointerId) { fireId = null; touchFire = false; }
   };
   const releaseAll = (): void => {
     stick = null;
     dashId = null;
     touchDash = false;
+    fireId = null;
+    touchFire = false;
   };
   // 손가락을 놓친 경로가 하나라도 새면 그 방향으로 영구히 밀리므로
   // 끝날 수 있는 모든 경로를 다 잡는다. 이미 지워진 손가락이면 조용히 무시된다.
@@ -1468,6 +1482,67 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
   }
 
+  /**
+   * 모은 걸 놓는다. 방식마다 결과가 달라야 세 캐릭터가 다 차지를 쓸 이유가 생긴다.
+   *   차지 버스터 — 거대한 관통탄
+   *   연사        — 짧은 시간 폭주 난사
+   *   세이버      — 반경 전체를 도는 회전 참격
+   */
+  function releaseCharge(lv: number): void {
+    const t = nearestFoe(px, py);
+    const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+    const mult = lv === 2 ? 1 : 0.5;
+    shake = Math.max(shake, lv === 2 ? 6 : 3);
+
+    if (w.style === 'saber') {
+      // 몸을 축으로 한 바퀴 — 반경도 위력도 크게
+      const span = lv === 2 ? Math.PI * 2 : Math.PI * 1.5;
+      const r = w.arcR * (lv === 2 ? 1.7 : 1.3);
+      arcs.push({ x: px, y: py - 10, angle: a, r, span, life: 0.26, max: 0.26, color: shotCore });
+      const half = span / 2;
+      const dmg = Math.round(w.dmg * (lv === 2 ? 4.5 : 2.2));
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - px;
+        const dy = (f.y - 8 - (py - 10)) / 0.78;
+        if (dx * dx + dy * dy > (r + f.def.r) * (r + f.def.r)) continue;
+        let dd = Math.atan2(dy, dx) - a;
+        while (dd > Math.PI) dd -= Math.PI * 2;
+        while (dd < -Math.PI) dd += Math.PI * 2;
+        if (Math.abs(dd) > half) continue;
+        f.hp -= dmg;
+        f.flash = 0.08;
+        f.view.tint = 0xff5c5c;
+        const len = Math.hypot(dx, dy) || 1;
+        f.kx += (dx / len) * 260;
+        f.ky += (dy / len) * 260 * 0.78;
+        if (f.hp <= 0) killFoe(f);
+      }
+      if (boss) {
+        const dx = boss.x - px;
+        const dy = (boss.y - 14 - (py - 10)) / 0.78;
+        if (dx * dx + dy * dy < (r + 18) * (r + 18)) hurtBoss(dmg);
+      }
+    } else if (w.style === 'rapid') {
+      // 폭주 — 잠깐 발사 간격이 무너진다
+      burstT = lv === 2 ? 0.9 : 0.45;
+    } else {
+      // 거대 관통탄
+      addBullet({
+        x: px + facing * 9, y: py - 10,
+        vx: Math.cos(a) * w.speed * 1.15, vy: Math.sin(a) * w.speed * 1.15 * 0.8,
+        life: 1.2, dmg: Math.round(w.dmg * (lv === 2 ? 6 : 3)),
+        pierce: lv === 2 ? 99 : 6,
+        shape: 'orb', color: shotColor, r: lv === 2 ? 15 : 10,
+      });
+      for (let i = 0; i < 2; i++) {
+        rings.push({ x: px, y: py - 10, r: 18 + i * 14, life: 0.22, max: 0.22, color: shotCore });
+      }
+    }
+    spawnPart(px, py - 10, Math.round(10 * (mult + 0.5)), shotCore, 190);
+    sfx.shot('charge');
+  }
+
   function nearestFoe(fx: number, fy: number): Foe | null {
     let best: Foe | null = null;
     let bd = Infinity;
@@ -2037,6 +2112,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let beamDmg = 0;
   /** 크림슨 오빗 구슬이 도는 각도 */
   let orbitAngle = 0;
+
+  // --- 차지 샷
+  /**
+   * X 시리즈의 손맛 자체. 지금까지 사격이 전부 자동이라 플레이어가 손으로
+   * 하는 게 이동뿐이었다 — 잘하는 사람과 못하는 사람의 차이가 위치잡기
+   * 하나였다. 자동 사격은 그대로 두고 그 위에 얹는다.
+   */
+  let chargeT = 0;
+  /** 몇 단까지 찼는지 (0=없음, 1=중간, 2=최대) */
+  let chargeLevel = 0;
+  const CHARGE_STEP = [0.55, 1.25];
+  /** 연사 차지의 폭주 남은 시간 */
+  let burstT = 0;
 
   /** 적이 가장 몰려 있는 쪽 각도 — 노바 스트라이크가 헛돌지 않게 한다 */
   function densestDir(): number {
@@ -2675,6 +2763,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    // 차지 — 누르고 있으면 모이고, 떼면 나간다
+    const holdFire = input.down('shoot') || touchFire;
+    if (holdFire) {
+      const before = chargeLevel;
+      chargeT += dt;
+      chargeLevel = chargeT >= CHARGE_STEP[1] ? 2 : chargeT >= CHARGE_STEP[0] ? 1 : 0;
+      if (chargeLevel !== before && chargeLevel > 0) {
+        sfx.pick();
+        spawnPart(px, py - 10, 6, chargeLevel === 2 ? 0xfff2c0 : 0x9fe8ff, 130);
+      }
+    } else {
+      if (chargeLevel > 0) releaseCharge(chargeLevel);
+      chargeT = 0;
+      chargeLevel = 0;
+    }
+
     if (input.pressed('weapon')) sfx.toggleMute();
     if (input.pressed('menu')) paused = !paused;
 
@@ -2812,10 +2916,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // ---- 자동사격
+    // 연사 차지가 터지는 동안은 간격이 무너진다
+    if (burstT > 0) burstT -= dt;
+    const itv = burstT > 0 ? w.interval * 0.32 : w.interval;
     fireAcc += dt;
     let guard = 0;
-    while (fireAcc >= w.interval && guard++ < 6) {
-      fireAcc -= w.interval;
+    while (fireAcc >= itv && guard++ < 12) {
+      fireAcc -= itv;
       shoot();
     }
     fireSpecials(dt);
@@ -3537,6 +3644,30 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    // 차지 — 모이는 게 몸에 보여야 언제 놓을지 판단할 수 있다
+    if (chargeT > 0 && phase === 'play') {
+      const k = Math.min(1, chargeT / CHARGE_STEP[1]);
+      const c = chargeLevel === 2 ? 0xfff2c0 : chargeLevel === 1 ? 0x9fe8ff : 0x6ec8ff;
+      // 빨려드는 고리
+      for (let i = 0; i < 3; i++) {
+        const ph = ((animClock * 1.8 + i / 3) % 1);
+        specialG.circle(px, py - 10, 8 + (1 - ph) * 34 * (0.5 + k))
+          .stroke({ color: c, width: 1 + k, alpha: ph * 0.65 });
+      }
+      // 속심
+      specialG.circle(px, py - 10, 5 + k * 9)
+        .fill({ color: c, alpha: 0.28 + k * 0.3 });
+      if (chargeLevel > 0) {
+        const puls = 0.6 + Math.sin(animClock * (chargeLevel === 2 ? 26 : 15)) * 0.35;
+        specialG.circle(px, py - 10, 6 + chargeLevel * 5)
+          .fill({ color: 0xffffff, alpha: puls * 0.5 });
+        // 최대는 튀는 불꽃까지
+        if (chargeLevel === 2 && Math.random() < 0.5) {
+          spawnPart(px, py - 10, 1, 0xfff2c0, 120);
+        }
+      }
+    }
+
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
     if (phase === 'play' && (moveDirX !== 0 || moveDirY !== 0)) {
       const a = Math.atan2(moveDirY * 0.78, moveDirX);
@@ -3799,7 +3930,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     } else {
       centerLabel.text = '';
       subLabel.text = '';
-      hintLabel.text = time < 8 ? (touchMode ? '끌어서 이동 · 사격 자동' : '방향키 이동 · 사격 자동') : '';
+      hintLabel.text = time < 9 ? (touchMode ? '끌어서 이동 · CHARGE 길게 눌러 차지' : '방향키 이동 · X 길게 눌러 차지') : '';
     }
 
     if (phase !== 'pick' && phase !== 'dead') {
@@ -3813,6 +3944,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 카드를 손가락으로 짚는 화면에 조작 패드가 겹쳐 있으면 뭘 누르는지 모른다.
     padG.clear();
     dashLabel.visible = touchMode && phase === 'play';
+    fireLabel.visible = touchMode && phase === 'play';
+    if (fireLabel.visible) fireLabel.position.set(FIRE_BTN.x, FIRE_BTN.y);
     if (touchMode && phase === 'play') {
       dashLabel.position.set(DASH_BTN.x, DASH_BTN.y);
       const cd = dashCd > 0 ? 1 - dashCd / DASH_CD : 1;
