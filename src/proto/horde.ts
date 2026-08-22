@@ -100,11 +100,43 @@ function pickKind(): FoeKind {
   return KIND_LIST[0];
 }
 
-/** 보스로 쓸 대형 적 — 전부 telegraph/attack 태그를 가진 시트다 */
-const BOSS_IDS = [
-  'spark_mandriller', 'sting_chameleon', 'boomer_kuwanger', 'titan_breaker',
-  'guard_turtlan', 'rapier_phantom', 'longshot_eaglet', 'crimson_barrier',
+/**
+ * 보스 — 전부 telegraph/attack 태그를 가진 시트다.
+ *
+ * 예전엔 여덟이 전부 같은 패턴(다가와서 예고하고 사방으로 뿌리기)이라
+ * 스프라이트만 다른 같은 적이었다. 록맨에서 보스는 각자 외우는 패턴이
+ * 있고, **이기면 그놈의 무기를 준다.** 그게 시리즈의 정체성이라 여기에
+ * 그대로 옮겼다 — 이제 보스는 "체력 많은 적"이 아니라 "그 무기를 주는 놈"이다.
+ */
+type BossPattern =
+  | 'slam'      // 내리찍고 충격파 고리
+  | 'blink'     // 사라졌다 옆에 나타나 덮친다
+  | 'boomer'    // 순간이동 + 돌아오는 부메랑
+  | 'charge'    // 예고 후 직선 돌진
+  | 'guard'     // 방패를 세우고 유도탄
+  | 'dasher'    // 짧은 돌진을 연달아
+  | 'sniper'    // 거리를 두고 조준선을 그은 뒤 저격
+  | 'barrier';  // 주위를 도는 구슬을 쏘아 보낸다
+
+interface BossDef {
+  id: string;
+  pattern: BossPattern;
+  color: number;
+  /** 잡으면 주는 무기 id (LEGENDS 안에 있다) */
+  drop: string;
+}
+
+const BOSS_DEFS: BossDef[] = [
+  { id: 'spark_mandriller', pattern: 'slam', color: 0xffe86b, drop: 'electric_spark' },
+  { id: 'sting_chameleon', pattern: 'blink', color: 0x8ef0a0, drop: 'chameleon_sting' },
+  { id: 'boomer_kuwanger', pattern: 'boomer', color: 0xc98cff, drop: 'boomerang_cutter' },
+  { id: 'titan_breaker', pattern: 'charge', color: 0xff9a4c, drop: 'titan_crush' },
+  { id: 'guard_turtlan', pattern: 'guard', color: 0x6ec8ff, drop: 'guard_shell' },
+  { id: 'rapier_phantom', pattern: 'dasher', color: 0xff5c9c, drop: 'phantom_edge' },
+  { id: 'longshot_eaglet', pattern: 'sniper', color: 0xdcf4ff, drop: 'longshot_beam' },
+  { id: 'crimson_barrier', pattern: 'barrier', color: 0xff5c5c, drop: 'crimson_orbit' },
 ];
+
 
 interface EnemyLite { id: string; name?: string }
 const ENEMY_NAMES: Record<string, string> = {};
@@ -163,6 +195,14 @@ interface Boss {
   mode: number;
   timer: number;
   flash: number;
+  def: BossDef;
+  /** 패턴이 쓰는 임시 값 — 돌진 방향, 조준각 등 */
+  ax: number;
+  ay: number;
+  /** 방패를 든 상태인지 (정면 피해 감소) */
+  guarding: boolean;
+  /** 은신 중인지 */
+  hidden: boolean;
 }
 
 /** 궤적선(버스터) / 회전 날(메탈 블레이드) / 구체(토네이도·미사일·폭탄) */
@@ -190,6 +230,8 @@ interface Bullet {
   /** 0보다 크면 사라질 때 이 반경으로 터진다 */
   boomR: number;
   boomDmg: number;
+  /** 0보다 크면 이 시간 뒤 플레이어 쪽으로 되돌아온다 (부메랑) */
+  back: number;
 }
 
 /** 번개 — 즉발이라 탄이 아니고, 잠깐 보이는 선으로만 남는다 */
@@ -993,6 +1035,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       homing: 0,
       boomR: 0,
       boomDmg: 0,
+      back: 0,
     });
   }
 
@@ -1002,7 +1045,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bullets.push({
       life: 1, pierce: 0, lastHit: null, alive: true,
       shape: 'orb', color: 0xffffff, r: 4, spin: 0, angle: 0,
-      homing: 0, boomR: 0, boomDmg: 0,
+      homing: 0, boomR: 0, boomDmg: 0, back: 0,
       ...b,
     } as Bullet);
   }
@@ -1011,7 +1054,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function hurtBoss(amount: number): void {
     const b = boss;
     if (!b) return;
-    b.hp -= amount;
+    // 은신 중엔 못 맞히고, 방패를 든 동안은 대부분 튕긴다 —
+    // "지금은 때릴 때가 아니다"를 몸으로 알게 하는 구간이다
+    if (b.hidden) return;
+    b.hp -= b.guarding ? amount * 0.18 : amount;
+    if (b.guarding) spawnPart(b.x, b.y - 14, 1, 0x9fd0ff, 90);
     b.flash = 0.07;
     b.view.tint = 0xff5c5c;
     if (b.hp <= 0) killBoss();
@@ -1094,7 +1141,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   async function spawnBoss(): Promise<void> {
     if (boss) return;
-    const id = BOSS_IDS[Math.floor(Math.random() * BOSS_IDS.length)];
+    // 이미 잡아서 무기를 받은 보스는 뒤로 미룬다 — 같은 놈만 계속 나오면
+    // Weapon Get 이 성립을 안 한다
+    const fresh = BOSS_DEFS.filter((d) => !owned.has(d.drop));
+    const bd = (fresh.length ? fresh : BOSS_DEFS)[
+      Math.floor(Math.random() * (fresh.length ? fresh.length : BOSS_DEFS.length))
+    ];
+    const id = bd.id;
     let sheet = bossSheets.get(id);
     if (!sheet) {
       sheet = await loadSheet('enemies', id);
@@ -1111,6 +1164,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       x: clamp(px + Math.cos(a) * 190, 40, ARENA_W - 40),
       y: clamp(py + Math.sin(a) * 300, 40, ARENA_H - 40),
       hp: maxHp, maxHp, view, mode: 0, timer: 2.4, flash: 0,
+      def: bd, ax: 0, ay: 0, guarding: false, hidden: false,
     };
     bossBanner = 2.4;
     sfx.boss();
@@ -1118,12 +1172,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   }
 
   /** 보스 행동 — 다가오다가 준비 동작을 보이고 사방으로 뿌린다 */
+  /**
+   * 보스 행동 — 패턴마다 완전히 다르게 움직인다.
+   *
+   * 공통 규칙은 하나다: **때리기 전에 반드시 예고한다.** 예고 없이 아프면
+   * 그건 어려운 게 아니라 불공평한 거라 외울 게 없다. 록맨 보스가 외워지는
+   * 이유가 정확히 이 규칙이다.
+   */
   function updateBoss(dt: number): void {
     const b = boss;
     if (!b) return;
     const dx = px - b.x;
     const dy = py - b.y;
     const d = Math.hypot(dx, dy) || 1;
+    const aim = Math.atan2(dy, dx);
 
     if (b.flash > 0) {
       b.flash -= dt;
@@ -1131,36 +1193,229 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     b.timer -= dt;
-    if (b.mode === 0) {
-      // 접근
-      const sp = 44;
+    const walk = (sp: number): void => {
       b.x += (dx / d) * sp * dt;
       b.y += (dy / d) * sp * 0.78 * dt;
-      b.view.play('move', 'idle');
-      if (b.timer <= 0) { b.mode = 1; b.timer = 0.85; }
-    } else if (b.mode === 1) {
-      // 준비 — 멈춰서 부풀어오른다. 여기가 보이니까 피할 수 있다.
+    };
+    /** 예고 중 깜빡임 — 모든 패턴이 같은 신호를 쓴다 */
+    const telegraph = (): void => {
       b.view.play('telegraph', 'idle');
-      b.view.tint = Math.floor(b.timer * 18) % 2 === 0 ? 0xffc0c0 : 0xffffff;
-      if (b.timer <= 0) {
-        b.mode = 2;
-        b.timer = 0.45;
-        b.view.tint = 0xffffff;
-        b.view.play('attack_1', 'idle');
-        const n = 10 + Math.floor(time / 45);
-        const base = Math.atan2(dy, dx);
-        for (let i = 0; i < n; i++) {
-          fireHostile(b.x, b.y - 10, base + (i / n) * Math.PI * 2, 118, 13, 0xff77c8);
+      b.view.tint = Math.floor(b.timer * 20) % 2 === 0 ? 0xffc0c0 : 0xffffff;
+    };
+    const done = (): void => {
+      b.view.tint = 0xffffff;
+    };
+
+    switch (b.def.pattern) {
+      // ---------------- 내리찍기 — 다가와 멈추고 바닥을 쳐 고리를 퍼뜨린다
+      case 'slam':
+        if (b.mode === 0) {
+          walk(46);
+          b.view.play('move', 'idle');
+          if (b.timer <= 0 && d < 150) { b.mode = 1; b.timer = 0.7; }
+        } else if (b.mode === 1) {
+          telegraph();
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.5; done();
+            b.view.play('attack_1', 'idle');
+            // 세 겹 고리로 퍼져 나간다 — 사이를 비집고 나와야 한다
+            for (let ring = 0; ring < 3; ring++) {
+              const n = 12 + ring * 4;
+              for (let i = 0; i < n; i++) {
+                const a = (i / n) * Math.PI * 2 + ring * 0.2;
+                fireHostile(b.x, b.y - 10, a, 90 + ring * 46, 12, 0xffe86b);
+              }
+            }
+            rings.push({ x: b.x, y: b.y - 6, r: 90, life: 0.4, max: 0.4, color: 0xffe86b });
+            shake = Math.max(shake, 11);
+            sfx.explode();
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 1.6; }
+        break;
+
+      // ---------------- 은신 — 사라졌다 옆에 나타나 3갈래로 뱉는다
+      case 'blink':
+        if (b.mode === 0) {
+          walk(52);
+          b.view.play('move', 'idle');
+          b.hidden = false;
+          b.view.alpha = 1;
+          if (b.timer <= 0) { b.mode = 1; b.timer = 0.6; }
+        } else if (b.mode === 1) {
+          // 흐려지며 사라진다 — 사라지는 것 자체가 예고다
+          b.hidden = true;
+          b.view.alpha = Math.max(0.12, b.timer / 0.6);
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.45;
+            const a = Math.random() * Math.PI * 2;
+            b.x = clamp(px + Math.cos(a) * 62, 20, ARENA_W - 20);
+            b.y = clamp(py + Math.sin(a) * 48, 24, ARENA_H - 12);
+            b.view.alpha = 1;
+            b.hidden = false;
+            b.view.play('attack_1', 'idle');
+            spawnPart(b.x, b.y - 10, 16, 0x8ef0a0, 190);
+            for (let i = -1; i <= 1; i++) {
+              fireHostile(b.x, b.y - 10, Math.atan2(py - b.y, px - b.x) + i * 0.3, 150, 12, 0x8ef0a0);
+            }
+            sfx.explode();
+            shake = Math.max(shake, 7);
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 2.2; }
+        break;
+
+      // ---------------- 부메랑 — 순간이동하며 돌아오는 날을 던진다
+      case 'boomer':
+        if (b.mode === 0) {
+          walk(34);
+          b.view.play('move', 'idle');
+          if (b.timer <= 0) { b.mode = 1; b.timer = 0.55; }
+        } else if (b.mode === 1) {
+          telegraph();
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.6; done();
+            b.view.play('attack_1', 'idle');
+            // 나갔다 돌아오는 날 — homing 을 걸면 되돌아오는 것처럼 보인다
+            for (let i = -1; i <= 1; i++) {
+              const h = hostiles.length;
+              fireHostile(b.x, b.y - 10, aim + i * 0.42, 210, 12, 0xc98cff);
+              if (hostiles[h]) hostiles[h].life = 4.5;
+            }
+            // 던진 뒤 옆으로 순간이동
+            const a = Math.random() * Math.PI * 2;
+            b.x = clamp(b.x + Math.cos(a) * 110, 20, ARENA_W - 20);
+            b.y = clamp(b.y + Math.sin(a) * 90, 24, ARENA_H - 12);
+            spawnPart(b.x, b.y - 10, 12, 0xc98cff, 160);
+            sfx.shot('rapid');
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 1.5; }
+        break;
+
+      // ---------------- 돌진 — 방향을 고정하고 직선으로 꽂는다
+      case 'charge':
+        if (b.mode === 0) {
+          walk(30);
+          b.view.play('move', 'idle');
+          if (b.timer <= 0 && d < 220) { b.mode = 1; b.timer = 0.75; }
+        } else if (b.mode === 1) {
+          telegraph();
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.85; done();
+            b.ax = dx / d;
+            b.ay = dy / d;
+            b.view.play('attack_1', 'idle');
+            sfx.dash();
+          }
+        } else if (b.mode === 2) {
+          // 고정 방향 — 옆으로 빠지면 피할 수 있다
+          b.x += b.ax * 330 * dt;
+          b.y += b.ay * 330 * 0.78 * dt;
+          spawnPart(b.x, b.y - 6, 2, 0xff9a4c, 130);
+          if (b.timer <= 0) {
+            b.mode = 3; b.timer = 0.7;
+            rings.push({ x: b.x, y: b.y - 6, r: 70, life: 0.35, max: 0.35, color: 0xff9a4c });
+            for (let i = 0; i < 10; i++) {
+              fireHostile(b.x, b.y - 10, (i / 10) * Math.PI * 2, 110, 11, 0xff9a4c);
+            }
+            shake = Math.max(shake, 9);
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 1.2; }
+        break;
+
+      // ---------------- 방패 — 정면을 막고 유도탄만 흘린다
+      case 'guard':
+        if (b.mode === 0) {
+          walk(40);
+          b.view.play('move', 'idle');
+          b.guarding = false;
+          if (b.timer <= 0) { b.mode = 1; b.timer = 2.6; }
+        } else if (b.mode === 1) {
+          // 막는 동안은 피해가 크게 줄어든다 — 뒤로 돌아가야 한다
+          b.guarding = true;
+          b.view.play('telegraph', 'idle');
+          b.view.tint = 0x9fd0ff;
+          if (Math.floor(b.timer * 2) !== Math.floor((b.timer + dt) * 2)) {
+            const h = hostiles.length;
+            fireHostile(b.x, b.y - 10, aim, 120, 11, 0x6ec8ff);
+            if (hostiles[h]) hostiles[h].life = 3.6;
+          }
+          if (b.timer <= 0) { b.mode = 0; b.timer = 2.0; b.guarding = false; done(); }
         }
-        // 플레이어를 정조준하는 한 줄도 같이 — 가만히 있으면 맞는다
-        for (let i = -1; i <= 1; i++) {
-          fireHostile(b.x, b.y - 10, base + i * 0.16, 168, 13, 0xffd05c);
+        break;
+
+      // ---------------- 연속 돌진 — 짧게 여러 번 꽂는다
+      case 'dasher':
+        if (b.mode === 0) {
+          walk(56);
+          b.view.play('move', 'idle');
+          if (b.timer <= 0) { b.mode = 1; b.timer = 0.42; b.ax = 3; }
+        } else if (b.mode === 1) {
+          telegraph();
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.3; done();
+            b.ay = aim;
+            b.view.play('attack_1', 'idle');
+          }
+        } else if (b.mode === 2) {
+          b.x += Math.cos(b.ay) * 420 * dt;
+          b.y += Math.sin(b.ay) * 420 * 0.78 * dt;
+          spawnPart(b.x, b.y - 8, 2, 0xff5c9c, 150);
+          if (b.timer <= 0) {
+            b.ax -= 1;
+            if (b.ax > 0) { b.mode = 1; b.timer = 0.26; }
+            else { b.mode = 0; b.timer = 1.5; }
+          }
         }
-        sfx.explode();
-        shake = Math.max(shake, 5);
-      }
-    } else {
-      if (b.timer <= 0) { b.mode = 0; b.timer = 2.6; }
+        break;
+
+      // ---------------- 저격 — 멀리서 조준선을 긋고 쏜다
+      case 'sniper':
+        if (b.mode === 0) {
+          // 거리를 유지한다
+          if (d < 170) walk(-46);
+          else if (d > 260) walk(40);
+          b.view.play('move', 'idle');
+          if (b.timer <= 0) { b.mode = 1; b.timer = 0.8; }
+        } else if (b.mode === 1) {
+          // 조준선이 그려진다 — 선 밖으로 나가면 피한다
+          b.ay = aim;
+          b.view.play('telegraph', 'idle');
+          b.view.tint = Math.floor(b.timer * 24) % 2 === 0 ? 0xffffff : 0xdcf4ff;
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.4; done();
+            b.view.play('attack_1', 'idle');
+            for (let i = 0; i < 3; i++) {
+              const h = hostiles.length;
+              fireHostile(b.x, b.y - 10, b.ay, 330 + i * 30, 15, 0xdcf4ff);
+              if (hostiles[h]) hostiles[h].r = 5;
+            }
+            sfx.shot('charge');
+            shake = Math.max(shake, 5);
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 1.4; }
+        break;
+
+      // ---------------- 배리어 — 주위를 돌던 구슬을 쏘아 보낸다
+      case 'barrier':
+        if (b.mode === 0) {
+          walk(38);
+          b.view.play('move', 'idle');
+          b.ax += dt * 3;
+          if (b.timer <= 0) { b.mode = 1; b.timer = 0.6; }
+        } else if (b.mode === 1) {
+          telegraph();
+          b.ax += dt * 9;
+          if (b.timer <= 0) {
+            b.mode = 2; b.timer = 0.5; done();
+            b.view.play('attack_1', 'idle');
+            for (let i = 0; i < 6; i++) {
+              const a = b.ax + (i / 6) * Math.PI * 2;
+              fireHostile(b.x + Math.cos(a) * 34, b.y - 10 + Math.sin(a) * 26, a, 175, 13, 0xff5c5c);
+            }
+            sfx.explode();
+            shake = Math.max(shake, 6);
+          }
+        } else if (b.timer <= 0) { b.mode = 0; b.timer = 1.8; }
+        break;
     }
 
     b.x = clamp(b.x, 20, ARENA_W - 20);
@@ -1170,8 +1425,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     b.view.position.set(Math.round(b.x), Math.round(b.y));
     b.view.zIndex = b.y;
 
-    // 접촉 피해
-    if (iframe <= 0 && d < 26) {
+    // 접촉 피해 — 은신 중엔 없다(안 보이는 걸로 아프면 불공평하다)
+    if (iframe <= 0 && !b.hidden && d < 26) {
       hp -= 15;
       iframe = 0.85;
       hitstop = 0.06;
@@ -1193,9 +1448,24 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foeLayer.removeChild(b.view);
     boss = null;
     bossKills++;
-    // 보스를 잡았으면 가챠 코인을 크게 준다 — 확정 1회 이상이 나온다
-    coins += COINS_PER_PULL;
-    sfx.coin();
+    // Weapon Get — 그 보스의 무기를 준다. 시리즈의 핵심이 이거다.
+    // 이미 갖고 있으면 한 단계 올려준다.
+    const dropId = b.def.drop;
+    // 보스 무기는 BOSS_WEAPONS 에 있다 — 여기서 LEGENDS 를 뒤지면 영원히 못 찾는다
+    const dropDef = BOSS_WEAPONS.find((x) => x.id === dropId);
+    if (dropDef && (owned.get(dropId) ?? 0) < dropDef.max) {
+      pullResult = dropDef;
+      // 릴에는 보스 무기 여덟만 올린다 — 어떤 보스가 뭘 주는지가 같이 보인다
+      reel.start(
+        BOSS_WEAPONS.map((x) => ({ name: x.name, color: x.color, rarity: x.rarity ?? 'R' })),
+        BOSS_WEAPONS.indexOf(dropDef),
+        `${b.name} 격파 — 무기 획득`,
+      );
+      phase = 'gacha';
+    } else {
+      coins += COINS_PER_PULL;
+      sfx.coin();
+    }
   }
 
   function nearestFoe(fx: number, fy: number): Foe | null {
@@ -1528,7 +1798,204 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   ];
 
   /** 주기 발사 루프가 한 번에 도는 전체 목록 */
-  const ALL_WEAPONS: SpecialDef[] = [...SPECIALS, ...LEGENDS];
+  /**
+   * 보스 무기 — 가챠에는 안 나온다. 그 보스를 이겨야만 얻는다.
+   *
+   * 록맨에서 보스 무기가 특별한 건 성능이 아니라 **출처**다. 뽑기로도
+   * 나오면 보스를 이긴 의미가 사라지므로 풀을 아예 분리했다.
+   */
+  const BOSS_WEAPONS: SpecialDef[] = [
+    {
+      id: 'electric_spark',
+      name: '일렉트릭 스파크',
+      color: 0xffe86b,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '적에서 적으로 튀는 전격' : `${2 + lv + 1}회 연쇄 · 위력 ${16 + 10 * (lv + 1)}`),
+      interval: (lv) => 1.9 - 0.16 * lv,
+      fire: (lv) => {
+        // 가까운 적에서 시작해 이웃으로 계속 튄다 — 뭉쳐 있을수록 강하다
+        const dmg = 16 + 10 * lv;
+        let cur = nearestFoe(px, py);
+        if (!cur) return;
+        const hitSet = new Set<Foe>();
+        let fromX = px;
+        let fromY = py - 10;
+        for (let jump = 0; jump < 2 + lv && cur; jump++) {
+          hitSet.add(cur);
+          bolts.push({ x: cur.x, y: cur.y - 8, life: 0.16, color: 0xffe86b });
+          arcs.push({
+            x: fromX, y: fromY, angle: Math.atan2(cur.y - 8 - fromY, cur.x - fromX),
+            r: Math.hypot(cur.x - fromX, cur.y - 8 - fromY), span: 0.14,
+            life: 0.16, max: 0.16, color: 0xffe86b,
+          });
+          cur.hp -= dmg;
+          cur.flash = 0.08;
+          cur.view.tint = 0xfff2a0;
+          spawnPart(cur.x, cur.y - 8, 3, 0xffe86b, 150);
+          fromX = cur.x;
+          fromY = cur.y - 8;
+          const prev = cur;
+          if (prev.hp <= 0) killFoe(prev);
+          // 다음 이웃 찾기
+          let best: Foe | null = null;
+          let bd = 150 * 150;
+          for (const f of foes) {
+            if (hitSet.has(f) || !f.alive) continue;
+            const ddx = f.x - fromX;
+            const ddy = (f.y - 8 - fromY) / 0.78;
+            const dd = ddx * ddx + ddy * ddy;
+            if (dd < bd) { bd = dd; best = f; }
+          }
+          cur = best;
+        }
+        sfx.hit();
+      },
+    },
+    {
+      id: 'chameleon_sting',
+      name: '카멜레온 스팅',
+      color: 0x8ef0a0,
+      rarity: 'SSR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '잠깐 사라지며 주위를 태운다' : `무적 ${(0.9 + 0.22 * (lv + 1)).toFixed(1)}초 · 위력 ${18 + 12 * (lv + 1)}`),
+      interval: (lv) => 9 - 0.7 * lv,
+      fire: (lv) => {
+        // 무적 + 주위 지속 피해. 위기 탈출과 공격을 겸한다.
+        stingT = 0.9 + 0.22 * lv;
+        stingDmg = 18 + 12 * lv;
+        iframe = Math.max(iframe, stingT);
+        sfx.dash();
+      },
+    },
+    {
+      id: 'boomerang_cutter',
+      name: '부메랑 커터',
+      color: 0xc98cff,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '나갔다 돌아오며 두 번 벤다' : `${1 + lv + 1}개 · 위력 ${20 + 11 * (lv + 1)}`),
+      interval: (lv) => 2.2 - 0.18 * lv,
+      fire: (lv) => {
+        const n = 1 + lv;
+        const dmg = 20 + 11 * lv;
+        const t = nearestFoe(px, py);
+        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        for (let i = 0; i < n; i++) {
+          const a = base + (i - (n - 1) / 2) * 0.42;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * 240, vy: Math.sin(a) * 240 * 0.8,
+            life: 2.6, dmg, pierce: 99,
+            shape: 'blade', color: 0xc98cff, r: 7, spin: 20,
+            back: 0.42,
+          });
+        }
+        sfx.shot('saber');
+      },
+    },
+    {
+      id: 'titan_crush',
+      name: '타이탄 크러시',
+      color: 0xff9a4c,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '발밑을 내리찍는 충격파' : `반경 ${64 + 12 * (lv + 1)} · 위력 ${34 + 22 * (lv + 1)}`),
+      interval: (lv) => 3.4 - 0.28 * lv,
+      fire: (lv) => {
+        const r = 64 + 12 * lv;
+        blast(px, py - 8, r, 34 + 22 * lv, 0xff9a4c);
+        for (let i = 0; i < 3; i++) {
+          rings.push({ x: px, y: py - 8, r: r * (0.5 + i * 0.3), life: 0.4, max: 0.4, color: 0xff9a4c });
+        }
+        shake = Math.max(shake, 8);
+      },
+    },
+    {
+      id: 'guard_shell',
+      name: '가드 셸',
+      color: 0x6ec8ff,
+      rarity: 'SSR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '적 탄을 튕겨내는 방패' : `반경 ${28 + 5 * (lv + 1)} · 튕길 때 ${10 + 8 * (lv + 1)}`),
+      // 상시 발동 — 아래 updateLegends 에서 처리한다
+    },
+    {
+      id: 'phantom_edge',
+      name: '팬텀 엣지',
+      color: 0xff5c9c,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '대시할 때 참격이 날아간다' : `${1 + lv + 1}갈래 · 위력 ${24 + 14 * (lv + 1)}`),
+      // 대시할 때만 나간다 (대시 처리에서 직접 쏜다)
+    },
+    {
+      id: 'longshot_beam',
+      name: '롱쇼트 빔',
+      color: 0xdcf4ff,
+      rarity: 'SSR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '화면을 가르는 관통 광선' : `위력 ${30 + 20 * (lv + 1)} · 간격 ${(2.6 - 0.2 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 2.6 - 0.2 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        beamAngle = a;
+        beamT = 0.3;
+        beamDmg = 30 + 20 * lv;
+        // 선을 따라 있는 것을 전부 관통한다
+        const dmg = beamDmg;
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          const rx = f.x - px;
+          const ry = (f.y - 8 - (py - 10)) / 0.78;
+          const along = rx * Math.cos(a) + ry * Math.sin(a);
+          if (along < 0 || along > 420) continue;
+          const perp = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
+          if (perp > 12 + f.def.r) continue;
+          f.hp -= dmg;
+          f.flash = 0.08;
+          f.view.tint = 0xffffff;
+          spawnPart(f.x, f.y - 8, 3, 0xdcf4ff, 170);
+          if (f.hp <= 0) killFoe(f);
+        }
+        if (boss) {
+          const rx = boss.x - px;
+          const ry = (boss.y - 14 - (py - 10)) / 0.78;
+          const along = rx * Math.cos(a) + ry * Math.sin(a);
+          const perp = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
+          if (along > 0 && along < 420 && perp < 26) hurtBoss(dmg);
+        }
+        shake = Math.max(shake, 5);
+        sfx.shot('charge');
+      },
+    },
+    {
+      id: 'crimson_orbit',
+      name: '크림슨 오빗',
+      color: 0xff5c5c,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '도는 구슬이 주기적으로 튀어나간다' : `구슬 ${2 + lv + 1}개 · 위력 ${16 + 11 * (lv + 1)}`),
+      interval: (lv) => 2.6 - 0.2 * lv,
+      fire: (lv) => {
+        const n = 2 + lv;
+        const dmg = 16 + 11 * lv;
+        for (let i = 0; i < n; i++) {
+          const a = orbitAngle + (i / n) * Math.PI * 2;
+          addBullet({
+            x: px + Math.cos(a) * 30, y: py - 10 + Math.sin(a) * 24,
+            vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 * 0.8,
+            life: 1.6, dmg, pierce: 2,
+            shape: 'orb', color: 0xff5c5c, r: 6, back: 0.5,
+          });
+        }
+        sfx.shot('rapid');
+      },
+    },
+  ];
+
+  const ALL_WEAPONS: SpecialDef[] = [...SPECIALS, ...LEGENDS, ...BOSS_WEAPONS];
 
   const MAX_SPECIALS = 4;
   /** 보유 무기 id → 레벨(1부터) */
@@ -1559,6 +2026,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let flameSpan = 0;
   /** 차지 킥이 남긴 불길 */
   const kickTrail: { x: number; y: number; life: number; r: number; dmg: number }[] = [];
+
+  // --- 보스 무기용 상태
+  /** 카멜레온 스팅 — 남은 무적 시간 */
+  let stingT = 0;
+  let stingDmg = 0;
+  /** 롱쇼트 빔 — 남은 표시 시간 */
+  let beamT = 0;
+  let beamAngle = 0;
+  let beamDmg = 0;
+  /** 크림슨 오빗 구슬이 도는 각도 */
+  let orbitAngle = 0;
 
   /** 적이 가장 몰려 있는 쪽 각도 — 노바 스트라이크가 헛돌지 않게 한다 */
   function densestDir(): number {
@@ -1645,6 +2123,43 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function updateLegends(dt: number): void {
     if (gigaFlash > 0) gigaFlash -= dt;
     if (flameT > 0) flameT -= dt;
+    if (beamT > 0) beamT -= dt;
+    orbitAngle += dt * 2.2;
+
+    // 카멜레온 스팅 — 무적인 동안 주위를 태운다
+    if (stingT > 0) {
+      stingT -= dt;
+      iframe = Math.max(iframe, 0.06);
+      spawnPart(px + (Math.random() - 0.5) * 30, py - 10 + (Math.random() - 0.5) * 26, 1, 0x8ef0a0, 90);
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - px;
+        const dy = (f.y - 8 - (py - 10)) / 0.78;
+        if (dx * dx + dy * dy > 46 * 46) continue;
+        f.hp -= stingDmg * dt * 2.4;
+        f.flash = 0.04;
+        f.view.tint = 0xa0ffb8;
+        if (f.hp <= 0) killFoe(f);
+      }
+    }
+
+    // 가드 셸 — 적 탄을 튕겨낸다. 이걸 하는 무기가 이것뿐이다.
+    const shellLv = owned.get('guard_shell') ?? 0;
+    if (shellLv) {
+      const rr = 28 + 5 * shellLv;
+      const dmg = 10 + 8 * shellLv;
+      for (let i = hostiles.length - 1; i >= 0; i--) {
+        const h = hostiles[i];
+        const dx = h.x - px;
+        const dy = (h.y - (py - 10)) / 0.78;
+        if (dx * dx + dy * dy > rr * rr) continue;
+        hostiles.splice(i, 1);
+        spawnPart(h.x, h.y, 4, 0x9fd0ff, 150);
+        sfx.hit();
+        // 튕긴 자리에 작은 반격
+        blast(h.x, h.y, 18, dmg, 0x6ec8ff);
+      }
+    }
 
     // 노바 스트라이크 — 무적으로 밀고 나가며 닿는 것을 지운다
     if (novaTimer > 0) {
@@ -2023,6 +2538,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
+    dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
     dbg.__hordeForcePull = (id: string): void => {
       const d = LEGENDS.find((x) => x.id === id);
@@ -2176,6 +2692,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sfx.dash();
       const ck = owned.get('charge_kick') ?? 0;
       if (ck) kickTrail.push({ x: px, y: py - 8, life: 2.2, r: 20, dmg: 14 + 9 * ck });
+      const pe = owned.get('phantom_edge') ?? 0;
+      if (pe) {
+        // 대시 방향으로 참격이 날아간다 — 차지 킥이 자리에 남는 것과 반대다
+        const n = 1 + pe;
+        const base = Math.atan2(dashDy * 0.78, dashDx);
+        for (let i = 0; i < n; i++) {
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(base + (i - (n - 1) / 2) * 0.26) * 400,
+            vy: Math.sin(base + (i - (n - 1) / 2) * 0.26) * 400 * 0.8,
+            life: 0.7, dmg: 24 + 14 * pe, pierce: 4,
+            shape: 'blade', color: 0xff5c9c, r: 9, spin: 26,
+          });
+        }
+      }
     }
 
     if (dashTimer > 0) {
@@ -2434,6 +2965,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // ---- 탄
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
+
+      // 부메랑 — 일정 시간 뒤 던진 사람에게 되돌아온다. 오는 길에도 벤다.
+      if (b.back > 0) {
+        b.back -= dt;
+        if (b.back <= 0) b.homing = 0;
+      } else if (b.homing === 0 && b.shape !== 'tracer' && b.pierce > 50) {
+        const want = Math.atan2((py - 10 - b.y) / 0.8, px - b.x);
+        const cur = Math.atan2(b.vy / 0.8, b.vx);
+        let dd = want - cur;
+        while (dd > Math.PI) dd -= Math.PI * 2;
+        while (dd < -Math.PI) dd += Math.PI * 2;
+        const na = cur + clamp(dd, -7 * dt, 7 * dt);
+        const sp = Math.hypot(b.vx, b.vy / 0.8);
+        b.vx = Math.cos(na) * sp;
+        b.vy = Math.sin(na) * sp * 0.8;
+      }
 
       // 유도탄은 매 프레임 목표 쪽으로 조금씩 튼다. 각도를 즉시 맞춰버리면
       // 절대 안 빗나가서 유도라는 느낌 자체가 사라진다.
@@ -2927,6 +3474,67 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         .lineTo(px + c * 8 + sn * 16, hy + sn * 8 - c * 16)
         .closePath()
         .fill({ color: 0xffffff, alpha: 0.5 });
+    }
+
+    // --- 보스 무기 이펙트
+    // 롱쇼트 빔 — 화면을 가르는 관통 광선
+    if (beamT > 0 && phase === 'play') {
+      const k = beamT / 0.3;
+      const c = Math.cos(beamAngle);
+      const sn = Math.sin(beamAngle) * 0.78;
+      const hy = py - 10;
+      const widths = [
+        { w: 22 * k, c: 0x2f7ba0, a: 0.35 },
+        { w: 12 * k, c: 0xdcf4ff, a: 0.6 },
+        { w: 5 * k, c: 0xffffff, a: 0.95 },
+      ];
+      for (const L of widths) {
+        specialG.moveTo(px - sn * L.w, hy + c * L.w)
+          .lineTo(px + c * 420 - sn * L.w, hy + sn * 420 + c * L.w)
+          .lineTo(px + c * 420 + sn * L.w, hy + sn * 420 - c * L.w)
+          .lineTo(px + sn * L.w, hy - c * L.w)
+          .closePath()
+          .fill({ color: L.c, alpha: L.a });
+      }
+      // 발사구 섬광
+      specialG.circle(px, hy, 16 * k).fill({ color: 0xffffff, alpha: 0.8 });
+    }
+
+    // 카멜레온 스팅 — 무적인 동안 몸 주위가 타오른다
+    if (stingT > 0 && phase === 'play') {
+      for (let i = 0; i < 3; i++) {
+        const rr = 46 * (0.6 + i * 0.2) * (0.94 + Math.sin(animClock * 15 + i * 2) * 0.06);
+        specialG.circle(px, py - 10, rr)
+          .stroke({ color: i === 2 ? 0xdcffe4 : 0x8ef0a0, width: 2, alpha: 0.5 - i * 0.12 });
+      }
+      specialG.circle(px, py - 10, 46).fill({ color: 0x8ef0a0, alpha: 0.12 });
+    }
+
+    // 가드 셸 — 도는 방패 조각
+    const shellDraw = owned.get('guard_shell') ?? 0;
+    if (shellDraw && phase === 'play') {
+      const rr = 28 + 5 * shellDraw;
+      specialG.circle(px, py - 10, rr)
+        .stroke({ color: 0x6ec8ff, width: 2, alpha: 0.4 + Math.sin(animClock * 5) * 0.12 });
+      for (let i = 0; i < 6; i++) {
+        const a = orbitAngle * 0.7 + (i / 6) * Math.PI * 2;
+        specialG.rect(
+          px + Math.cos(a) * rr - 3, py - 10 + Math.sin(a) * rr * 0.78 - 3, 6, 6,
+        ).fill({ color: 0x9fd0ff, alpha: 0.8 });
+      }
+    }
+
+    // 크림슨 오빗 — 주위를 도는 구슬
+    const orbitLv = owned.get('crimson_orbit') ?? 0;
+    if (orbitLv && phase === 'play') {
+      const n = 2 + orbitLv;
+      for (let i = 0; i < n; i++) {
+        const a = orbitAngle + (i / n) * Math.PI * 2;
+        const ox = px + Math.cos(a) * 30;
+        const oy = py - 10 + Math.sin(a) * 24;
+        specialG.circle(ox, oy, 5).fill({ color: 0xff5c5c, alpha: 0.9 });
+        specialG.circle(ox, oy, 2).fill({ color: 0xffd0d0, alpha: 0.95 });
+      }
     }
 
     // 발밑 이동 방향 화살표 — 몸이 조준을 보고 있어도 어디로 가는지는 읽힌다
