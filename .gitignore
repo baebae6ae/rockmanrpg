@@ -31,4 +31,5 @@ dist-artifact/
 
 # 임시 검증 스크립트·스크린샷
 *.tmp.mjs
+*.tmp.cjs
 shot-*.png
