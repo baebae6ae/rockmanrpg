@@ -652,6 +652,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 이동 표시용 — 몸 방향(facing)과 별개로 실제 진행 방향을 들고 있는다 */
   let moveDirX = 0;
   let moveDirY = 0;
+  /** 세이버 사거리 표시용 조준각 — shoot() 과 같은 계산을 매 프레임 유지한다 */
+  let aimAngle = 0;
   let dustAcc = 0;
   /** run_attack 이 없는 시트에서 걷기와 휘두르기를 번갈아 쓰기 위한 간격 */
   let swingGap = 0;
@@ -829,7 +831,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 세이버는 탄이 없으니 확산·관통·탄속이 전부 죽은 카드가 된다.
       // 그 자리를 참격 자체를 키우는 카드로 채운다.
       id: 'arc', name: '참격 확장', desc: '베는 범위 확대', max: 6, only: ['saber'],
-      apply: () => { w.arcR += 9; w.arcSpan = Math.min(Math.PI * 2, w.arcSpan + 0.16); },
+      apply: () => { w.arcR += 12; w.arcSpan = Math.min(Math.PI * 2, w.arcSpan + 0.18); },
     },
     {
       id: 'drone', name: '옵션 유닛', desc: '주위를 도는 포탑 +1', max: 4,
@@ -1584,10 +1586,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       w.shots = 2; w.spread = 0.16; w.pierce = 0;
       w.baseDmg = w.dmg;
     } else if (w.style === 'saber') {
+      // 너무 좁고 약해서 근접이 이 장르에서 성립을 안 했다 — 반경 42→60,
+      // 부채꼴 153°→194°(반원보다 넓게), 위력도 한 단 더 올렸다.
       w.interval = 0.42;
-      w.dmg = 8 + Math.round(si.power * 0.5);
+      w.dmg = 12 + Math.round(si.power * 0.75);
       w.shots = 1; w.spread = 0; w.pierce = 0;
-      w.arcR = 42; w.arcSpan = Math.PI * 0.85;
+      w.arcR = 60; w.arcSpan = Math.PI * 1.08;
       w.baseDmg = w.dmg;
     } else {
       w.interval = 0.3;
@@ -1753,6 +1757,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const aim = nearestFoe(px, py);
     if (aim) facing = aim.x >= px ? 1 : -1;
     else if (ix !== 0) facing = ix > 0 ? 1 : -1;
+    // 세이버 사거리 표시용 — shoot() 이 실제로 계산하는 조준각과 같은
+    // 식으로 매 프레임 갱신해 둔다. 겨눌 적이 없으면 바라보는 쪽으로 둔다.
+    aimAngle = aim
+      ? Math.atan2((aim.y - 8) - (py - 10), aim.x - px)
+      : facing > 0 ? 0 : Math.PI;
 
     moveDirX = ix;
     moveDirY = iy;
@@ -2302,6 +2311,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 특수무기 탄 — 무기 색이 몇 개 안 되므로 색깔별로 묶어 한 번씩만 그린다
     specialG.clear();
+
+    // 세이버 사거리 표시 — 실제로 얼마나 닿는지 스윙 전에도 보여야 한다.
+    // 안 그러면 "닿았어야 하는데 안 닿았다"는 느낌만 남고 범위가 감이 안 온다.
+    if (w.style === 'saber' && phase === 'play') {
+      const a0 = aimAngle - w.arcSpan / 2;
+      const a1 = aimAngle + w.arcSpan / 2;
+      specialG.moveTo(px, py - 10).arc(px, py - 10, w.arcR, a0, a1).closePath();
+      specialG.fill({ color: shotColor, alpha: 0.05 });
+      specialG.arc(px, py - 10, w.arcR, a0, a1);
+      specialG.stroke({ color: shotColor, alpha: 0.35, width: 1 });
+    }
 
     // 세이버 참격 — 부채꼴이 확 퍼졌다 사라진다
     for (let i = arcs.length - 1; i >= 0; i--) {
