@@ -35,6 +35,8 @@ const BASE_SPEED = 108;
 const DASH_SPEED = 300;
 const DASH_TIME = 0.16;
 const DASH_CD = 0.55;
+/** 세이버 차지 돌진 — 이 시간에 걸쳐 목적지까지 눈으로 좇을 수 있게 옮긴다 */
+const LUNGE_MOVE_DUR = 0.14;
 
 const MAX_BULLETS = 700;
 const MAX_FOES = 170;
@@ -1628,7 +1630,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    * 모은 걸 놓는다. 방식마다 결과가 달라야 세 캐릭터가 다 차지를 쓸 이유가 생긴다.
    *   차지 버스터 — 조준선을 따라 화면을 가르는 일직선 관통 광선
    *   연사        — 짧은 시간 폭주 난사
-   *   세이버      — 조준선으로 순간 파고드는 돌진 연참
+   *   세이버      — 몸을 돌리며 조준선으로 파고드는 회전 돌진 연참
    */
   function releaseCharge(lv: number): void {
     const t = nearestFoe(px, py);
@@ -1651,23 +1653,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const sn = Math.sin(a);
       const fromX = px;
       const fromY = py;
-      px = clamp(px + c * range, 12, ARENA_W - 12);
-      py += sn * range * 0.78;
-      iframe = Math.max(iframe, 0.3);
+      const toX = clamp(px + c * range, 12, ARENA_W - 12);
+      const toY = py + sn * range * 0.78;
+      iframe = Math.max(iframe, LUNGE_MOVE_DUR + 0.05);
 
+      // 순간이동처럼 보이면 뭘 당했는지 읽을 수가 없다 — 실제 위치는
+      // 여기서 바로 옮기지 않고, updateLegends() 가 매 프레임 조금씩
+      // 이동시켜서 눈으로 좇을 수 있는 돌진으로 보이게 한다. 몸이 도는
+      // 회전도 그 타이밍에 맞춰 hv.rotation 에 건다.
+      lungeMoveT = LUNGE_MOVE_DUR;
       slashLungeT = 0.3;
       slashLungeFromX = fromX;
       slashLungeFromY = fromY;
-      slashLungeToX = px;
-      slashLungeToY = py;
+      slashLungeToX = toX;
+      slashLungeToY = toY;
       slashLungeWidth = width;
 
       // 지나가는 길을 따라 참격 자국을 몇 개 겹쳐 남긴다 — 마지막 한 번은
       // 흰빛으로 튀게 해서 "마무리 일격"이 왔다는 걸 알린다
       for (let h = 0; h < hits; h++) {
         const t = h / (hits - 1);
-        const sx = fromX + (px - fromX) * t;
-        const sy = fromY + (py - fromY) * t;
+        const sx = fromX + (toX - fromX) * t;
+        const sy = fromY + (toY - fromY) * t;
         arcs.push({
           x: sx, y: sy - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
           life: 0.16, max: 0.16, color: h === hits - 1 ? 0xffffff : shotCore,
@@ -1691,7 +1698,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const perp = Math.abs(-rx * sn + ry * c);
         if (along > -18 && along < range + 18 && perp < width + 18) hurtBoss(dmg, w.elem);
       }
-      rings.push({ x: px, y: py - 10, r: 32, life: 0.3, max: 0.3, color: shotCore });
+      rings.push({ x: toX, y: toY - 10, r: 32, life: 0.3, max: 0.3, color: shotCore });
     } else if (w.style === 'rapid') {
       // 폭주 — 잠깐 발사 간격이 무너진다
       burstT = lv === 2 ? 0.9 : 0.45;
@@ -2367,6 +2374,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let slashLungeToX = 0;
   let slashLungeToY = 0;
   let slashLungeWidth = 0;
+  /** 돌진이 실제로 진행 중인 시간 — 0 될 때까지 매 프레임 px/py 를 옮긴다 */
+  let lungeMoveT = 0;
   /** 버스터 차지 — 일직선 관통 광선 표시 시간·방향·사거리·폭 */
   let chargeBeamT = 0;
   let chargeBeamAngle = 0;
@@ -2488,6 +2497,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 튕긴 자리에 작은 반격
         blast(h.x, h.y, 18, dmg, 0x6ec8ff);
       }
+    }
+
+    // 세이버 차지 돌진 — 목적지는 releaseCharge() 가 이미 정해뒀다. 순간
+    // 이동이면 뭘 당했는지 안 보이니, 여기서 매 프레임 조금씩 옮긴다.
+    if (lungeMoveT > 0) {
+      lungeMoveT -= dt;
+      const t = clamp(1 - lungeMoveT / LUNGE_MOVE_DUR, 0, 1);
+      px = slashLungeFromX + (slashLungeToX - slashLungeFromX) * t;
+      py = slashLungeFromY + (slashLungeToY - slashLungeFromY) * t;
     }
 
     // 노바 스트라이크 — 무적으로 밀고 나가며 닿는 것을 지운다
@@ -3145,6 +3163,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hv.update(app.ticker.deltaMS);
     hv.position.set(Math.round(px), Math.round(py));
     hv.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
+    // 세이버 차지 돌진 — 회전베기라는 걸 알아보게 몸이 통째로 돈다
+    hv.rotation = lungeMoveT > 0
+      ? (1 - lungeMoveT / LUNGE_MOVE_DUR) * Math.PI * 2 * 3 * facing
+      : 0;
 
     // ---- 스폰
     const rate = Math.min(55, 1.6 + time * 0.3);
@@ -3998,34 +4020,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.circle(px, hy, 16 * k).fill({ color: 0xffffff, alpha: 0.8 });
     }
 
-    // 세이버 차지 — 돌진하며 지나간 자리에 남는 잔상 줄무늬. 실제 참격
-    // 자국(초승달 모양)은 releaseCharge() 가 arcs 배열에 직접 쌓아서
-    // 저 아래 arcs 루프가 그린다 — 여긴 그 사이를 잇는 돌진 궤적만 담당.
+    // 세이버 차지 — 돌진하며 남기는 잔상. 버스터의 빔(사다리꼴 한 덩어리)과
+    // 겹쳐 보이면 세이버만의 느낌이 안 사니, 색이 덮인 띠 대신 지나간
+    // 자리마다 흐려지는 잔상 방울 + 짧은 속도선으로 그린다. 실제 참격
+    // 자국(초승달 모양)은 releaseCharge() 가 arcs 배열에 직접 쌓는다.
     if (slashLungeT > 0 && phase === 'play') {
       const k = slashLungeT / 0.3;
       const dx = slashLungeToX - slashLungeFromX;
       const dy = slashLungeToY - slashLungeFromY;
       const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-      const nx = -uy;
-      const ny = ux;
-      const hy0 = slashLungeFromY - 10;
-      const hy1 = slashLungeToY - 10;
-      const widths = [
-        { w: slashLungeWidth * 0.9 * k, c: shotColor, a: 0.3 },
-        { w: slashLungeWidth * 0.4 * k, c: 0xffffff, a: 0.7 },
-      ];
-      for (const L of widths) {
-        specialG.moveTo(slashLungeFromX + nx * L.w, hy0 + ny * L.w)
-          .lineTo(slashLungeToX + nx * L.w, hy1 + ny * L.w)
-          .lineTo(slashLungeToX - nx * L.w, hy1 - ny * L.w)
-          .lineTo(slashLungeFromX - nx * L.w, hy0 - ny * L.w)
-          .closePath()
-          .fill({ color: L.c, alpha: L.a });
+      const nx = -(dy / len);
+      const ny = dx / len;
+      const steps = 5;
+      for (let i = 0; i < steps; i++) {
+        const t = i / (steps - 1);
+        const sx = slashLungeFromX + dx * t;
+        const sy = slashLungeFromY - 10 + dy * t;
+        const rr = slashLungeWidth * (0.5 + 0.5 * t) * k;
+        specialG.circle(sx, sy, rr).fill({ color: shotCore, alpha: 0.16 * k });
+        const tick = slashLungeWidth * 1.6 * k;
+        specialG.moveTo(sx - nx * tick, sy - ny * tick)
+          .lineTo(sx + nx * tick, sy + ny * tick)
+          .stroke({ color: 0xffffff, width: 1.5, alpha: 0.35 * k });
       }
       // 착지 지점 충격
-      specialG.circle(slashLungeToX, hy1, slashLungeWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.8 });
+      specialG.circle(slashLungeToX, slashLungeToY - 10, slashLungeWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.8 });
     }
 
     // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선
