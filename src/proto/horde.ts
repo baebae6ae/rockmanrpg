@@ -1890,14 +1890,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       color: 0xfff2c0,
       rarity: 'SSR',
       max: 5,
-      desc: (lv) => (lv === 0 ? '화면 전체를 날려버린다' : `위력 ${90 + 55 * (lv + 1)} · 간격 ${(14 - 1.4 * (lv + 1)).toFixed(1)}초`),
-      interval: (lv) => 14 - 1.4 * lv,
+      desc: (lv) => (lv === 0 ? '화면 전체를 날려버린다' : `위력 ${78 + 46 * (lv + 1)} · 간격 ${(15 - 1.4 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 15 - 1.4 * lv,
       fire: (lv) => {
         // 화면에 보이는 것을 전부 지운다. 반경이 아니라 시야 전체다.
-        gigaFlash = 0.45;
-        shake = 16;
+        // 위력에 비해 이펙트가 밋밋하다는 피드백 — 발동 순간 잠깐 멎었다가
+        // (히트스톱) 확 터지게 해서 무게를 실었다. 그 대신 위력은 살짝 낮췄다.
+        gigaFlash = 0.6;
+        shake = 18;
+        hitstop = 0.09;
         sfx.explode();
-        const dmg = 90 + 55 * lv;
+        const dmg = 78 + 46 * lv;
         for (let j = foes.length - 1; j >= 0; j--) {
           const f = foes[j];
           if (!inView(f.x, f.y)) continue;
@@ -1905,9 +1908,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           hurtFoe(f, dmg, 'none');
         }
         if (boss && inView(boss.x, boss.y)) hurtBoss(dmg * 0.8);
-        for (let i = 0; i < 4; i++) {
-          rings.push({ x: px, y: py - 10, r: 90 + i * 70, life: 0.5, max: 0.5, color: 0xfff2c0 });
+        for (let i = 0; i < 5; i++) {
+          rings.push({ x: px, y: py - 10, r: 70 + i * 60, life: 0.55, max: 0.55, color: i % 2 ? 0xfff2c0 : 0xffffff });
         }
+        spawnPart(px, py - 10, 40, 0xfff2c0, 260);
       },
     },
     {
@@ -2833,6 +2837,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       );
       phase = 'gacha';
     };
+    dbg.__hordeFireLegend = (id: string, lv = 1): void => { LEGENDS.find((x) => x.id === id)?.fire(lv); };
   }
 
   // ------------------------------------------------------------ 루프
@@ -4232,50 +4237,77 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       stageLabel.alpha = Math.min(1, armorBanner / 0.5);
     }
 
-    // 기가 크래시 — 흰 사각형 하나로 끝내면 "화면이 잠깐 밝았다"로만 보인다.
-    // 섬광 → 사방으로 뻗는 빛기둥 → 갈라지는 균열 → 잔광 순으로 겹친다.
+    // 기가 크래시 — 위력에 비해 밋밋하다는 피드백으로 손봤다. 발동 순간
+    // 히트스톱으로 잠깐 멎었다가(fire() 에서 건다) 정지된 그 프레임에 섬광이
+    // 최고조로 걸려 있어야 "터졌다"가 확 온다. 그 다음 별 모양 코어 →
+    // 이중 빛기둥(굵은 백색 + 가는 금색) → 갈라지는 균열 → 잔광 고리 순으로
+    // 겹쳐서 화면 하나로 끝나던 예전보다 훨씬 두꺼운 인상을 남긴다.
     if (gigaFlash > 0) {
-      const k = gigaFlash / 0.45;
+      const k = gigaFlash / 0.6;
       const inv = 1 - k;
-      hudBar.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: Math.min(1, k * k * 1.4) });
-      hudBar.rect(0, 0, W, H).fill({ color: 0xfff2c0, alpha: k * 0.4 });
+      hudBar.rect(0, 0, W, H).fill({ color: 0xffffff, alpha: Math.min(1, k * k * 1.5) });
+      hudBar.rect(0, 0, W, H).fill({ color: 0xfff2c0, alpha: k * 0.45 });
 
       const cxs = W / 2;
       const cys = H / 2;
-      // 빛기둥
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2 + gigaFlash * 3;
+
+      // 코어 별 — 섬광 한가운데가 비어 있으면 허전하다
+      const spikes = 8;
+      const coreR = 14 + k * 26;
+      hudBar.moveTo(cxs + coreR, cys);
+      for (let i = 1; i <= spikes * 2; i++) {
+        const a = (i / (spikes * 2)) * Math.PI * 2;
+        const rr = i % 2 === 0 ? coreR : coreR * 0.42;
+        hudBar.lineTo(cxs + Math.cos(a) * rr, cys + Math.sin(a) * rr);
+      }
+      hudBar.fill({ color: 0xffffff, alpha: k * 0.9 });
+
+      // 빛기둥 — 굵은 백색 한 겹 + 그 사이를 메우는 가는 금색 한 겹
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + gigaFlash * 4;
         const c = Math.cos(a);
         const sn = Math.sin(a);
         const len = 60 + inv * 460;
-        const wdt = 6 + k * 26;
+        const wdt = 5 + k * 22;
         hudBar.moveTo(cxs + c * 10 - sn * wdt, cys + sn * 10 + c * wdt)
           .lineTo(cxs + c * len, cys + sn * len)
           .lineTo(cxs + c * 10 + sn * wdt, cys + sn * 10 - c * wdt)
           .closePath();
       }
-      hudBar.fill({ color: 0xffffff, alpha: k * 0.55 });
+      hudBar.fill({ color: 0xffffff, alpha: k * 0.5 });
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + gigaFlash * 4 + 0.22;
+        const c = Math.cos(a);
+        const sn = Math.sin(a);
+        const len = 40 + inv * 340;
+        const wdt = 3 + k * 12;
+        hudBar.moveTo(cxs + c * 10 - sn * wdt, cys + sn * 10 + c * wdt)
+          .lineTo(cxs + c * len, cys + sn * len)
+          .lineTo(cxs + c * 10 + sn * wdt, cys + sn * 10 - c * wdt)
+          .closePath();
+      }
+      hudBar.fill({ color: 0xfff2c0, alpha: k * 0.6 });
 
       // 갈라지는 균열 — 꺾인 선이라야 "깨졌다"로 읽힌다
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2 + 0.4;
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + 0.4;
         let x = cxs;
         let y = cys;
         hudBar.moveTo(x, y);
         for (let seg = 0; seg < 5; seg++) {
-          const step = (40 + seg * 22) * inv;
+          const step = (44 + seg * 24) * inv;
           x += Math.cos(a + Math.sin(seg * 3 + i) * 0.5) * step;
           y += Math.sin(a + Math.sin(seg * 3 + i) * 0.5) * step;
           hudBar.lineTo(x, y);
         }
       }
-      hudBar.stroke({ color: 0xfff2c0, width: 2, alpha: k * 0.85 });
+      hudBar.stroke({ color: 0xfff2c0, width: 2, alpha: k * 0.9 });
 
-      // 잔광 고리
-      for (let i = 0; i < 3; i++) {
-        const kk = Math.min(1, inv * 1.5 + i * 0.16);
-        hudBar.circle(cxs, cys, kk * 300)
-          .stroke({ color: 0xffffff, width: 5 * (1 - kk), alpha: (1 - kk) * k * 2 });
+      // 잔광 고리 — 색을 번갈아 겹쳐 두께감을 준다
+      for (let i = 0; i < 4; i++) {
+        const kk = Math.min(1, inv * 1.3 + i * 0.14);
+        hudBar.circle(cxs, cys, kk * 320)
+          .stroke({ color: i % 2 ? 0xfff2c0 : 0xffffff, width: 5 * (1 - kk), alpha: (1 - kk) * k * 2 });
       }
     }
 
