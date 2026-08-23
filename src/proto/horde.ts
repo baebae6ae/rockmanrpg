@@ -4032,7 +4032,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const spin = t * Math.PI * 2 * 2.5 * facing;
       const hy = py - 10;
       const blades = 3;
-      const bladeR = slashLungeWidth * 1.3;
+      // 실제 판정 반경(width)보다 눈에 보이는 크기가 훨씬 크면 사기
+      // 기술처럼 보인다 — 버스터 빔 굵기 수준으로 시각적 크기만 줄인다
+      const bladeR = slashLungeWidth * 0.65;
       const bladeSpan = Math.PI * 0.5;
       for (let i = 0; i < blades; i++) {
         const ang = spin + (i / blades) * Math.PI * 2;
@@ -4043,7 +4045,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         lungeG.arc(px, hy, bladeR, a0, a1)
           .stroke({ color: 0xffffff, width: 2.5, alpha: 0.95 });
       }
-      lungeG.circle(px, hy, slashLungeWidth * 0.5).fill({ color: 0xffffff, alpha: 0.5 });
+      lungeG.circle(px, hy, slashLungeWidth * 0.3).fill({ color: 0xffffff, alpha: 0.5 });
       // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만
       lungeG.moveTo(slashLungeFromX, slashLungeFromY - 10).lineTo(px, hy)
         .stroke({ color: shotColor, width: 2, alpha: 0.25 });
