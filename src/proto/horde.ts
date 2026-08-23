@@ -1626,7 +1626,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   /**
    * 모은 걸 놓는다. 방식마다 결과가 달라야 세 캐릭터가 다 차지를 쓸 이유가 생긴다.
-   *   차지 버스터 — 거대한 관통탄
+   *   차지 버스터 — 조준선을 따라 화면을 가르는 일직선 관통 광선
    *   연사        — 짧은 시간 폭주 난사
    *   세이버      — 조준선으로 순간 파고드는 돌진 연참
    */
@@ -1696,14 +1696,35 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 폭주 — 잠깐 발사 간격이 무너진다
       burstT = lv === 2 ? 0.9 : 0.45;
     } else {
-      // 거대 관통탄
-      addBullet({
-        x: px + facing * 9, y: py - 10,
-        vx: Math.cos(a) * w.speed * 1.15, vy: Math.sin(a) * w.speed * 1.15 * 0.8,
-        life: 1.2, dmg: Math.round(w.dmg * (lv === 2 ? 6 : 3)),
-        pierce: lv === 2 ? 99 : 6,
-        shape: 'orb', color: shotColor, r: lv === 2 ? 15 : 10,
-      });
+      // 일직선 관통샷 — 날아가는 탄 하나를 쏘는 대신, 조준선을 따라 화면을
+      // 가르는 즉발 관통 광선이다. 날아가는 시간이 없으니 탄이 뭔가에
+      // 걸려 방향이 흔들릴 일 자체가 없다.
+      const range = lv === 2 ? 460 : 300;
+      const width = lv === 2 ? 16 : 11;
+      const dmg = Math.round(w.dmg * (lv === 2 ? 6 : 3));
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      chargeBeamAngle = a;
+      chargeBeamRange = range;
+      chargeBeamWidth = width;
+      chargeBeamT = 0.3;
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const rx = f.x - px;
+        const ry = (f.y - 8 - (py - 10)) / 0.78;
+        const along = rx * c + ry * sn;
+        if (along < -f.def.r || along > range) continue;
+        const perp = Math.abs(-rx * sn + ry * c);
+        if (perp > width + f.def.r) continue;
+        hurtFoe(f, dmg, w.elem);
+      }
+      if (boss) {
+        const rx = boss.x - px;
+        const ry = (boss.y - 14 - (py - 10)) / 0.78;
+        const along = rx * c + ry * sn;
+        const perp = Math.abs(-rx * sn + ry * c);
+        if (along > -18 && along < range && perp < width + 18) hurtBoss(dmg, w.elem);
+      }
       for (let i = 0; i < 2; i++) {
         rings.push({ x: px, y: py - 10, r: 18 + i * 14, life: 0.22, max: 0.22, color: shotCore });
       }
@@ -2346,6 +2367,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let slashLungeToX = 0;
   let slashLungeToY = 0;
   let slashLungeWidth = 0;
+  /** 버스터 차지 — 일직선 관통 광선 표시 시간·방향·사거리·폭 */
+  let chargeBeamT = 0;
+  let chargeBeamAngle = 0;
+  let chargeBeamRange = 0;
+  let chargeBeamWidth = 0;
 
   /** 적이 가장 몰려 있는 쪽 각도 — 노바 스트라이크가 헛돌지 않게 한다 */
   function densestDir(): number {
@@ -3172,6 +3198,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 연사 차지가 터지는 동안은 간격이 무너진다
     if (burstT > 0) burstT -= dt;
     if (slashLungeT > 0) slashLungeT -= dt;
+    if (chargeBeamT > 0) chargeBeamT -= dt;
     const itv = burstT > 0 ? w.interval * 0.32 : w.interval;
     fireAcc += dt;
     let guard = 0;
@@ -3999,6 +4026,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
       // 착지 지점 충격
       specialG.circle(slashLungeToX, hy1, slashLungeWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.8 });
+    }
+
+    // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선
+    if (chargeBeamT > 0 && phase === 'play') {
+      const k = chargeBeamT / 0.3;
+      const c = Math.cos(chargeBeamAngle);
+      const sn = Math.sin(chargeBeamAngle) * 0.78;
+      const hy = py - 10;
+      const widths = [
+        { w: chargeBeamWidth * 1.3 * k, c: shotColor, a: 0.3 },
+        { w: chargeBeamWidth * 0.75 * k, c: shotCore, a: 0.6 },
+        { w: chargeBeamWidth * 0.3 * k, c: 0xffffff, a: 0.95 },
+      ];
+      for (const L of widths) {
+        specialG.moveTo(px - sn * L.w, hy + c * L.w)
+          .lineTo(px + c * chargeBeamRange - sn * L.w, hy + sn * chargeBeamRange + c * L.w)
+          .lineTo(px + c * chargeBeamRange + sn * L.w, hy + sn * chargeBeamRange - c * L.w)
+          .lineTo(px + sn * L.w, hy - c * L.w)
+          .closePath()
+          .fill({ color: L.c, alpha: L.a });
+      }
+      specialG.circle(px, hy, chargeBeamWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.85 });
     }
 
     // 카멜레온 스팅 — 무적인 동안 몸 주위가 타오른다
