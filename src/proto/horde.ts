@@ -36,7 +36,7 @@ const DASH_SPEED = 300;
 const DASH_TIME = 0.16;
 const DASH_CD = 0.55;
 /** 세이버 차지 돌진 — 이 시간에 걸쳐 목적지까지 눈으로 좇을 수 있게 옮긴다 */
-const LUNGE_MOVE_DUR = 0.14;
+const LUNGE_MOVE_DUR = 0.18;
 
 const MAX_BULLETS = 700;
 const MAX_FOES = 170;
@@ -585,7 +585,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // animG 는 바닥 바로 위여야 한다 — 아래에 두면 흐르는 쇳물도 눈발도
   // 바닥에 가려서 안 보인다.
   const animG = new Graphics();
-  world.addChild(groundLayer, animG, gemG, foeLayer, bulletG, specialG, partG);
+  // 세이버 차지 돌진의 회전 이펙트 전용 — foeLayer(캐릭터) 보다 뒤에
+  // 둬야 한다. specialG 처럼 위에 그리면 정작 돌아가는 캐릭터 본체가
+  // 이펙트에 파묻혀 안 보인다.
+  const lungeG = new Graphics();
+  world.addChild(groundLayer, animG, gemG, lungeG, foeLayer, bulletG, specialG, partG);
 
   // 배경 — 스테이지 테마는 stage_bg.ts 에 있다.
   // 판이 진행되면서 구역이 바뀌므로 정지 배경 한 장으로 끝나지 않는다.
@@ -1646,7 +1650,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 때리는 근접의 위험은 그대로 두고, 그 위험을 감수한 만큼 짧고
       // 굵게 보상한다.
       const range = lv === 2 ? 190 : 110;
-      const hits = lv === 2 ? 5 : 3;
       const width = w.arcR * (lv === 2 ? 1.25 : 1.0);
       const dmg = Math.round(w.dmg * (lv === 2 ? 6.5 : 3.2));
       const c = Math.cos(a);
@@ -1669,17 +1672,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       slashLungeToY = toY;
       slashLungeWidth = width;
 
-      // 지나가는 길을 따라 참격 자국을 몇 개 겹쳐 남긴다 — 마지막 한 번은
-      // 흰빛으로 튀게 해서 "마무리 일격"이 왔다는 걸 알린다
-      for (let h = 0; h < hits; h++) {
-        const t = h / (hits - 1);
-        const sx = fromX + (toX - fromX) * t;
-        const sy = fromY + (toY - fromY) * t;
-        arcs.push({
-          x: sx, y: sy - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
-          life: 0.16, max: 0.16, color: h === hits - 1 ? 0xffffff : shotCore,
-        });
-      }
+      // 회전하며 지나가는 몸 자체가 참격이다 — 경로 위에 큰 참격을 여러 개
+      // 겹쳐 찍으면 정작 돌아가는 캐릭터가 그 밑에 파묻힌다. 착지 지점에
+      // 흰빛 마무리 일격 하나만 남긴다.
+      arcs.push({
+        x: toX, y: toY - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
+        life: 0.16, max: 0.16, color: 0xffffff,
+      });
 
       for (let j = foes.length - 1; j >= 0; j--) {
         const f = foes[j];
@@ -3165,7 +3164,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hv.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
     // 세이버 차지 돌진 — 회전베기라는 걸 알아보게 몸이 통째로 돈다
     hv.rotation = lungeMoveT > 0
-      ? (1 - lungeMoveT / LUNGE_MOVE_DUR) * Math.PI * 2 * 3 * facing
+      ? (1 - lungeMoveT / LUNGE_MOVE_DUR) * Math.PI * 2 * 2.5 * facing
       : 0;
 
     // ---- 스폰
@@ -3757,6 +3756,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 특수무기 탄 — 무기 색이 몇 개 안 되므로 색깔별로 묶어 한 번씩만 그린다
     specialG.clear();
+    lungeG.clear();
 
     // 세이버 사거리 표시 — 실제로 얼마나 닿는지 스윙 전에도 보여야 한다.
     // 안 그러면 "닿았어야 하는데 안 닿았다"는 느낌만 남고 범위가 감이 안 온다.
@@ -4020,31 +4020,38 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.circle(px, hy, 16 * k).fill({ color: 0xffffff, alpha: 0.8 });
     }
 
-    // 세이버 차지 — 돌진하며 남기는 잔상. 버스터의 빔(사다리꼴 한 덩어리)과
-    // 겹쳐 보이면 세이버만의 느낌이 안 사니, 색이 덮인 띠 대신 지나간
-    // 자리마다 흐려지는 잔상 방울 + 짧은 속도선으로 그린다. 실제 참격
-    // 자국(초승달 모양)은 releaseCharge() 가 arcs 배열에 직접 쌓는다.
-    if (slashLungeT > 0 && phase === 'play') {
-      const k = slashLungeT / 0.3;
-      const dx = slashLungeToX - slashLungeFromX;
-      const dy = slashLungeToY - slashLungeFromY;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = -(dy / len);
-      const ny = dx / len;
-      const steps = 5;
-      for (let i = 0; i < steps; i++) {
-        const t = i / (steps - 1);
-        const sx = slashLungeFromX + dx * t;
-        const sy = slashLungeFromY - 10 + dy * t;
-        const rr = slashLungeWidth * (0.5 + 0.5 * t) * k;
-        specialG.circle(sx, sy, rr).fill({ color: shotCore, alpha: 0.16 * k });
-        const tick = slashLungeWidth * 1.6 * k;
-        specialG.moveTo(sx - nx * tick, sy - ny * tick)
-          .lineTo(sx + nx * tick, sy + ny * tick)
-          .stroke({ color: 0xffffff, width: 1.5, alpha: 0.35 * k });
+    // 세이버 차지 돌진 — 도는 몸 자체가 참격이니, 회전이 뚜렷이 보이는
+    // 톱날을 캐릭터 "뒤"(lungeG, foeLayer 보다 아래)에 그린다. specialG
+    // 처럼 위에 그리면 정작 돌아가는 캐릭터가 이펙트에 파묻혀 안 보인다.
+    // 회전각은 hv.rotation 과 같은 식으로 계산해 완전히 맞물려 돈다.
+    if (lungeMoveT > 0 && phase === 'play') {
+      const t = clamp(1 - lungeMoveT / LUNGE_MOVE_DUR, 0, 1);
+      const spin = t * Math.PI * 2 * 2.5 * facing;
+      const hy = py - 10;
+      const blades = 3;
+      const len = slashLungeWidth * 1.8;
+      for (let i = 0; i < blades; i++) {
+        const ang = spin + (i / blades) * Math.PI * 2;
+        const bc = Math.cos(ang);
+        const bs = Math.sin(ang);
+        lungeG.moveTo(px - bc * len, hy - bs * len).lineTo(px + bc * len, hy + bs * len)
+          .stroke({ color: shotCore, width: 8, alpha: 0.6 });
+        lungeG.moveTo(px - bc * len, hy - bs * len).lineTo(px + bc * len, hy + bs * len)
+          .stroke({ color: 0xffffff, width: 3, alpha: 1 });
       }
-      // 착지 지점 충격
-      specialG.circle(slashLungeToX, slashLungeToY - 10, slashLungeWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.8 });
+      // 도는 궤적 자체를 옅은 고리로 남겨서 세 날 사이도 "돌고 있다"로 읽힌다
+      lungeG.circle(px, hy, len * 0.75).stroke({ color: 0xffffff, width: 2, alpha: 0.35 });
+      lungeG.circle(px, hy, slashLungeWidth * 0.55).fill({ color: 0xffffff, alpha: 0.5 });
+      // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만
+      lungeG.moveTo(slashLungeFromX, slashLungeFromY - 10).lineTo(px, hy)
+        .stroke({ color: shotColor, width: 2, alpha: 0.25 });
+    } else if (slashLungeT > 0 && phase === 'play') {
+      // 돌진이 끝난 뒤 — 지나온 자리에 옅게 남는 잔광만 (착지 충격은
+      // releaseCharge() 가 이미 rings 로 쏘아뒀다)
+      const k = slashLungeT / 0.3;
+      specialG.moveTo(slashLungeFromX, slashLungeFromY - 10)
+        .lineTo(slashLungeToX, slashLungeToY - 10)
+        .stroke({ color: shotColor, width: 2, alpha: 0.25 * k });
     }
 
     // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선
