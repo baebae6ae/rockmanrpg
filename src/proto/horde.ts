@@ -320,6 +320,8 @@ interface Heal {
   x: number;
   y: number;
   life: number;
+  /** 회복량 — 없으면 기본 캡슐 회복량(20)을 쓴다 */
+  amt?: number;
 }
 
 interface Part {
@@ -565,6 +567,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       charSheets.set(c.id, await loadSheet('characters', c.id));
     }),
   );
+  // 보스도 미리 받아둔다 — 스테이지 선택 화면에 8명을 동시에 세워
+  // 보여줘야 하니, 처음 마주칠 때 불러오면 그 순간 뚝 끊긴다.
+  const bossSheets = new Map<string, Sheet>();
+  await Promise.all(
+    BOSS_DEFS.map(async (b) => {
+      bossSheets.set(b.id, await loadSheet('enemies', b.id));
+    }),
+  );
 
   // ------------------------------------------------------------ 레이어
   const world = new Container();
@@ -719,11 +729,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const arcs: Arc[] = [];
   const hostiles: Hostile[] = [];
   const heals: Heal[] = [];
-  const bossSheets = new Map<string, Sheet>();
   let boss: Boss | null = null;
   let bossAt = 70;
   let bossBanner = 0;
   let bossKills = 0;
+  /** 보스 문이 열리고 이름·체력바가 차오르는 연출 — 이 시간 동안은 세계가 멈춘다 */
+  let bossIntroT = 0;
+  const BOSS_INTRO_DUR = 1.6;
+  /** 체력바가 몇 칸 찼는지 — 틱 소리를 한 번씩만 내려면 세어둬야 한다 */
+  let bossIntroTicks = 0;
+  const BOSS_INTRO_FILL_START = 0.5;
+  const BOSS_INTRO_FILL_END = 1.4;
+  const BOSS_INTRO_TICKS = 8;
   /**
    * 보스 러시 — 판의 절정. 3분 30초를 버티면 여덟이 연달아 나온다.
    * 지금까지 판이 끝없이 같은 밀도로만 이어져서 "끝까지 갔다"는 지점이
@@ -779,7 +796,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let animClock = 0;
   let shake = 0;
   let hitstop = 0;
-  let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' = 'select';
+  let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' | 'boss_select' = 'select';
   let selIndex = 0;
   /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
   let attackHold = 0;
@@ -850,6 +867,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 손가락으로 하면 번거롭기만 하다.
         selIndex = i;
         startRun();
+        break;
+      }
+      return;
+    }
+    if (phase === 'boss_select') {
+      for (let i = 0; i < bossSelRects.length && i < bossPickList.length; i++) {
+        if (!inside(bossSelRects[i])) continue;
+        bossSelIndex = i;
+        chooseBoss();
         break;
       }
       return;
@@ -1301,7 +1327,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     });
   }
 
-  async function spawnBoss(pick?: BossDef): Promise<void> {
+  async function spawnBoss(pick?: BossDef, announce = true): Promise<void> {
     if (boss) return;
     // 이미 잡아서 무기를 받은 보스는 뒤로 미룬다 — 같은 놈만 계속 나오면
     // Weapon Get 이 성립을 안 한다
@@ -1328,9 +1354,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       hp: maxHp, maxHp, view, mode: 0, timer: 2.4, flash: 0,
       def: bd, ax: 0, ay: 0, guarding: false, hidden: false,
     };
-    bossBanner = 2.4;
-    sfx.boss();
-    shake = 8;
+    if (announce) {
+      bossBanner = 2.4;
+      sfx.boss();
+      shake = 8;
+    }
   }
 
   /** 보스 행동 — 다가오다가 준비 동작을 보이고 사방으로 뿌린다 */
@@ -2081,6 +2109,90 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       max: 5,
       desc: (lv) => (lv === 0 ? '대시 자리에 불길이 남는다' : `자국 위력 ${14 + 9 * (lv + 1)}`),
       // 대시할 때만 발동하므로 주기 발사가 없다 (아래 dash 처리에서 직접 남긴다)
+    },
+    // ------------------------------------------------------------
+    // 서포트 유닛 — 록맨 시리즈의 로봇 동물들. 전부 "플레이어 대신 뭔가를
+    // 해주는" 조력자라, 직접 조준하는 무기들과는 결이 다르게 잡았다.
+    {
+      id: 'beat_dive',
+      name: '비트',
+      color: 0x6ec8ff,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '급강하해서 적을 덮친다' : `위력 ${18 + 10 * (lv + 1)} · 간격 ${(2.4 - 0.16 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 2.4 - 0.16 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const dmg = 18 + 10 * lv;
+        addBullet({
+          x: px, y: py - 30,
+          vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 * 0.8,
+          life: 1.4, dmg, pierce: 2, homing: 7,
+          shape: 'orb', color: 0x6ec8ff, r: 7, spin: 14,
+        });
+        spawnPart(px, py - 30, 4, 0x6ec8ff, 90);
+        sfx.shot('rapid');
+      },
+    },
+    {
+      id: 'tango_roll',
+      name: '탱고',
+      color: 0xff9a4c,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '구르며 계속 들이받는다' : `위력 ${14 + 8 * (lv + 1)} · 간격 ${(3.2 - 0.22 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 3.2 - 0.22 * lv,
+      fire: (lv) => {
+        const a = densestDir();
+        const dmg = 14 + 8 * lv;
+        addBullet({
+          x: px, y: py - 6,
+          vx: Math.cos(a) * 150, vy: Math.sin(a) * 150 * 0.8,
+          life: 2.2, dmg, pierce: 99,
+          shape: 'orb', color: 0xff9a4c, r: 9, spin: 10,
+        });
+        spawnPart(px, py - 6, 4, 0xff9a4c, 70);
+        sfx.shot('charge');
+      },
+    },
+    {
+      id: 'eddie_call',
+      name: '에디',
+      color: 0xffd85c,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '가끔 회복 상자를 던져준다' : `회복 ${20 + 6 * (lv + 1)} · 간격 ${(9 - 0.7 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 9 - 0.7 * lv,
+      fire: (lv) => {
+        heals.push({ x: px, y: py - 6, life: 10, amt: 20 + 6 * lv });
+        rings.push({ x: px, y: py - 6, r: 20, life: 0.3, max: 0.3, color: 0xffd85c });
+        spawnPart(px, py - 6, 6, 0xffd85c, 90);
+        sfx.pick();
+      },
+    },
+    {
+      id: 'rush_slam',
+      name: '러시',
+      color: 0x8ef0a0,
+      rarity: 'SR',
+      max: 5,
+      desc: (lv) => (lv === 0 ? '적 쪽으로 뛰어들어 내리찍는다' : `반경 ${40 + 8 * (lv + 1)} · 위력 ${24 + 14 * (lv + 1)}`),
+      interval: (lv) => 3.6 - 0.24 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const tx = t ? t.x : px + facing * 60;
+        const ty = t ? t.y - 8 : py - 10;
+        const r = 40 + 8 * lv;
+        const dmg = 24 + 14 * lv;
+        blast(tx, ty, r, dmg, 0x8ef0a0, 'none');
+        for (let i = 0; i < 3; i++) {
+          rings.push({ x: tx, y: ty, r: r * (0.5 + i * 0.3), life: 0.35, max: 0.35, color: 0x8ef0a0 });
+        }
+        spawnPart(tx, ty, 8, 0x8ef0a0, 130);
+        shake = Math.max(shake, 6);
+        sfx.explode();
+      },
     },
   ];
 
@@ -2890,11 +3002,121 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       (rec ? `최고 ${rec.t}초 · ${rec.kills}킬   ` : '') + '▸ 눌러서 시작';
   }
 
+  // ------------------------------------------------------------ 보스 선택
+  // 60여 초마다 다음 상대가 무작위로 튀어나오면 "이 무기를 얻어서 저
+  // 보스를 잡아야지" 라는 계획 자체가 성립을 안 한다. 상성표를 보고
+  // 직접 순서를 짜는 게 록맨 시리즈의 정체성이라, 여기서 고르게 한다.
+  const bossSelLayer = new Container();
+  ui.addChild(bossSelLayer);
+  const bossSelG = new Graphics();
+  bossSelLayer.addChild(bossSelG);
+  const BOSS_SEL_COLS = 2;
+  const BOSS_CELL_W = Math.floor(W / BOSS_SEL_COLS);
+  const BOSS_CELL_H = 96;
+  const BOSS_SEL_TOP = 54;
+  const bossSelViews: AnimView[] = [];
+  const bossSelNames: Text[] = [];
+  const bossSelWeak: Text[] = [];
+  const bossSelRects: { x: number; y: number; w: number; h: number }[] = [];
+
+  for (const def of BOSS_DEFS) {
+    const v = new AnimView(bossSheets.get(def.id)!);
+    v.visible = false;
+    bossSelLayer.addChild(v);
+    bossSelViews.push(v);
+
+    const n = new Text({ text: '', style: { ...mono, fontSize: 9, fill: 0x9fb0dd } });
+    n.anchor.set(0.5, 0);
+    bossSelLayer.addChild(n);
+    bossSelNames.push(n);
+
+    const wk = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
+    wk.anchor.set(0.5, 0);
+    bossSelLayer.addChild(wk);
+    bossSelWeak.push(wk);
+  }
+
+  const bossSelTitle = new Text({ text: '다음 상대를 고른다', style: { ...mono, fontSize: 13, fill: 0xffffff } });
+  bossSelTitle.anchor.set(0.5);
+  bossSelTitle.position.set(W / 2, 26);
+  const bossSelHint = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
+  bossSelHint.anchor.set(0.5);
+  bossSelHint.position.set(W / 2, H - 22);
+  bossSelLayer.addChild(bossSelTitle, bossSelHint);
+
+  /** 아직 무기를 안 받은 보스만 후보다 — 다 모으면 처음부터 다시 돈다 */
+  let bossPickList: BossDef[] = [];
+  let bossSelIndex = 0;
+
+  function openBossSelect(): void {
+    bossPickList = BOSS_DEFS.filter((d) => !owned.has(d.drop));
+    if (!bossPickList.length) bossPickList = BOSS_DEFS.slice();
+    bossSelIndex = 0;
+    phase = 'boss_select';
+  }
+
+  function drawBossSelect(dtMs: number): void {
+    bossSelG.clear();
+    bossSelG.rect(0, 0, W, H).fill({ color: 0x070a16 });
+    bossSelRects.length = 0;
+    for (let i = 0; i < bossPickList.length; i++) {
+      const def = bossPickList[i];
+      const col = i % BOSS_SEL_COLS;
+      const row = Math.floor(i / BOSS_SEL_COLS);
+      const cx = col * BOSS_CELL_W + BOSS_CELL_W / 2;
+      const cyTop = BOSS_SEL_TOP + row * BOSS_CELL_H;
+      const on = i === bossSelIndex;
+      bossSelG.roundRect(col * BOSS_CELL_W + 4, cyTop, BOSS_CELL_W - 8, BOSS_CELL_H - 6, 5)
+        .fill({ color: on ? 0x1e3266 : 0x0e1428 });
+      bossSelG.roundRect(col * BOSS_CELL_W + 4, cyTop, BOSS_CELL_W - 8, BOSS_CELL_H - 6, 5)
+        .stroke({ color: on ? ELEM_COLOR[def.elem] : 0x222c52, width: on ? 2 : 1 });
+      bossSelRects.push({ x: col * BOSS_CELL_W, y: cyTop, w: BOSS_CELL_W, h: BOSS_CELL_H - 6 });
+
+      const v = bossSelViews[i];
+      v.visible = true;
+      v.play('move');
+      v.scale.set(1.05, 1.05);
+      v.position.set(cx, cyTop + BOSS_CELL_H - 34);
+      v.alpha = on ? 1 : 0.55;
+      v.update(dtMs);
+
+      bossSelNames[i].text = ENEMY_NAMES[def.id] ?? def.id;
+      bossSelNames[i].position.set(cx, cyTop + BOSS_CELL_H - 30);
+      bossSelNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
+
+      const counter = (Object.keys(BEATS) as Element[]).find((e) => e !== 'none' && BEATS[e] === def.elem);
+      bossSelWeak[i].text = def.elem === 'none' ? '무속성' : `[${ELEM_NAME[def.elem]}]  약점 ${counter ? ELEM_NAME[counter] : '-'}`;
+      bossSelWeak[i].position.set(cx, cyTop + BOSS_CELL_H - 17);
+      bossSelWeak[i].style.fill = def.elem === 'none' ? 0x8a97c4 : ELEM_COLOR[def.elem];
+    }
+    for (let i = bossPickList.length; i < BOSS_DEFS.length; i++) bossSelViews[i].visible = false;
+
+    const picked = bossPickList[bossSelIndex];
+    bossSelHint.text = picked ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ 눌러서 도전` : '';
+  }
+
+  /** 고른 보스로 문을 연다 — 실제 등장은 bossIntroT 연출이 끝난 뒤다 */
+  function chooseBoss(): void {
+    if (phase !== 'boss_select') return;
+    const def = bossPickList[bossSelIndex];
+    if (!def) return;
+    phase = 'play';
+    bossIntroT = BOSS_INTRO_DUR;
+    bossIntroTicks = 0;
+    void spawnBoss(def, false);
+    sfx.stage();
+  }
+
   // 튜닝용 훅 — 매 프레임 다시 만들면 쓸데없는 할당이 된다. 한 번만 붙인다.
   {
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
+    dbg.__hordeOpenBossSelect = (): void => { openBossSelect(); };
+    dbg.__hordeChooseBoss = (id: string): void => {
+      const i = bossPickList.findIndex((d) => d.id === id);
+      if (i >= 0) { bossSelIndex = i; chooseBoss(); }
+    };
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
@@ -2904,6 +3126,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
     };
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
+    dbg.__hordeSetHp = (v: number): void => { hp = v; };
     dbg.__hordeForceLevelUp = (): void => { levelUp(); };
     dbg.__hordeForcePull = (id: string): void => {
       const d = LEGENDS.find((x) => x.id === id);
@@ -2934,6 +3157,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       input.endFrame();
       return;
     }
+    if (phase === 'boss_select') {
+      if (input.pressed('left')) bossSelIndex = (bossSelIndex + bossPickList.length - 1) % bossPickList.length;
+      if (input.pressed('right')) bossSelIndex = (bossSelIndex + 1) % bossPickList.length;
+      if (input.pressed('up')) bossSelIndex = (bossSelIndex + bossPickList.length - BOSS_SEL_COLS) % bossPickList.length;
+      if (input.pressed('down')) bossSelIndex = (bossSelIndex + BOSS_SEL_COLS) % bossPickList.length;
+      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) chooseBoss();
+      bossSelLayer.visible = true;
+      drawBossSelect(app.ticker.deltaMS);
+      draw(dt);
+      input.endFrame();
+      return;
+    }
+    bossSelLayer.visible = false;
     selLayer.visible = false;
     // 캐릭터를 고르기 전에는 아래 로직이 돌 일이 없다
     const hv = hero;
@@ -2992,6 +3228,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     if (hitstop > 0) {
       hitstop -= dt;
+      draw(dt);
+      input.endFrame();
+      return;
+    }
+
+    // 보스 문 연출 — 이름이 뜨고 체력바가 칸칸이 차는 동안은 세계가
+    // 멈춘다. 그동안 적이 움직이거나 보스가 먼저 때리면 "준비할 시간"이
+    // 사라진다.
+    if (bossIntroT > 0) {
+      bossIntroT -= dt;
+      const elapsed = BOSS_INTRO_DUR - Math.max(0, bossIntroT);
+      if (elapsed > BOSS_INTRO_FILL_START) {
+        const span = BOSS_INTRO_FILL_END - BOSS_INTRO_FILL_START;
+        const want = Math.min(
+          BOSS_INTRO_TICKS,
+          Math.floor(((elapsed - BOSS_INTRO_FILL_START) / span) * BOSS_INTRO_TICKS),
+        );
+        if (want > bossIntroTicks) {
+          bossIntroTicks = want;
+          sfx.reelTick(bossIntroTicks / BOSS_INTRO_TICKS);
+        }
+      }
       draw(dt);
       input.endFrame();
       return;
@@ -3201,7 +3459,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     } else if (time >= bossAt && !boss) {
       bossAt += 62;
-      void spawnBoss();
+      openBossSelect();
     }
     if (rushBanner > 0) rushBanner -= dt;
     if (bossBanner > 0) bossBanner -= dt;
@@ -3625,7 +3883,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const dy = py - 8 - cap.y;
       if (dx * dx + dy * dy > 13 * 13) continue;
       heals.splice(i, 1);
-      hp = Math.min(maxHp, hp + 20);
+      hp = Math.min(maxHp, hp + (cap.amt ?? 20));
       spawnPart(px, py - 10, 12, 0x8ef0ff, 110);
       sfx.pick();
     }
@@ -4332,6 +4590,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordePickIndex = pickIndex;
     dbg.__hordeTheme = theme.id;
     dbg.__hordeGacha = phase === 'gacha';
+    dbg.__hordeBossSelect = phase === 'boss_select' ? bossPickList.map((d) => d.id) : null;
+    dbg.__hordeBossIntro = bossIntroT;
     dbg.__hordeArmor = [...armor].join(',');
     dbg.__hordeETank = eTanks;
     dbg.__hordeCaps = capsules.length;
@@ -4483,9 +4743,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         : `${boss.name}  [${ELEM_NAME[be]}]` + (counter ? `  약점 ${ELEM_NAME[counter]}` : '');
       bossLabel.style.fill = ELEM_COLOR[be];
       const bw = W - 40;
+      // 문이 열리는 동안은 체력바가 0에서 칸칸이 차오른다 — 처음부터
+      // 꽉 차 있으면 "만난 순간"이 아니라 "원래 있던 것"으로 읽힌다
+      let hpRatio = clamp(boss.hp / boss.maxHp, 0, 1);
+      if (bossIntroT > 0) {
+        const elapsed = BOSS_INTRO_DUR - bossIntroT;
+        hpRatio = clamp(
+          (elapsed - BOSS_INTRO_FILL_START) / (BOSS_INTRO_FILL_END - BOSS_INTRO_FILL_START),
+          0, 1,
+        );
+      }
       hudBar.rect(20, 42, bw, 6).fill({ color: 0x2a1420 });
-      hudBar.rect(20, 42, Math.round(bw * clamp(boss.hp / boss.maxHp, 0, 1)), 6).fill({ color: 0xff5c78 });
+      hudBar.rect(20, 42, Math.round(bw * hpRatio), 6).fill({ color: 0xff5c78 });
       hudBar.rect(20, 42, bw, 1).fill({ color: 0xffb0c8, alpha: 0.6 });
+    }
+    // 보스 문 — 처음 마주친 순간이라는 걸 알려주는 잠깐의 암전
+    if (bossIntroT > 0 && boss) {
+      const elapsed = BOSS_INTRO_DUR - bossIntroT;
+      const dim = 1 - clamp(elapsed / BOSS_INTRO_FILL_START, 0, 1);
+      if (dim > 0) hudBar.rect(0, 0, W, H).fill({ color: 0x000000, alpha: dim * 0.75 });
     }
     if (bossBanner > 0 && phase === 'play') {
       stageLabel.visible = true;
