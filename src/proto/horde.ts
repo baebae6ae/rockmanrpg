@@ -269,6 +269,13 @@ interface Bullet {
   boomDmg: number;
   /** 0보다 크면 이 시간 뒤 플레이어 쪽으로 되돌아온다 (부메랑) */
   back: number;
+  /**
+   * back 이 다 되면 실제로 플레이어 쪽을 조준해 돌아오는 탄인지.
+   * 예전엔 이걸 "pierce > 50" 로 대신 판별했는데, 그냥 다 뚫고 지나가라고
+   * pierce 를 크게 잡은 차지샷·토네이도 같은 탄까지 걸려서 플레이어
+   * 쪽으로 계속 방향을 트는 버그가 났다 — "빙글빙글 돈다"의 정체.
+   */
+  boomerang: boolean;
   /** 상성 계산용 */
   elem: Element;
 }
@@ -1157,6 +1164,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       boomR: 0,
       boomDmg: 0,
       back: 0,
+      boomerang: false,
       elem: w.elem,
     });
   }
@@ -1167,7 +1175,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bullets.push({
       life: 1, pierce: 0, lastHit: null, alive: true,
       shape: 'orb', color: 0xffffff, r: 4, spin: 0, angle: 0,
-      homing: 0, boomR: 0, boomDmg: 0, back: 0, elem: 'none',
+      homing: 0, boomR: 0, boomDmg: 0, back: 0, boomerang: false, elem: 'none',
       ...b,
     } as Bullet);
   }
@@ -2138,7 +2146,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             vx: Math.cos(a) * 240, vy: Math.sin(a) * 240 * 0.8,
             life: 2.6, dmg, pierce: 99,
             shape: 'blade', color: 0xc98cff, r: 7, spin: 20,
-            back: 0.42,
+            back: 0.42, boomerang: true,
           });
         }
         sfx.shot('saber');
@@ -2844,6 +2852,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
+    dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
     dbg.__hordeRush = (): void => { rushT = 1; rushIndex = 0; rushBanner = 3; };
@@ -3425,7 +3434,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (b.back > 0) {
         b.back -= dt;
         if (b.back <= 0) b.homing = 0;
-      } else if (b.homing === 0 && b.shape !== 'tracer' && b.pierce > 50) {
+      } else if (b.boomerang && b.homing === 0 && b.shape !== 'tracer') {
         const want = Math.atan2((py - 10 - b.y) / 0.8, px - b.x);
         const cur = Math.atan2(b.vy / 0.8, b.vx);
         let dd = want - cur;
@@ -4252,6 +4261,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordePos = [Math.round(px), Math.round(py)];
     dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
     dbg.__hordeHostiles = hostiles.length;
+    dbg.__hordeBullets = bullets.map((b) => ({
+      x: Math.round(b.x), y: Math.round(b.y),
+      vx: Math.round(b.vx), vy: Math.round(b.vy),
+      r: b.r, spin: b.spin, homing: b.homing, angle: +b.angle.toFixed(2),
+    }));
 
     // 구역 배너 — 바뀐 직후 잠깐 뜬다
     stageLabel.visible = stageBanner > 0 && phase === 'play';
