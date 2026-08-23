@@ -4025,23 +4025,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 처럼 위에 그리면 정작 돌아가는 캐릭터가 이펙트에 파묻혀 안 보인다.
     // 회전각은 hv.rotation 과 같은 식으로 계산해 완전히 맞물려 돈다.
     if (lungeMoveT > 0 && phase === 'play') {
+      // 중심을 관통하는 직선 3개는 그냥 별표(*)로 보인다 — 칼이 아니다.
+      // 세이버 스윙과 같은 초승달(부채꼴) 조각을 여러 개 돌려서, 진짜
+      // 칼날이 몸 주위를 도는 모양으로 만든다.
       const t = clamp(1 - lungeMoveT / LUNGE_MOVE_DUR, 0, 1);
       const spin = t * Math.PI * 2 * 2.5 * facing;
       const hy = py - 10;
       const blades = 3;
-      const len = slashLungeWidth * 1.8;
+      const bladeR = slashLungeWidth * 1.3;
+      const bladeSpan = Math.PI * 0.5;
       for (let i = 0; i < blades; i++) {
         const ang = spin + (i / blades) * Math.PI * 2;
-        const bc = Math.cos(ang);
-        const bs = Math.sin(ang);
-        lungeG.moveTo(px - bc * len, hy - bs * len).lineTo(px + bc * len, hy + bs * len)
-          .stroke({ color: shotCore, width: 8, alpha: 0.6 });
-        lungeG.moveTo(px - bc * len, hy - bs * len).lineTo(px + bc * len, hy + bs * len)
-          .stroke({ color: 0xffffff, width: 3, alpha: 1 });
+        const a0 = ang - bladeSpan / 2;
+        const a1 = ang + bladeSpan / 2;
+        lungeG.moveTo(px, hy).arc(px, hy, bladeR, a0, a1).closePath()
+          .fill({ color: shotCore, alpha: 0.4 });
+        lungeG.arc(px, hy, bladeR, a0, a1)
+          .stroke({ color: 0xffffff, width: 2.5, alpha: 0.95 });
       }
-      // 도는 궤적 자체를 옅은 고리로 남겨서 세 날 사이도 "돌고 있다"로 읽힌다
-      lungeG.circle(px, hy, len * 0.75).stroke({ color: 0xffffff, width: 2, alpha: 0.35 });
-      lungeG.circle(px, hy, slashLungeWidth * 0.55).fill({ color: 0xffffff, alpha: 0.5 });
+      lungeG.circle(px, hy, slashLungeWidth * 0.5).fill({ color: 0xffffff, alpha: 0.5 });
       // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만
       lungeG.moveTo(slashLungeFromX, slashLungeFromY - 10).lineTo(px, hy)
         .stroke({ color: shotColor, width: 2, alpha: 0.25 });
