@@ -1620,39 +1620,44 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    * 모은 걸 놓는다. 방식마다 결과가 달라야 세 캐릭터가 다 차지를 쓸 이유가 생긴다.
    *   차지 버스터 — 거대한 관통탄
    *   연사        — 짧은 시간 폭주 난사
-   *   세이버      — 반경 전체를 도는 회전 참격
+   *   세이버      — 조준선을 따라 화면을 가르는 일직선 대참격
    */
   function releaseCharge(lv: number): void {
     const t = nearestFoe(px, py);
     const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
     const mult = lv === 2 ? 1 : 0.5;
-    shake = Math.max(shake, lv === 2 ? 6 : 3);
+    // 세이버는 근접이라 위험을 감수한 만큼, 다 찬 차지는 확실히 세게 흔들린다
+    shake = Math.max(shake, w.style === 'saber' ? (lv === 2 ? 9 : 4) : lv === 2 ? 6 : 3);
 
     if (w.style === 'saber') {
-      // 몸을 축으로 한 바퀴 — 반경도 위력도 크게
-      const span = lv === 2 ? Math.PI * 2 : Math.PI * 1.5;
-      const r = w.arcR * (lv === 2 ? 1.7 : 1.3);
-      arcs.push({ x: px, y: py - 10, angle: a, r, span, life: 0.26, max: 0.26, color: shotCore });
-      const half = span / 2;
-      const dmg = Math.round(w.dmg * (lv === 2 ? 4.5 : 2.2));
+      // 일직선 대참격 — 붙어야 때리는 세이버는 버스터보다 훨씬 위험을
+      // 감수해야 하니, 차지는 빙빙 도는 겉치레 대신 조준선을 따라 화면을
+      // 가르는 거대한 관통 참격으로 그 위험을 확실히 보상한다.
+      const range = lv === 2 ? 460 : 300;
+      const width = w.arcR * (lv === 2 ? 1.5 : 1.05);
+      const dmg = Math.round(w.dmg * (lv === 2 ? 6.5 : 3.2));
+      slashBeamAngle = a;
+      slashBeamRange = range;
+      slashBeamWidth = width;
+      slashBeamT = 0.34;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
       for (let j = foes.length - 1; j >= 0; j--) {
         const f = foes[j];
-        const dx = f.x - px;
-        const dy = (f.y - 8 - (py - 10)) / 0.78;
-        if (dx * dx + dy * dy > (r + f.def.r) * (r + f.def.r)) continue;
-        let dd = Math.atan2(dy, dx) - a;
-        while (dd > Math.PI) dd -= Math.PI * 2;
-        while (dd < -Math.PI) dd += Math.PI * 2;
-        if (Math.abs(dd) > half) continue;
-        const len = Math.hypot(dx, dy) || 1;
-        f.kx += (dx / len) * 260;
-        f.ky += (dy / len) * 260 * 0.78;
+        const rx = f.x - px;
+        const ry = (f.y - 8 - (py - 10)) / 0.78;
+        const along = rx * c + ry * sn;
+        if (along < -f.def.r || along > range) continue;
+        const perp = Math.abs(-rx * sn + ry * c);
+        if (perp > width + f.def.r) continue;
         hurtFoe(f, dmg, w.elem);
       }
       if (boss) {
-        const dx = boss.x - px;
-        const dy = (boss.y - 14 - (py - 10)) / 0.78;
-        if (dx * dx + dy * dy < (r + 18) * (r + 18)) hurtBoss(dmg, w.elem);
+        const rx = boss.x - px;
+        const ry = (boss.y - 14 - (py - 10)) / 0.78;
+        const along = rx * c + ry * sn;
+        const perp = Math.abs(-rx * sn + ry * c);
+        if (along > -18 && along < range && perp < width + 18) hurtBoss(dmg, w.elem);
       }
     } else if (w.style === 'rapid') {
       // 폭주 — 잠깐 발사 간격이 무너진다
@@ -2297,6 +2302,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const CHARGE_STEP = [0.55, 1.25];
   /** 연사 차지의 폭주 남은 시간 */
   let burstT = 0;
+  /** 세이버 차지 — 일직선 대참격 표시 시간·방향·사거리·폭 */
+  let slashBeamT = 0;
+  let slashBeamAngle = 0;
+  let slashBeamRange = 0;
+  let slashBeamWidth = 0;
 
   /** 적이 가장 몰려 있는 쪽 각도 — 노바 스트라이크가 헛돌지 않게 한다 */
   function densestDir(): number {
@@ -3120,6 +3130,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // ---- 자동사격
     // 연사 차지가 터지는 동안은 간격이 무너진다
     if (burstT > 0) burstT -= dt;
+    if (slashBeamT > 0) slashBeamT -= dt;
     const itv = burstT > 0 ? w.interval * 0.32 : w.interval;
     fireAcc += dt;
     let guard = 0;
@@ -3917,6 +3928,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
       // 발사구 섬광
       specialG.circle(px, hy, 16 * k).fill({ color: 0xffffff, alpha: 0.8 });
+    }
+
+    // 세이버 차지 — 조준선을 따라 화면을 가르는 일직선 대참격
+    if (slashBeamT > 0 && phase === 'play') {
+      const k = slashBeamT / 0.34;
+      const c = Math.cos(slashBeamAngle);
+      const sn = Math.sin(slashBeamAngle) * 0.78;
+      const hy = py - 10;
+      const widths = [
+        { w: slashBeamWidth * 1.3 * k, c: shotColor, a: 0.3 },
+        { w: slashBeamWidth * 0.75 * k, c: shotCore, a: 0.6 },
+        { w: slashBeamWidth * 0.3 * k, c: 0xffffff, a: 0.95 },
+      ];
+      for (const L of widths) {
+        specialG.moveTo(px - sn * L.w, hy + c * L.w)
+          .lineTo(px + c * slashBeamRange - sn * L.w, hy + sn * slashBeamRange + c * L.w)
+          .lineTo(px + c * slashBeamRange + sn * L.w, hy + sn * slashBeamRange - c * L.w)
+          .lineTo(px + sn * L.w, hy - c * L.w)
+          .closePath()
+          .fill({ color: L.c, alpha: L.a });
+      }
+      specialG.circle(px, hy, slashBeamWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.85 });
     }
 
     // 카멜레온 스팅 — 무적인 동안 몸 주위가 타오른다
