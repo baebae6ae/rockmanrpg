@@ -3007,6 +3007,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 보스를 잡아야지" 라는 계획 자체가 성립을 안 한다. 상성표를 보고
   // 직접 순서를 짜는 게 록맨 시리즈의 정체성이라, 여기서 고르게 한다.
   const bossSelLayer = new Container();
+  // Container 는 기본이 visible=true 라, 'select' 단계(맨 처음 캐릭터
+  // 화면)는 아래에서 이 레이어를 끄는 코드까지 가지 않고 먼저 return
+  // 해버린다 — 켜둔 채로 시작해서 캐릭터 선택 화면과 겹쳐 보였다.
+  bossSelLayer.visible = false;
   ui.addChild(bossSelLayer);
   const bossSelG = new Graphics();
   bossSelLayer.addChild(bossSelG);
