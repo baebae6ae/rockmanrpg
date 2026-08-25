@@ -415,6 +415,56 @@ const GRID_H = Math.ceil(ARENA_H / GRID_CELL);
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
+/**
+ * 각진 SF 패널 — 그냥 둥근 사각형은 아무 게임에나 붙는 기본값처럼 보인다.
+ * 모서리를 깎은 팔각형 + 이중 테두리 + 네 귀퉁이 브라켓으로, 록맨류
+ * 하드웨어 UI에 가까운 인상을 준다. 선택된 칸(active)은 테두리가
+ * 굵어지고 안쪽에 한 겹 더 도는 밝은 선이 붙는다.
+ */
+function drawPanel(
+  g: Graphics,
+  x: number, y: number, w: number, h: number,
+  opts: { fill?: number; fillAlpha?: number; accent?: number; active?: boolean; cut?: number } = {},
+): void {
+  const cut = opts.cut ?? Math.min(9, h * 0.16);
+  const fill = opts.fill ?? 0x0e1428;
+  const accent = opts.accent ?? 0x8ef0ff;
+  const active = !!opts.active;
+
+  const outline = (px: number, py: number, pw: number, ph: number, pc: number): void => {
+    g.moveTo(px + pc, py)
+      .lineTo(px + pw - pc, py)
+      .lineTo(px + pw, py + pc)
+      .lineTo(px + pw, py + ph - pc)
+      .lineTo(px + pw - pc, py + ph)
+      .lineTo(px + pc, py + ph)
+      .lineTo(px, py + ph - pc)
+      .lineTo(px, py + pc)
+      .closePath();
+  };
+
+  outline(x, y, w, h, cut);
+  g.fill({ color: fill, alpha: opts.fillAlpha ?? 1 });
+  outline(x, y, w, h, cut);
+  g.stroke({ color: active ? accent : 0x222c52, width: active ? 2 : 1, alpha: active ? 1 : 0.85 });
+
+  if (active) {
+    const inset = 3;
+    outline(x + inset, y + inset, w - inset * 2, h - inset * 2, Math.max(2, cut - inset));
+    g.stroke({ color: accent, width: 1, alpha: 0.45 });
+
+    // 귀퉁이 브라켓 — 네 모서리에서 안쪽으로 짧게 뻗는 조준선 느낌
+    const bl = Math.min(9, w * 0.18, h * 0.26);
+    const corners: [number, number, number, number][] = [
+      [x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1],
+    ];
+    for (const [cx, cy, sx, sy] of corners) {
+      g.moveTo(cx, cy).lineTo(cx + sx * bl, cy).stroke({ color: accent, width: 2, alpha: 0.9 });
+      g.moveTo(cx, cy).lineTo(cx, cy + sy * bl).stroke({ color: accent, width: 2, alpha: 0.9 });
+    }
+  }
+}
+
 /** 색을 흰색 쪽으로 amount 만큼 민다 — 탄 심지를 캐릭터 색의 밝은 판으로 쓴다 */
 function lighten(color: number, amount: number): number {
   const r = (color >> 16) & 255;
@@ -536,6 +586,16 @@ const SHORT_NAMES = new Map<string, string>();
 }
 
 export async function runHordeProto(app: Application, input: Input): Promise<void> {
+  // 도트 서체가 실제로 쓰일 수 있게 준비될 때까지 기다린다 — 안 그러면
+  // Text 를 만드는 순간 폴백(시스템 monospace)으로 한 번 그려지고, 폰트가
+  // 늦게 도착해도 다시 안 그려져서 계속 밋밋한 채로 남는다.
+  try {
+    await document.fonts.load('9px Silkscreen');
+    await document.fonts.ready;
+  } catch {
+    // 폰트를 못 받아도 폴백(monospace)으로 계속 진행한다
+  }
+
   // 백버퍼를 세로로 다시 잡고 확대는 CSS 가 맡는다 — 본편과 같은 방식이라
   // 어느 배율에서도 도트가 보간되지 않는다.
   app.renderer.resize(W, H);
@@ -634,7 +694,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // ------------------------------------------------------------ HUD
   const hudBar = new Graphics();
   ui.addChild(hudBar);
-  const mono = { fontFamily: 'monospace', fontSize: 9, fill: 0xcfe0ff } as const;
+  const mono = { fontFamily: "'Silkscreen', monospace", fontSize: 9, fill: 0xcfe0ff } as const;
 
   const timeLabel = new Text({ text: '', style: { ...mono, fontSize: 13, fill: 0xffffff } });
   timeLabel.anchor.set(0.5, 0);
@@ -711,10 +771,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   input.disableTouch();
   const padG = new Graphics();
-  const dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'monospace', fontSize: 8, fill: 0x8ef0ff } });
+  const dashLabel = new Text({ text: 'DASH', style: { fontFamily: "'Silkscreen', monospace", fontSize: 8, fill: 0x8ef0ff } });
   dashLabel.anchor.set(0.5);
   dashLabel.visible = false;
-  const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: 'monospace', fontSize: 7, fill: 0xffd85c } });
+  const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: "'Silkscreen', monospace", fontSize: 7, fill: 0xffd85c } });
   fireLabel.anchor.set(0.5);
   fireLabel.visible = false;
   ui.addChild(padG, dashLabel, fireLabel);
@@ -2985,15 +3045,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function drawSelect(dtMs: number): void {
     selG.clear();
     selG.rect(0, 0, W, H).fill({ color: 0x070a16 });
+    for (let gx = 0; gx < W; gx += 18) selG.rect(gx, 0, 1, H).fill({ color: 0x101833, alpha: 0.6 });
+    for (let gy = SEL_TOP - 8; gy < H; gy += 18) selG.rect(0, gy, W, 1).fill({ color: 0x101833, alpha: 0.6 });
     for (let i = 0; i < selRects.length; i++) {
       const r = selRects[i];
       const on = i === selIndex;
-      selG.roundRect(r.x + 2, r.y, r.w - 4, r.h, 4).fill({ color: on ? 0x1e3266 : 0x0e1428 });
-      selG.roundRect(r.x + 2, r.y, r.w - 4, r.h, 4).stroke({ color: on ? 0x8ef0ff : 0x222c52, width: on ? 2 : 1 });
+      drawPanel(selG, r.x + 2, r.y, r.w - 4, r.h, {
+        fill: on ? 0x1e3266 : 0x0e1428,
+        accent: 0x8ef0ff,
+        active: on,
+      });
       selViews[i].update(dtMs);
       selViews[i].alpha = on ? 1 : 0.5;
       selNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
     }
+    selG.rect(W / 2 - 60, 40, 120, 2).fill({ color: 0x8ef0ff, alpha: 0.7 });
     const d = CHAR_DEFS[selIndex];
     const st = styleOf(d);
     const rec = best[d.id];
@@ -3062,6 +3128,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function drawBossSelect(dtMs: number): void {
     bossSelG.clear();
     bossSelG.rect(0, 0, W, H).fill({ color: 0x070a16 });
+    // 얇은 격자 — 배경이 완전히 비어 있으면 하드웨어 화면이 아니라
+    // 그냥 검은 종이로 보인다
+    for (let gx = 0; gx < W; gx += 18) bossSelG.rect(gx, 0, 1, H).fill({ color: 0x101833, alpha: 0.6 });
+    for (let gy = BOSS_SEL_TOP - 8; gy < H; gy += 18) bossSelG.rect(0, gy, W, 1).fill({ color: 0x101833, alpha: 0.6 });
+
+    const pulse = 0.6 + Math.sin(animClock * 5) * 0.4;
     bossSelRects.length = 0;
     for (let i = 0; i < bossPickList.length; i++) {
       const def = bossPickList[i];
@@ -3070,30 +3142,45 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const cx = col * BOSS_CELL_W + BOSS_CELL_W / 2;
       const cyTop = BOSS_SEL_TOP + row * BOSS_CELL_H;
       const on = i === bossSelIndex;
-      bossSelG.roundRect(col * BOSS_CELL_W + 4, cyTop, BOSS_CELL_W - 8, BOSS_CELL_H - 6, 5)
-        .fill({ color: on ? 0x1e3266 : 0x0e1428 });
-      bossSelG.roundRect(col * BOSS_CELL_W + 4, cyTop, BOSS_CELL_W - 8, BOSS_CELL_H - 6, 5)
-        .stroke({ color: on ? ELEM_COLOR[def.elem] : 0x222c52, width: on ? 2 : 1 });
-      bossSelRects.push({ x: col * BOSS_CELL_W, y: cyTop, w: BOSS_CELL_W, h: BOSS_CELL_H - 6 });
+      const accent = def.elem === 'none' ? 0x8ef0ff : ELEM_COLOR[def.elem];
+      const cellX = col * BOSS_CELL_W + 4;
+      const cellY = cyTop;
+      const cellW = BOSS_CELL_W - 8;
+      const cellH = BOSS_CELL_H - 6;
+
+      drawPanel(bossSelG, cellX, cellY, cellW, cellH, {
+        fill: on ? 0x1a2a52 : 0x0e1428,
+        accent,
+        active: on,
+      });
+      bossSelRects.push({ x: col * BOSS_CELL_W, y: cyTop, w: BOSS_CELL_W, h: cellH });
+
+      // 초상화 뒤에 원소색 그림자 — 선택된 칸은 숨쉬듯 밝기가 오간다
+      const spriteY = cyTop + BOSS_CELL_H - 34;
+      bossSelG.circle(cx, spriteY - 6, on ? 20 + pulse * 3 : 16)
+        .fill({ color: accent, alpha: on ? 0.28 * pulse + 0.12 : 0.1 });
 
       const v = bossSelViews[i];
       v.visible = true;
       v.play('move');
       v.scale.set(1.05, 1.05);
-      v.position.set(cx, cyTop + BOSS_CELL_H - 34);
-      v.alpha = on ? 1 : 0.55;
+      v.position.set(cx, spriteY);
+      v.alpha = on ? 1 : 0.6;
       v.update(dtMs);
 
       bossSelNames[i].text = ENEMY_NAMES[def.id] ?? def.id;
-      bossSelNames[i].position.set(cx, cyTop + BOSS_CELL_H - 30);
+      bossSelNames[i].position.set(cx, cyTop + BOSS_CELL_H - 29);
       bossSelNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
 
       const counter = (Object.keys(BEATS) as Element[]).find((e) => e !== 'none' && BEATS[e] === def.elem);
-      bossSelWeak[i].text = def.elem === 'none' ? '무속성' : `[${ELEM_NAME[def.elem]}]  약점 ${counter ? ELEM_NAME[counter] : '-'}`;
-      bossSelWeak[i].position.set(cx, cyTop + BOSS_CELL_H - 17);
+      bossSelWeak[i].text = def.elem === 'none' ? '무속성' : `[${ELEM_NAME[def.elem]}] 약점 ${counter ? ELEM_NAME[counter] : '-'}`;
+      bossSelWeak[i].position.set(cx, cyTop + BOSS_CELL_H - 16);
       bossSelWeak[i].style.fill = def.elem === 'none' ? 0x8a97c4 : ELEM_COLOR[def.elem];
     }
     for (let i = bossPickList.length; i < BOSS_DEFS.length; i++) bossSelViews[i].visible = false;
+
+    // 제목 밑줄 — 텍스트 하나만 둥 떠 있으면 화면 헤더로 안 읽힌다
+    bossSelG.rect(W / 2 - 60, 40, 120, 2).fill({ color: 0x8ef0ff, alpha: 0.7 });
 
     const picked = bossPickList[bossSelIndex];
     bossSelHint.text = picked ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ 눌러서 도전` : '';
@@ -4550,9 +4637,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hudBar.clear();
     // 세로 화면은 폭이 270뿐이라 한 줄에 다 못 넣는다 — 두 줄로 나눈다
     hudBar.rect(0, 0, W, 26).fill({ color: 0x000000, alpha: 0.55 });
-    // 체력
-    hudBar.rect(6, 17, 120, 5).fill({ color: 0x2a1420 });
-    hudBar.rect(6, 17, Math.round(120 * clamp(hp / maxHp, 0, 1)), 5).fill({ color: 0xff5c78 });
+    hudBar.rect(0, 25, W, 1).fill({ color: 0x2b3560, alpha: 0.9 });
+    // 체력 — 칸을 나눠서 그냥 색칠된 띠가 아니라 계기판처럼 보이게 한다
+    const hpW = 120;
+    const hpFill = Math.round(hpW * clamp(hp / maxHp, 0, 1));
+    hudBar.rect(6, 17, hpW, 5).fill({ color: 0x2a1420 });
+    hudBar.rect(6, 17, hpFill, 5).fill({ color: 0xff5c78 });
+    for (let seg = 10; seg < hpW; seg += 10) hudBar.rect(6 + seg, 17, 1, 5).fill({ color: 0x000000, alpha: 0.35 });
+    hudBar.rect(6, 17, hpW, 1).fill({ color: 0xffb0c0, alpha: 0.5 });
     // 경험치
     hudBar.rect(0, 26, W, 2).fill({ color: 0x12203a });
     hudBar.rect(0, 26, Math.round(W * clamp(xp / xpNeed, 0, 1)), 2).fill({ color: 0x4fd6e8 });
@@ -4883,12 +4975,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       cardRects.push({ x, y: cy, w: cw, h: ch });
       const o = pickList[i];
       const isNew = o.kind === 'weapon' && o.lv === 0;
-      cardG.roundRect(x, cy, cw, ch, 5).fill({ color: on ? 0x1e3266 : 0x11172e });
-      cardG.roundRect(x, cy, cw, ch, 5).stroke({ color: on ? 0x8ef0ff : 0x2b3560, width: on ? 2 : 1 });
+      drawPanel(cardG, x, cy, cw, ch, {
+        fill: on ? 0x1e3266 : 0x11172e,
+        accent: o.kind === 'weapon' ? o.def.color : 0x8ef0ff,
+        active: on,
+      });
 
       // 무기 카드는 위쪽에 그 무기 색의 띠를 둘러 능력치 카드와 구분한다
       if (o.kind === 'weapon') {
-        cardG.roundRect(x + 1, cy + 1, cw - 2, 5, 3).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
+        cardG.rect(x + 10, cy + 3, cw - 20, 4).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
       }
 
       const name = cardTexts[i * 2];
