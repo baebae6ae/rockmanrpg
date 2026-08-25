@@ -474,6 +474,102 @@ function lighten(color: number, amount: number): number {
   return (up(r) << 16) | (up(g) << 8) | up(b);
 }
 
+// ---------------------------------------------------------------- 펫(서포트 유닛)
+//
+// 지금까지 서포트 유닛은 "플레이어 자리에서 탄이 하나 나가는" 것뿐이라
+// 뽑아도 뭐가 생겼는지 알 수가 없었다. 실제로 주위를 도는 몸을 주고,
+// 공격도 그 몸에서 나가게 한다. 생김새는 원작 디자인을 따른다 —
+// 러시(빨간 개), 비트(빨강+흰 새), 탱고(초록 고양이), 에디(뚜껑 로봇).
+
+type PetId = 'rush_slam' | 'beat_dive' | 'tango_roll' | 'eddie_call';
+const PET_ORDER: PetId[] = ['rush_slam', 'beat_dive', 'tango_roll', 'eddie_call'];
+
+const PET_OUTLINE = 0x0a0a12;
+
+/**
+ * 펫 한 마리를 찍는다. mono 가 들어오면 전부 그 색으로 칠한다 —
+ * 윤곽선을 네 방향으로 한 번씩 깔 때 쓴다.
+ * vx 는 "앞쪽이 양수"인 좌표라, dir 이 -1 이면 좌우가 뒤집힌다.
+ */
+function paintPet(
+  g: Graphics, id: PetId, x: number, y: number, dir: number, t: number, mono?: number,
+): void {
+  const r = (vx: number, vy: number, w: number, h: number, color: number): void => {
+    const left = dir > 0 ? x + vx : x - vx - w;
+    g.rect(Math.round(left), Math.round(y + vy), w, h).fill({ color: mono ?? color });
+  };
+  // 걷기/날갯짓용 2프레임 토글
+  const step = Math.sin(t * 9) > 0 ? 1 : 0;
+  const flap = Math.round(Math.sin(t * 14) * 2);
+
+  if (id === 'rush_slam') {
+    // 러시 — 빨간 로봇 개
+    const RED = 0xe03830, RED_L = 0xff8b6a, RED_D = 0x8e1a16, CREAM = 0xffe8c8, DARK = 0x1a1020;
+    r(-4, 4, 3, 3 + step, DARK);
+    r(2, 4, 3, 4 - step, DARK);
+    r(-8, -5, 2, 4, RED_D);
+    r(-6, -2, 12, 6, RED);
+    r(-6, -2, 12, 1, RED_L);
+    r(-6, 3, 12, 1, RED_D);
+    r(3, -8, 7, 7, RED);
+    r(3, -8, 7, 1, RED_L);
+    r(2, -10, 3, 3, RED_D);
+    r(8, -5, 3, 3, CREAM);
+    r(9, -4, 2, 1, DARK);
+    r(5, -6, 2, 2, DARK);
+  } else if (id === 'beat_dive') {
+    // 비트 — 빨간 몸에 흰 머리, 노란 부리
+    const RED = 0xe03830, RED_L = 0xff8b6a, RED_D = 0x8e1a16, WHITE = 0xf4f4fc, YEL = 0xffc020, DARK = 0x1a1020;
+    r(-7, -1, 3, 3, RED_D);
+    r(-4, -3, 9, 6, RED);
+    r(-4, -3, 9, 1, RED_L);
+    // 날개는 항상 몸통에 붙어 있어야 한다 — 위로만 퍼덕이게 잡는다
+    r(-4, -5 - Math.abs(flap), 7, 3, RED_L);
+    r(3, -7, 6, 6, WHITE);
+    r(3, -7, 6, 1, 0xffffff);
+    r(5, -5, 2, 2, DARK);
+    r(8, -4, 3, 2, YEL);
+    r(-1, 3, 2, 2, YEL);
+  } else if (id === 'tango_roll') {
+    // 탱고 — 초록 로봇 고양이
+    const GRN = 0x3fc060, GRN_L = 0x8ef0a0, GRN_D = 0x1c6a34, CREAM = 0xf0ffe0, DARK = 0x102010;
+    r(-4, 4, 3, 2 + step, DARK);
+    r(2, 4, 3, 3 - step, DARK);
+    r(-9, -8, 4, 2, GRN);
+    r(-9, -6, 2, 5, GRN);
+    r(-6, -2, 12, 6, GRN);
+    r(-6, -2, 12, 1, GRN_L);
+    r(-5, 2, 10, 2, CREAM);
+    r(3, -8, 7, 7, GRN);
+    r(3, -8, 7, 1, GRN_L);
+    r(3, -11, 2, 3, GRN_D);
+    r(7, -11, 2, 3, GRN_D);
+    r(5, -6, 2, 2, DARK);
+    r(8, -4, 2, 2, CREAM);
+  } else {
+    // 에디 — 뚜껑이 달린 배달 로봇. 뚜껑이 들썩인다
+    const ORG = 0xe85820, ORG_L = 0xffa060, YEL = 0xffd060, CREAM = 0xfff0c0, WHITE = 0xf4f4fc, DARK = 0x1a1020;
+    const lid = -Math.abs(flap);
+    r(-4, 4, 3, 3, DARK);
+    r(2, 4, 3, 3, DARK);
+    r(-5, -3, 11, 7, ORG);
+    r(-5, -3, 11, 1, ORG_L);
+    r(-3, -1, 7, 5, WHITE);
+    r(0, 0, 3, 3, DARK);
+    r(-6, -6 + lid, 13, 3, YEL);
+    r(-6, -6 + lid, 13, 1, CREAM);
+  }
+}
+
+/** 윤곽선을 두르고 펫을 그린다 — 임시 도트 스프라이트와 같은 마감이다 */
+function drawPet(g: Graphics, id: PetId, x: number, y: number, dir: number, t: number): void {
+  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+    paintPet(g, id, x + ox, y + oy, dir, t, PET_OUTLINE);
+  }
+  paintPet(g, id, x, y, dir, t);
+}
+
+
 /** 캐릭터 선택에 필요한 것만 추린 형태 — 본편 CharacterDef 의 부분집합이다 */
 interface HordeChar {
   id: string;
@@ -659,7 +755,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 둬야 한다. specialG 처럼 위에 그리면 정작 돌아가는 캐릭터 본체가
   // 이펙트에 파묻혀 안 보인다.
   const lungeG = new Graphics();
-  world.addChild(groundLayer, animG, gemG, lungeG, foeLayer, bulletG, specialG, partG);
+  // petBackG 는 foeLayer 보다 아래다 — 궤도 뒤쪽(위쪽)을 도는 펫은
+  // 플레이어에 가려야 "돌고 있다"가 입체로 읽힌다.
+  const petBackG = new Graphics();
+  world.addChild(groundLayer, animG, gemG, lungeG, petBackG, foeLayer, bulletG, specialG, partG);
 
   // 배경 — 스테이지 테마는 stage_bg.ts 에 있다.
   // 판이 진행되면서 구역이 바뀌므로 정지 배경 한 장으로 끝나지 않는다.
@@ -689,7 +788,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let shotCore = 0xfff0b0;
 
   const droneG = new Graphics();
-  world.addChild(droneG);
+  const petG = new Graphics();
+  world.addChild(droneG, petG);
 
   // ------------------------------------------------------------ HUD
   const hudBar = new Graphics();
@@ -2182,16 +2282,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       desc: (lv) => (lv === 0 ? '급강하해서 적을 덮친다' : `위력 ${18 + 10 * (lv + 1)} · 간격 ${(2.4 - 0.16 * (lv + 1)).toFixed(1)}초`),
       interval: (lv) => 2.4 - 0.16 * lv,
       fire: (lv) => {
-        const t = nearestFoe(px, py);
-        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const p = petPos('beat_dive');
+        const t = nearestFoe(p.x, p.y);
+        const a = t ? Math.atan2(t.y - 8 - p.y, t.x - p.x) : facing > 0 ? 0 : Math.PI;
         const dmg = 18 + 10 * lv;
         addBullet({
-          x: px, y: py - 30,
+          x: p.x, y: p.y,
           vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 * 0.8,
           life: 1.4, dmg, pierce: 2, homing: 7,
           shape: 'orb', color: 0x6ec8ff, r: 7, spin: 14,
         });
-        spawnPart(px, py - 30, 4, 0x6ec8ff, 90);
+        spawnPart(p.x, p.y, 4, 0x6ec8ff, 90);
+        petFlash.set('beat_dive', 0.18);
         sfx.shot('rapid');
       },
     },
@@ -2204,15 +2306,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       desc: (lv) => (lv === 0 ? '구르며 계속 들이받는다' : `위력 ${14 + 8 * (lv + 1)} · 간격 ${(3.2 - 0.22 * (lv + 1)).toFixed(1)}초`),
       interval: (lv) => 3.2 - 0.22 * lv,
       fire: (lv) => {
-        const a = densestDir();
+        const p = petPos('tango_roll');
+        const t = nearestFoe(p.x, p.y);
+        // 몸을 말아 굴러가는 기술이라, 탱고 자리에서 적 쪽으로 출발한다
+        const a = t ? Math.atan2(t.y - 8 - p.y, t.x - p.x) : densestDir();
         const dmg = 14 + 8 * lv;
         addBullet({
-          x: px, y: py - 6,
+          x: p.x, y: p.y,
           vx: Math.cos(a) * 150, vy: Math.sin(a) * 150 * 0.8,
           life: 2.2, dmg, pierce: 99,
-          shape: 'orb', color: 0xff9a4c, r: 9, spin: 10,
+          shape: 'orb', color: 0x3fc060, r: 9, spin: 18,
         });
-        spawnPart(px, py - 6, 4, 0xff9a4c, 70);
+        spawnPart(p.x, p.y, 4, 0x8ef0a0, 70);
+        petFlash.set('tango_roll', 0.18);
         sfx.shot('charge');
       },
     },
@@ -2225,9 +2331,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       desc: (lv) => (lv === 0 ? '가끔 회복 상자를 던져준다' : `회복 ${20 + 6 * (lv + 1)} · 간격 ${(9 - 0.7 * (lv + 1)).toFixed(1)}초`),
       interval: (lv) => 9 - 0.7 * lv,
       fire: (lv) => {
-        heals.push({ x: px, y: py - 6, life: 10, amt: 20 + 6 * lv });
-        rings.push({ x: px, y: py - 6, r: 20, life: 0.3, max: 0.3, color: 0xffd85c });
-        spawnPart(px, py - 6, 6, 0xffd85c, 90);
+        const p = petPos('eddie_call');
+        heals.push({ x: p.x, y: p.y + 6, life: 10, amt: 20 + 6 * lv });
+        rings.push({ x: p.x, y: p.y, r: 20, life: 0.3, max: 0.3, color: 0xffd85c });
+        spawnPart(p.x, p.y, 6, 0xffd85c, 90);
+        petFlash.set('eddie_call', 0.25);
         sfx.pick();
       },
     },
@@ -2240,16 +2348,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       desc: (lv) => (lv === 0 ? '적 쪽으로 뛰어들어 내리찍는다' : `반경 ${40 + 8 * (lv + 1)} · 위력 ${24 + 14 * (lv + 1)}`),
       interval: (lv) => 3.6 - 0.24 * lv,
       fire: (lv) => {
-        const t = nearestFoe(px, py);
+        const p = petPos('rush_slam');
+        const t = nearestFoe(p.x, p.y);
         const tx = t ? t.x : px + facing * 60;
         const ty = t ? t.y - 8 : py - 10;
         const r = 40 + 8 * lv;
         const dmg = 24 + 14 * lv;
+        // 러시는 제자리에서 쏘는 게 아니라 몸을 던진다 — 궤도에서 목표까지
+        // 실제로 날아갔다 돌아오게 해야 "쟤가 덮쳤다"로 읽힌다
+        rushLeapT = RUSH_LEAP_DUR;
+        rushLeapX = tx;
+        rushLeapY = ty;
         blast(tx, ty, r, dmg, 0x8ef0a0, 'none');
         for (let i = 0; i < 3; i++) {
           rings.push({ x: tx, y: ty, r: r * (0.5 + i * 0.3), life: 0.35, max: 0.35, color: 0x8ef0a0 });
         }
         spawnPart(tx, ty, 8, 0x8ef0a0, 130);
+        petFlash.set('rush_slam', 0.2);
         shake = Math.max(shake, 6);
         sfx.explode();
       },
@@ -2461,6 +2576,47 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const cooldowns = new Map<string, number>();
   const orbs: Orb[] = [];
   let bladeSpin = 0;
+
+  // --- 펫(서포트 유닛)
+  /** 펫들이 플레이어 주위를 도는 각도 */
+  let petAngle = 0;
+  /** 방금 공격한 펫이 잠깐 번쩍인다 — 어느 놈이 쐈는지 보이게 */
+  const petFlash = new Map<string, number>();
+  /** 러시가 목표로 몸을 던진 뒤 궤도로 돌아오기까지 */
+  const RUSH_LEAP_DUR = 0.4;
+  let rushLeapT = 0;
+  let rushLeapX = 0;
+  let rushLeapY = 0;
+
+  /** 지금 데리고 있는 펫 목록 — 뽑은 순서와 무관하게 자리가 고정된다 */
+  function ownedPets(): PetId[] {
+    return PET_ORDER.filter((id) => (owned.get(id) ?? 0) > 0);
+  }
+
+  /** 펫이 지금 서 있는 자리. 공격도 여기서 나가야 "쟤가 쐈다"가 읽힌다 */
+  function petPos(id: PetId): { x: number; y: number; dir: number } {
+    const list = ownedPets();
+    const i = Math.max(0, list.indexOf(id));
+    const n = Math.max(1, list.length);
+    const a = petAngle + (i / n) * Math.PI * 2;
+    const ox = px + Math.cos(a) * 34;
+    // 도는 궤도는 위아래로 눌러 그린다 — 바닥에 누운 원으로 보여야 한다
+    const oy = py - 16 + Math.sin(a) * 20;
+    // 도는 방향(접선)을 보게 한다
+    let dir = -Math.sin(a) >= 0 ? 1 : -1;
+
+    // 러시가 덮치는 중이면 궤도를 벗어나 목표까지 갔다가 돌아온다.
+    // 빠르게 나가고 천천히 돌아와야 "때리러 갔다"가 읽힌다.
+    if (id === 'rush_slam' && rushLeapT > 0) {
+      const p = 1 - rushLeapT / RUSH_LEAP_DUR;
+      const k = p < 0.3 ? p / 0.3 : 1 - (p - 0.3) / 0.7;
+      const lx = ox + (rushLeapX - ox) * k;
+      const ly = oy + (rushLeapY - oy) * k;
+      if (Math.abs(rushLeapX - ox) > 4) dir = rushLeapX > ox ? 1 : -1;
+      return { x: lx, y: ly, dir };
+    }
+    return { x: ox, y: oy, dir };
+  }
 
   /** 보디 파츠가 있으면 받는 피해가 줄어든다 */
   const takeDmg = (raw: number): number =>
@@ -3348,6 +3504,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     time += dt;
     droneAngle += dt * 2.4;
+    // 펫은 옵션 유닛보다 느긋하게 돈다 — 같은 속도면 둘이 구분이 안 된다
+    petAngle += dt * 1.15;
+    if (rushLeapT > 0) rushLeapT -= dt;
+    for (const [k, v] of petFlash) {
+      if (v <= dt) petFlash.delete(k);
+      else petFlash.set(k, v - dt);
+    }
     if (stageBanner > 0) stageBanner -= dt;
 
     // ---- 이동
@@ -4631,6 +4794,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const dy = Math.round(py - 12 + Math.sin(ang) * 20);
       droneG.rect(dx - 3, dy - 3, 6, 6).fill({ color: 0x2f6fd0 });
       droneG.rect(dx - 2, dy - 2, 4, 4).fill({ color: 0x8ef0ff });
+    }
+
+    // 펫 — 주위를 돌면서 직접 싸우는 조력자들
+    petG.clear();
+    petBackG.clear();
+    if (phase === 'play') {
+      for (const id of ownedPets()) {
+        const p = petPos(id);
+        // 궤도 뒤쪽을 돌 때는 플레이어 뒤로 넘긴다
+        const g = p.y < py - 15 ? petBackG : petG;
+        // 바닥 그림자 — 없으면 공중에 붕 뜬 스티커로 보인다
+        g.ellipse(Math.round(p.x), Math.round(py - 1), 7, 2.5)
+          .fill({ color: 0x000000, alpha: 0.28 });
+        const fl = petFlash.get(id) ?? 0;
+        if (fl > 0) {
+          g.circle(Math.round(p.x), Math.round(p.y), 13 * (fl / 0.2) + 4)
+            .fill({ color: 0xffffff, alpha: 0.22 * (fl / 0.2) });
+        }
+        drawPet(g, id, Math.round(p.x), Math.round(p.y), p.dir, animClock);
+      }
     }
 
     // HUD
