@@ -4658,7 +4658,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (def.rarity) {
         hudBar.rect(hx - 1, 15, 12, 9).fill({ color: RARITY_COLOR[def.rarity] });
       }
-      hudBar.rect(hx, 16, 10, 7).fill({ color: def.color });
+      // 색만 칠한 사각형은 아이콘이 아니라 색인표처럼 보인다 — 테두리와
+      // 하이라이트를 둘러 작은 칩처럼 만든다
+      hudBar.rect(hx, 16, 10, 7).fill({ color: 0x000000, alpha: 0.4 });
+      hudBar.rect(hx + 1, 17, 8, 5).fill({ color: def.color });
+      hudBar.rect(hx + 1, 17, 8, 1).fill({ color: 0xffffff, alpha: 0.55 });
+      hudBar.rect(hx + 1, 17, 8, 5).stroke({ color: 0x0a0a12, width: 1, alpha: 0.6 });
       for (let i = 0; i < lv; i++) hudBar.rect(hx + i * 2, 13, 1, 2).fill({ color: 0xffffff });
       hx += 14;
     }

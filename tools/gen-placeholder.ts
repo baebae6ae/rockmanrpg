@@ -739,8 +739,37 @@ function buildSheet(palette: Palette, style: 'x' | 'classic'): { png: Buffer; me
   };
 }
 
+/**
+ * 실루엣 바깥쪽에 어두운 테두리를 한 겹 두른다 — 색만 칠해진 덩어리와
+ * "완성된 스프라이트"를 가르는 가장 싼 방법이 이거다. 이미 칠해진
+ * 픽셀(몸통 안쪽 경계)은 안 건드리고, 배경과 맞닿는 가장자리에만 그린다.
+ */
+function outlineFrame(frame: Frame, hex = '#0a0a12'): void {
+  const src = frame.data.slice();
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const isOpaque = (x: number, y: number): boolean => {
+    if (x < 0 || x >= CANVAS || y < 0 || y >= CANVAS) return false;
+    return src[(y * CANVAS + x) * 4 + 3] > 0;
+  };
+  for (let y = 0; y < CANVAS; y++) {
+    for (let x = 0; x < CANVAS; x++) {
+      const i = (y * CANVAS + x) * 4;
+      if (src[i + 3] > 0) continue;
+      if (isOpaque(x - 1, y) || isOpaque(x + 1, y) || isOpaque(x, y - 1) || isOpaque(x, y + 1)) {
+        frame.data[i] = r;
+        frame.data[i + 1] = g;
+        frame.data[i + 2] = b;
+        frame.data[i + 3] = 255;
+      }
+    }
+  }
+}
+
 /** 프레임들을 균일 격자 PNG 로 묶는다 */
 function packFrames(frames: Frame[]): Buffer {
+  for (const frame of frames) outlineFrame(frame);
   const rows = Math.ceil(frames.length / COLUMNS);
   const png = new PNG({ width: COLUMNS * CANVAS, height: rows * CANVAS });
   png.data.fill(0);
