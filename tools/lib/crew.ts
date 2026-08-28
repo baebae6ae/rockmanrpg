@@ -48,6 +48,10 @@ export interface Pose {
   headY?: number;
   /** 무기를 그릴지. 사망·피격에서는 뺀다 */
   weapon?: boolean;
+  /** 차지 이펙트 세기 0~1 — 무기 손 주위에 고리로 뜬다 */
+  charge?: number;
+  /** 참격 궤적 */
+  slash?: 'high' | 'low';
 }
 
 /** 포즈에서 계산된 관절 좌표. 장비는 이 손 좌표에 붙는다 */
@@ -540,4 +544,26 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   arm(f, r.shF[0], r.shF[1], r.handF[0], r.handF[1]);
 
   if (pose.weapon !== false) c.build(f, r);
+
+  // 이펙트는 무기 손을 기준으로 뜬다. 화면 중앙에 고정하면 팔을 어디로
+  // 뻗든 같은 자리에서 빛나서 몸과 따로 논다.
+  const [wx, wy] = r.handW;
+  if (pose.slash) {
+    const cy = wy + (pose.slash === 'high' ? 4 : -4);
+    for (let i = 0; i < 20; i++) {
+      const a = (-0.8 + (i / 19) * 1.6) * (pose.slash === 'high' ? 1 : -1);
+      const rr = 12;
+      f.set(wx + Math.cos(a) * rr, cy + Math.sin(a) * rr, M.accent);
+      f.set(wx + Math.cos(a) * (rr - 1), cy + Math.sin(a) * (rr - 1), M.glow);
+    }
+  }
+  if (pose.charge) {
+    const rr = 3 + pose.charge * 4;
+    const steps = Math.max(10, Math.round(rr * 7));
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      f.set(wx + 3 + Math.cos(a) * rr, wy + Math.sin(a) * rr, M.glow);
+      f.set(wx + 3 + Math.cos(a) * rr * 0.55, wy + Math.sin(a) * rr * 0.55, M.accent);
+    }
+  }
 }

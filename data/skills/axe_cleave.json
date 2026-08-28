@@ -1,0 +1,43 @@
+{
+  "id": "axe_cleave",
+  "name": "가르기",
+  "element": "cutter",
+  "cost": 0,
+  "cooldown": 0.22,
+  "animation_tag": "attack_main",
+  "unlock": {
+    "source": "default",
+    "character": "axe"
+  },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [
+      1,
+      2,
+      3,
+      5,
+      8
+    ],
+    "per_level": {
+      "power": 0.2,
+      "cost": 0
+    }
+  },
+  "effects": [
+    {
+      "type": "melee_hitbox",
+      "reach": 24,
+      "height": 24,
+      "color": 16743002
+    },
+    {
+      "type": "damage",
+      "power": 14
+    }
+  ],
+  "charged": {
+    "radius_scale": 2.2,
+    "power_scale": 2.6,
+    "pierce": true
+  }
+}

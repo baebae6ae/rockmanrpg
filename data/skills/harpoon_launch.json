@@ -1,0 +1,45 @@
+{
+  "id": "harpoon_launch",
+  "name": "사출",
+  "element": "neutral",
+  "cost": 0,
+  "cooldown": 0.17,
+  "animation_tag": "attack_main",
+  "unlock": {
+    "source": "default",
+    "character": "harpoon"
+  },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [
+      1,
+      2,
+      3,
+      5,
+      8
+    ],
+    "per_level": {
+      "power": 0.17,
+      "cost": 0
+    }
+  },
+  "effects": [
+    {
+      "type": "projectile",
+      "speed": 255,
+      "radius": 2,
+      "color": 8176895,
+      "lifetime": 1.1,
+      "count": 1
+    },
+    {
+      "type": "damage",
+      "power": 7
+    }
+  ],
+  "charged": {
+    "radius_scale": 2.3,
+    "power_scale": 2.9,
+    "pierce": true
+  }
+}

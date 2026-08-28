@@ -1,0 +1,40 @@
+{
+  "id": "ember_torch",
+  "name": "점화기",
+  "element": "neutral",
+  "cost": 0,
+  "cooldown": 0.08,
+  "animation_tag": "attack_main",
+  "unlock": {
+    "source": "default",
+    "character": "ember"
+  },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [
+      1,
+      2,
+      3,
+      5,
+      8
+    ],
+    "per_level": {
+      "power": 0.15,
+      "cost": 0
+    }
+  },
+  "effects": [
+    {
+      "type": "projectile",
+      "speed": 300,
+      "radius": 2,
+      "color": 16738860,
+      "lifetime": 0.9,
+      "count": 1
+    },
+    {
+      "type": "damage",
+      "power": 4
+    }
+  ]
+}

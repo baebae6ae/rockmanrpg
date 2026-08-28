@@ -260,11 +260,16 @@ assets/sprites/enemies/<enemy_id>/
 
 ### 6.1 플레이어블 캐릭터
 
+플레이어블 캐릭터는 《균열 회수반》 아홉 대원이다 — 못·종·불씨·거울·
+바늘·반딧불·도끼·작살·사슬. 원작 캐릭터를 쓰던 자리를 독자 캐릭터로
+갈아엎었다(도트는 `tools/lib/crew.ts`). 적·보스·특수무기 획득 구조는
+그대로 원작 계보를 따른다.
+
 ```jsonc
 {
-  "id": "x",
-  "name": "엑스",
-  "series": "x",                    // classic | x | zero | zx
+  "id": "nail",
+  "name": "못",
+  "series": "recovery",             // 회수반 — 아홉이 한 소속이다
   "sprite_scale": 1,                // 정수만
   "archetype": "buster",            // buster | saber | hybrid | ranged
 
@@ -284,12 +289,16 @@ assets/sprites/enemies/<enemy_id>/
   },
 
   "equipment_slots": ["head", "body", "arm", "foot"],   // X 시리즈 아머 파츠
-  "starting_skills": ["x_buster"],
-  "skill_tree": "x_tree"
+  "starting_skills": ["nail_driver"],
+  "skill_tree": "nail_tree"
 }
 ```
 
-`movement` 플래그가 캐릭터 개성의 핵심이다. 클래식 록맨은 대시·벽차기가 없고 슬라이딩이 있으며, 엑스는 반대다. 이걸 코드 분기가 아니라 데이터로 두면 캐릭터 추가가 데이터 작업이 된다.
+`movement` 플래그를 코드 분기가 아니라 데이터로 두면 캐릭터 추가가 데이터 작업이 된다.
+
+다만 회수반 아홉은 지금 이 값이 전부 같다. 아홉이 한 골격을 공유하기
+때문이다 — 관절 위치가 갈리면 애니메이션을 아홉 벌 만들어야 한다.
+개성은 체격(bulk)·머리·장비와 archetype 이 낸다.
 
 ### 6.2 스킬 / 특수무기
 

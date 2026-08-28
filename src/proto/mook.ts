@@ -95,7 +95,7 @@ export async function runMookProto(app: Application, input: Input): Promise<void
   const actors = new Container();
   scene.addChild(actors);
 
-  const hunterSheet = await loadSheet('characters', 'x');
+  const hunterSheet = await loadSheet('characters', 'nail');
   const hunterView = new AnimView(hunterSheet);
 
   /**

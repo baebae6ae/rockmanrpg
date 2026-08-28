@@ -1,23 +1,21 @@
 {
-  "id": "x",
-  "name": "엑스",
-  "series": "x",
-  "sprite_scale": 1,
+  "id": "harpoon",
+  "name": "작살",
+  "series": "recovery",
   "archetype": "buster",
   "hitbox": {
     "w": 14,
     "h": 30
   },
-  "muzzle_ratio": 1.07,
   "base_stats": {
-    "hp": 100,
-    "attack": 10,
-    "defense": 5
+    "hp": 88,
+    "attack": 11,
+    "defense": 4
   },
   "growth": {
-    "hp": 8,
-    "attack": 1.5,
-    "defense": 0.8
+    "hp": 6.5,
+    "attack": 1.6,
+    "defense": 0.6
   },
   "movement": {
     "can_dash": true,
@@ -27,14 +25,6 @@
     "can_climb_ladder": true,
     "can_slide": false
   },
-  "shot": {
-    "speed": 260,
-    "color": "0x9fe8ff",
-    "radius": 2,
-    "lifetime": 1.1,
-    "power": 8,
-    "element": "neutral"
-  },
   "equipment_slots": [
     "head",
     "body",
@@ -42,6 +32,8 @@
     "foot"
   ],
   "starting_skills": [
-    "x_buster"
-  ]
+    "harpoon_launch"
+  ],
+  "sprite_scale": 1,
+  "muzzle_ratio": 1.07
 }

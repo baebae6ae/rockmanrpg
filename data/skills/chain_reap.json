@@ -1,0 +1,43 @@
+{
+  "id": "chain_reap",
+  "name": "낫질",
+  "element": "cutter",
+  "cost": 0,
+  "cooldown": 0.2,
+  "animation_tag": "attack_main",
+  "unlock": {
+    "source": "default",
+    "character": "chain"
+  },
+  "upgrade": {
+    "max_level": 5,
+    "sp_cost": [
+      1,
+      2,
+      3,
+      5,
+      8
+    ],
+    "per_level": {
+      "power": 0.22,
+      "cost": 0
+    }
+  },
+  "effects": [
+    {
+      "type": "melee_hitbox",
+      "reach": 26,
+      "height": 24,
+      "color": 13081582
+    },
+    {
+      "type": "damage",
+      "power": 16
+    }
+  ],
+  "charged": {
+    "radius_scale": 2.3,
+    "power_scale": 2.8,
+    "pierce": true
+  }
+}
