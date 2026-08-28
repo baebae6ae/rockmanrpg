@@ -35,3 +35,7 @@ dist-artifact/
 shot-*.png
 *.tmp.ts
 *.tmp.png
+
+# crew-preview.ts 로 언제든 다시 뽑는 미리보기 렌더
+crew*.png
+faces.png
