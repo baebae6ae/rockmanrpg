@@ -1,6 +1,7 @@
 {
   "id": "mirror",
   "name": "거울",
+  "desc": "얇지만 한 발이 무겁다",
   "series": "recovery",
   "sprite_scale": 1,
   "archetype": "buster",

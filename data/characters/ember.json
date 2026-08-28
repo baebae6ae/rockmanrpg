@@ -1,6 +1,7 @@
 {
   "id": "ember",
   "name": "불씨",
+  "desc": "가까이 붙어야 제 몫을 한다",
   "series": "recovery",
   "sprite_scale": 1,
   "archetype": "ranged",

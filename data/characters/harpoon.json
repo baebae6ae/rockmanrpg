@@ -1,6 +1,7 @@
 {
   "id": "harpoon",
   "name": "작살",
+  "desc": "꿰뚫어 여럿을 한 줄로 눕힌다",
   "series": "recovery",
   "archetype": "buster",
   "hitbox": {

@@ -1,6 +1,7 @@
 {
   "id": "nail",
   "name": "못",
+  "desc": "제일 두껍다. 버티면서 쏜다",
   "series": "recovery",
   "sprite_scale": 1,
   "archetype": "buster",

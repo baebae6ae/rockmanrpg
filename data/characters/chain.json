@@ -1,6 +1,7 @@
 {
   "id": "chain",
   "name": "사슬",
+  "desc": "제일 세고 제일 잘 죽는다",
   "series": "recovery",
   "archetype": "saber",
   "hitbox": {

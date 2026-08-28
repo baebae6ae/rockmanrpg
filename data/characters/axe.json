@@ -1,6 +1,7 @@
 {
   "id": "axe",
   "name": "도끼",
+  "desc": "느리지만 한 번에 크게 벤다",
   "series": "recovery",
   "sprite_scale": 1,
   "archetype": "saber",

@@ -574,6 +574,8 @@ function drawPet(g: Graphics, id: PetId, x: number, y: number, dir: number, t: n
 interface HordeChar {
   id: string;
   name: string;
+  /** 캐릭터별 한 줄. 없으면 전투 방식 설명만 나온다 */
+  desc?: string;
   sprite_scale?: number;
   archetype?: string;
   base_stats: { hp: number };
@@ -1023,10 +1025,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'select') {
       for (let i = 0; i < selRects.length; i++) {
         if (!inside(selRects[i])) continue;
-        // 짚은 캐릭터로 바로 시작한다 — 골랐다가 다시 확정하는 두 단계는
-        // 손가락으로 하면 번거롭기만 하다.
-        selIndex = i;
-        startRun();
+        // 짚자마자 시작하면 손가락으로는 설명을 읽을 방법이 아예 없다.
+        // 마우스에는 hover 가 있어서 '짚어 보기'와 '고르기'가 갈리지만
+        // 터치에는 그게 없어서, 누르는 순간 판이 시작돼 버린다.
+        //
+        // 그래서 다른 칸을 누르면 설명만 바꾸고, 이미 골라 둔 칸을 다시
+        // 눌러야 시작한다. 이미 고른 것으로 시작할 때는 여전히 한 번이다.
+        if (i === selIndex) startRun();
+        else selIndex = i;
         break;
       }
       return;
@@ -3194,7 +3200,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   selTitle.position.set(W / 2, 28);
   const selHint = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
   selHint.anchor.set(0.5);
-  selHint.position.set(W / 2, H - 46);
+  selHint.position.set(W / 2, H - 42);
   selHint.style.align = 'center';
   selLayer.addChild(selTitle, selHint);
 
@@ -3219,9 +3225,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const d = CHAR_DEFS[selIndex];
     const st = styleOf(d);
     const rec = best[d.id];
+    // 전투 방식 설명은 버스터 넷이 전부 같은 문장이라, 그것만으로는
+    // 누굴 고르든 똑같아 보인다. 캐릭터별 한 줄을 위에 얹는다.
     selHint.text =
-      `${d.name} — ${STYLE_NAME[st]}\n${STYLE_DESC[st]}\n` +
-      (rec ? `최고 ${rec.t}초 · ${rec.kills}킬   ` : '') + '▸ 눌러서 시작';
+      `${d.name} — ${STYLE_NAME[st]}\n` +
+      (d.desc ? `${d.desc}\n` : '') +
+      `${STYLE_DESC[st]}\n` +
+      (rec ? `최고 ${rec.t}초 · ${rec.kills}킬   ` : '') +
+      (touchMode ? '▸ 다시 눌러서 시작' : '▸ 눌러서 시작');
   }
 
   // ------------------------------------------------------------ 보스 선택

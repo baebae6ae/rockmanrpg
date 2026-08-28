@@ -1,6 +1,7 @@
 {
   "id": "bell",
   "name": "종",
+  "desc": "휘두른 자리에 충격이 남는다",
   "series": "recovery",
   "archetype": "saber",
   "hitbox": {

@@ -1,6 +1,7 @@
 {
   "id": "needle",
   "name": "바늘",
+  "desc": "가장 튼튼하고 사거리가 길다",
   "series": "recovery",
   "sprite_scale": 1,
   "archetype": "buster",

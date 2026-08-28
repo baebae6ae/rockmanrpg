@@ -1,6 +1,7 @@
 {
   "id": "firefly",
   "name": "반딧불",
+  "desc": "알아서 따라가는 탄을 뿌린다",
   "series": "recovery",
   "archetype": "ranged",
   "hitbox": {
