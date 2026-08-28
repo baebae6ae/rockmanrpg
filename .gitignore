@@ -33,3 +33,5 @@ dist-artifact/
 *.tmp.mjs
 *.tmp.cjs
 shot-*.png
+*.tmp.ts
+*.tmp.png
