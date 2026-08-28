@@ -140,16 +140,111 @@ function body(f: F): void {
   f.rect(4, 26, 6, 1, M.accent);
 
   f.rect(-2, 25, 4, 2, M.trim);   // 목
-
-  // 머리 — 얼굴 자리가 있어야 사람으로 읽힌다
-  f.rect(-5, 27, 10, 8, M.suit);
-  f.rect(-5, 33, 10, 2, M.metal); // 헬멧 능선
-  f.rect(-5, 32, 10, 1, M.accent);
-  f.rect(-6, 29, 1, 4, M.metal);  // 귀 덮개
-  f.rect(5, 29, 1, 4, M.metal);
-  f.rect(-3, 29, 7, 3, M.glow);   // 바이저
-  f.rect(-3, 28, 7, 1, M.trim);   // 턱 그늘
+  // 머리는 대원마다 다르다 — HEADS 가 따로 그린다
 }
+
+/**
+ * 머리 — 아홉을 가르는 제일 중요한 파츠.
+ *
+ * 얼굴이 전부 같으면 색만 바꾼 같은 사람으로 보인다. 그래서 각자
+ * 하는 일에 맞는 머리를 준다. 불을 지르는 놈은 방독면을 쓰고,
+ * 제일 시끄러운 무기를 든 놈은 귀를 막고, 저격수는 한쪽 눈만 내놓는다.
+ *
+ * 다만 셋은 공통으로 지킨다 — 빛나는 눈, 아래쪽 턱 그늘, 폭 8~11px.
+ * 이게 있어야 얼굴이 다 달라도 여전히 한 팀으로 읽힌다.
+ */
+type Head = (f: F) => void;
+
+const HEADS: Record<string, Head> = {
+  // 못 — 정면으로 얻어맞는 자리다. 통짜 방호 헬멧에 가로 슬릿 하나
+  '못': (f) => {
+    f.rect(-5, 27, 11, 9, M.suit);
+    f.rect(-5, 34, 11, 2, M.metal);
+    f.rect(-2, 36, 5, 2, M.metal);      // 짧은 볏
+    f.rect(-4, 30, 9, 2, M.glow);       // 가로 슬릿
+    f.rect(-5, 32, 11, 1, M.accent);
+    f.rect(-5, 27, 11, 1, M.trim);
+  },
+  // 종 — 자기 무기가 제일 시끄럽다. 귀를 크게 덮는다
+  '종': (f) => {
+    f.rect(-4, 28, 9, 8, M.suit);
+    f.rect(-7, 29, 3, 5, M.metal);
+    f.rect(5, 29, 3, 5, M.metal);
+    f.rect(-7, 31, 3, 1, M.accent);
+    f.rect(5, 31, 3, 1, M.accent);
+    f.rect(-4, 34, 9, 2, M.metal);
+    f.rect(-2, 30, 6, 3, M.glow);
+    f.rect(-4, 28, 9, 1, M.trim);
+  },
+  // 불씨 — 불을 지르는 놈이라 방독면. 앞으로 필터통이 튀어나온다.
+  // 둥근 고글 둘은 이 크기에서 서로 뭉쳐 지저분해진다 — 네모로 또렷하게 뗀다
+  '불씨': (f) => {
+    f.rect(-5, 28, 10, 8, M.suit);
+    f.rect(-5, 34, 10, 2, M.metal);
+    f.rect(-5, 28, 10, 1, M.trim);
+    f.rect(-4, 29, 9, 3, M.metal);      // 얼굴 아래를 덮는 마스크
+    f.rect(-4, 29, 9, 1, M.trim);
+    f.rect(5, 29, 3, 3, M.metal);       // 앞으로 나온 필터통
+    f.rect(5, 30, 3, 1, M.accent);
+    f.rect(-4, 32, 3, 2, M.glow);       // 고글 둘
+    f.rect(1, 32, 3, 2, M.glow);
+  },
+  // 거울 — 제 빛에 눈이 상한다. 챙을 길게 빼고 바이저를 넓게
+  '거울': (f) => {
+    f.rect(-5, 28, 10, 8, M.suit);
+    f.rect(-7, 33, 14, 2, M.metal);     // 양옆으로 나온 챙
+    f.rect(-7, 33, 14, 1, M.accent);
+    f.rect(-4, 29, 9, 3, M.glow);
+    f.rect(-5, 28, 10, 1, M.trim);
+  },
+  // 바늘 — 후드에 조준경. 한쪽 눈만 내놓는다
+  '바늘': (f) => {
+    f.rect(-6, 27, 11, 9, M.suit);
+    f.line(-5, 35, -12, 28, 4, M.suit); // 후드 뒷자락
+    f.rect(-6, 33, 11, 1, M.accent);
+    f.rect(-3, 30, 4, 3, M.glow);
+    f.rect(2, 31, 3, 1, M.metal);       // 조준경 팔
+    f.rect(-6, 27, 11, 1, M.trim);
+  },
+  // 반딧불 — 유도탄을 부리려면 안테나가 있어야 한다
+  '반딧불': (f) => {
+    f.rect(-4, 28, 9, 7, M.suit);
+    f.rect(-4, 34, 9, 1, M.metal);
+    f.rect(-3, 35, 1, 4, M.metal);
+    f.rect(3, 35, 1, 4, M.metal);
+    f.rect(-3, 39, 1, 1, M.glow);
+    f.rect(3, 39, 1, 1, M.glow);
+    f.rect(-3, 30, 7, 3, M.glow);
+    f.rect(-4, 28, 9, 1, M.trim);
+  },
+  // 도끼 — 혼자 헬멧을 안 쓴다. 맨머리에 머리띠 하나, 두 눈이 다 보인다
+  '도끼': (f) => {
+    f.rect(-4, 28, 8, 7, M.suit);
+    f.rect(-4, 33, 8, 2, M.accent);     // 머리띠
+    f.rect(-7, 33, 3, 2, M.accent);     // 뒤로 흐르는 자락
+    f.rect(-3, 30, 2, 2, M.glow);
+    f.rect(1, 30, 2, 2, M.glow);
+    f.rect(-4, 28, 8, 1, M.trim);
+  },
+  // 작살 — 위로 솟은 얇은 볏 + 세로 슬릿
+  '작살': (f) => {
+    f.rect(-5, 27, 10, 8, M.suit);
+    f.rect(-5, 34, 10, 1, M.metal);
+    f.rect(-1, 35, 2, 5, M.metal);      // 볏
+    f.rect(-1, 40, 2, 1, M.glow);
+    f.rect(-1, 29, 2, 5, M.glow);       // 세로 슬릿
+    f.rect(-5, 32, 10, 1, M.accent);
+    f.rect(-5, 27, 10, 1, M.trim);
+  },
+  // 사슬 — 아래 얼굴을 천으로 가리고 눈만 내놓는다
+  '사슬': (f) => {
+    f.rect(-5, 28, 10, 8, M.suit);
+    f.rect(-5, 28, 10, 4, M.trim);      // 천 복면
+    f.line(-5, 30, -12, 26, 3, M.suit); // 뒤로 흐르는 자락
+    f.rect(-3, 32, 7, 2, M.glow);       // 눈
+    f.rect(-5, 35, 10, 1, M.accent);
+  },
+};
 
 type Build = (f: F) => void;
 interface Crew { name: string; suit: string; metal: string; glow: string; build: Build }
@@ -209,10 +304,6 @@ const CREW: Crew[] = [
   {
     name: '바늘', suit: '#25514e', metal: '#8fa8a4', glow: '#5ce0d0',
     build: (f) => {
-      f.rect(-6, 27, 10, 9, M.suit);       // 후드
-      f.line(-5, 35, -12, 27, 4, M.suit);
-      f.rect(-6, 33, 10, 1, M.accent);
-      f.rect(-4, 29, 6, 3, M.glow);
       f.rect(5, 21, 25, 2, M.metal);       // 아주 긴 총열
       f.rect(3, 19, 6, 6, M.trim);
       f.rect(3, 23, 6, 1, M.accent);
@@ -307,6 +398,7 @@ for (let i = 0; i < W * H; i++) {
 CREW.forEach((c, idx) => {
   const f = new F();
   body(f);
+  HEADS[c.name](f);
   c.build(f);
   const m = f.m;
 
