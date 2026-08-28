@@ -1,7 +1,7 @@
 {
   "id": "sniper_drone",
-  "name": "저격 드론",
-  "series": "x",
+  "name": "노리는것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {

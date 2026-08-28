@@ -1,8 +1,8 @@
 {
-  "id": "fang_rusher",
-  "name": "팽 러셔",
-  "series": "x",
-  "tier": "boss",
+  "id": "biter",
+  "name": "무는것",
+  "series": "rift",
+  "tier": "elite",
   "sprite_scale": 1,
   "hitbox": {
     "w": 24,
@@ -21,16 +21,7 @@
     }
   ],
   "contact_damage": 16,
-  "pattern": "boss_swarmer",
-  "pattern_params": {
-    "charge_speed": 200,
-    "charge_speed_enraged": 260,
-    "melee_power": 19,
-    "shot_speed": 150,
-    "shot_power": 10,
-    "element": "poison",
-    "color": 13172592
-  },
+  "pattern": "mob_charger",
   "drops": [
     {
       "kind": "health",

@@ -1,7 +1,7 @@
 {
   "id": "hover",
-  "name": "부유 드론",
-  "series": "x",
+  "name": "뜬것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {

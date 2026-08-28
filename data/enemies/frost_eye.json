@@ -1,7 +1,7 @@
 {
-  "id": "longshot_eaglet",
-  "name": "롱쇼트 이글렛",
-  "series": "x",
+  "id": "frost_eye",
+  "name": "서릿눈",
+  "series": "rift",
   "tier": "boss",
   "sprite_scale": 1,
   "hitbox": {

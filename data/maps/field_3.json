@@ -137,7 +137,7 @@
   "npcs": [],
   "spawns": [
     {
-      "enemy": "guard_turtlan",
+      "enemy": "shell_wall",
       "x": 120,
       "y": 208,
       "params": {
@@ -145,27 +145,27 @@
       }
     },
     {
-      "enemy": "longshot_eaglet",
+      "enemy": "frost_eye",
       "x": 360,
       "y": 208
     },
     {
-      "enemy": "crimson_barrier",
+      "enemy": "flame_ring",
       "x": 600,
       "y": 208
     },
     {
-      "enemy": "fang_rusher",
+      "enemy": "biter",
       "x": 840,
       "y": 208
     },
     {
-      "enemy": "titan_breaker",
+      "enemy": "forge_core",
       "x": 1080,
       "y": 208
     },
     {
-      "enemy": "rapier_phantom",
+      "enemy": "edge_gale",
       "x": 1400,
       "y": 208
     }

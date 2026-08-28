@@ -1,7 +1,7 @@
 {
   "id": "crawler",
-  "name": "스퀴터 크롤러",
-  "series": "x",
+  "name": "기는것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {

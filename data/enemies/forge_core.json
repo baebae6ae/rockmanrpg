@@ -1,7 +1,7 @@
 {
-  "id": "titan_breaker",
-  "name": "타이탄 브레이커",
-  "series": "x",
+  "id": "forge_core",
+  "name": "화로",
+  "series": "rift",
   "tier": "boss",
   "sprite_scale": 1,
   "hitbox": {

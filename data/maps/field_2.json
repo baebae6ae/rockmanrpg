@@ -146,7 +146,7 @@
       }
     },
     {
-      "enemy": "sting_chameleon",
+      "enemy": "water_shade",
       "x": 190,
       "y": 208,
       "params": {
@@ -154,7 +154,7 @@
       }
     },
     {
-      "enemy": "spark_mandriller",
+      "enemy": "bolt_hand",
       "x": 490,
       "y": 208,
       "params": {
@@ -162,7 +162,7 @@
       }
     },
     {
-      "enemy": "boomer_kuwanger",
+      "enemy": "saw_fang",
       "x": 830,
       "y": 208,
       "params": {

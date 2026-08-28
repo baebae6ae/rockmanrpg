@@ -1,7 +1,7 @@
 {
-  "id": "rapier_phantom",
-  "name": "레이피어 팽텀",
-  "series": "x",
+  "id": "edge_gale",
+  "name": "칼바람",
+  "series": "rift",
   "tier": "boss",
   "sprite_scale": 1,
   "hitbox": {

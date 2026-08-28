@@ -1,7 +1,7 @@
 {
   "id": "walker",
-  "name": "메카니로이드 워커",
-  "series": "x",
+  "name": "걷는것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {

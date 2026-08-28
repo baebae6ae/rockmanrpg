@@ -1,7 +1,7 @@
 {
-  "id": "crimson_barrier",
-  "name": "크림슨 배리어",
-  "series": "x",
+  "id": "flame_ring",
+  "name": "불고리",
+  "series": "rift",
   "tier": "boss",
   "sprite_scale": 1,
   "hitbox": {

@@ -43,7 +43,7 @@ const MAX_FOES = 170;
 const MAX_PARTS = 460;
 const MAX_GEMS = 80;
 
-type FoeKind = 'crawler' | 'walker' | 'hopper' | 'fang_rusher' | 'sniper_drone';
+type FoeKind = 'crawler' | 'walker' | 'hopper' | 'biter' | 'sniper_drone';
 
 interface KindDef {
   hp: number;
@@ -66,7 +66,7 @@ const BEHAVIOR: Record<FoeKind, Behavior> = {
   crawler: 'chase',
   walker: 'chase',
   hopper: 'hop',
-  fang_rusher: 'charge',
+  biter: 'charge',
   sniper_drone: 'shooter',
 };
 
@@ -74,7 +74,7 @@ const KINDS: Record<FoeKind, KindDef> = {
   crawler: { hp: 6, speed: 34, r: 9, touch: 7, xp: 1, scale: 0.9, elem: 'aqua' },
   walker: { hp: 10, speed: 44, r: 10, touch: 9, xp: 1, scale: 1, elem: 'elec' },
   hopper: { hp: 5, speed: 62, r: 8, touch: 7, xp: 1, scale: 0.85, elem: 'ice' },
-  fang_rusher: { hp: 14, speed: 78, r: 10, touch: 9, xp: 2, scale: 1, elem: 'fire' },
+  biter: { hp: 14, speed: 78, r: 10, touch: 9, xp: 2, scale: 1, elem: 'fire' },
   sniper_drone: { hp: 8, speed: 50, r: 9, touch: 8, xp: 2, scale: 0.9, elem: 'elec' },
 };
 
@@ -124,7 +124,7 @@ const SPAWN_WEIGHT: Record<FoeKind, number> = {
   crawler: 30,
   walker: 25,
   hopper: 22,
-  fang_rusher: 16,
+  biter: 16,
   sniper_drone: 7,
 };
 const SPAWN_TOTAL = KIND_LIST.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
@@ -166,14 +166,14 @@ interface BossDef {
 }
 
 const BOSS_DEFS: BossDef[] = [
-  { id: 'spark_mandriller', pattern: 'slam', color: 0xffe86b, elem: 'elec', drop: 'electric_spark' },
-  { id: 'sting_chameleon', pattern: 'blink', color: 0x8ef0a0, elem: 'aqua', drop: 'chameleon_sting' },
-  { id: 'boomer_kuwanger', pattern: 'boomer', color: 0xc98cff, elem: 'none', drop: 'boomerang_cutter' },
-  { id: 'titan_breaker', pattern: 'charge', color: 0xff9a4c, elem: 'fire', drop: 'titan_crush' },
-  { id: 'guard_turtlan', pattern: 'guard', color: 0x6ec8ff, elem: 'aqua', drop: 'guard_shell' },
-  { id: 'rapier_phantom', pattern: 'dasher', color: 0xff5c9c, elem: 'none', drop: 'phantom_edge' },
-  { id: 'longshot_eaglet', pattern: 'sniper', color: 0xdcf4ff, elem: 'ice', drop: 'longshot_beam' },
-  { id: 'crimson_barrier', pattern: 'barrier', color: 0xff5c5c, elem: 'fire', drop: 'crimson_orbit' },
+  { id: 'bolt_hand', pattern: 'slam', color: 0xffe86b, elem: 'elec', drop: 'bolt_chain' },
+  { id: 'water_shade', pattern: 'blink', color: 0x8ef0a0, elem: 'aqua', drop: 'shade_veil' },
+  { id: 'saw_fang', pattern: 'boomer', color: 0xc98cff, elem: 'none', drop: 'saw_return' },
+  { id: 'forge_core', pattern: 'charge', color: 0xff9a4c, elem: 'fire', drop: 'forge_ram' },
+  { id: 'shell_wall', pattern: 'guard', color: 0x6ec8ff, elem: 'aqua', drop: 'shell_guard' },
+  { id: 'edge_gale', pattern: 'dasher', color: 0xff5c9c, elem: 'none', drop: 'edge_cut' },
+  { id: 'frost_eye', pattern: 'sniper', color: 0xdcf4ff, elem: 'ice', drop: 'frost_lance' },
+  { id: 'flame_ring', pattern: 'barrier', color: 0xff5c5c, elem: 'fire', drop: 'flame_orbit' },
 ];
 
 
@@ -2380,9 +2380,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    */
   const BOSS_WEAPONS: SpecialDef[] = [
     {
-      id: 'electric_spark',
+      id: 'bolt_chain',
       elem: 'elec',
-      name: '일렉트릭 스파크',
+      name: '연쇄 벼락',
       color: 0xffe86b,
       rarity: 'SR',
       max: 5,
@@ -2424,9 +2424,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
-      id: 'chameleon_sting',
+      id: 'shade_veil',
       elem: 'aqua',
-      name: '카멜레온 스팅',
+      name: '그림자 잠행',
       color: 0x8ef0a0,
       rarity: 'SSR',
       max: 5,
@@ -2441,8 +2441,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
-      id: 'boomerang_cutter',
-      name: '부메랑 커터',
+      id: 'saw_return',
+      name: '되돌아오는 톱',
       color: 0xc98cff,
       rarity: 'SR',
       max: 5,
@@ -2467,9 +2467,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
-      id: 'titan_crush',
+      id: 'forge_ram',
       elem: 'fire',
-      name: '타이탄 크러시',
+      name: '달굼질',
       color: 0xff9a4c,
       rarity: 'SR',
       max: 5,
@@ -2485,9 +2485,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
-      id: 'guard_shell',
+      id: 'shell_guard',
       elem: 'aqua',
-      name: '가드 셸',
+      name: '껍질막',
       color: 0x6ec8ff,
       rarity: 'SSR',
       max: 5,
@@ -2495,8 +2495,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 상시 발동 — 아래 updateLegends 에서 처리한다
     },
     {
-      id: 'phantom_edge',
-      name: '팬텀 엣지',
+      id: 'edge_cut',
+      name: '칼금',
       color: 0xff5c9c,
       rarity: 'SR',
       max: 5,
@@ -2504,9 +2504,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 대시할 때만 나간다 (대시 처리에서 직접 쏜다)
     },
     {
-      id: 'longshot_beam',
+      id: 'frost_lance',
       elem: 'ice',
-      name: '롱쇼트 빔',
+      name: '서릿살',
       color: 0xdcf4ff,
       rarity: 'SSR',
       max: 5,
@@ -2543,9 +2543,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
-      id: 'crimson_orbit',
+      id: 'flame_orbit',
       elem: 'fire',
-      name: '크림슨 오빗',
+      name: '불고리',
       color: 0xff5c5c,
       rarity: 'SR',
       max: 5,
@@ -2809,7 +2809,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // 가드 셸 — 적 탄을 튕겨낸다. 이걸 하는 무기가 이것뿐이다.
-    const shellLv = owned.get('guard_shell') ?? 0;
+    const shellLv = owned.get('shell_guard') ?? 0;
     if (shellLv) {
       const rr = 28 + 5 * shellLv;
       const dmg = 10 + 8 * shellLv;
@@ -3586,7 +3586,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sfx.dash();
       const ck = owned.get('charge_kick') ?? 0;
       if (ck) kickTrail.push({ x: px, y: py - 8, life: 2.2, r: 20, dmg: 14 + 9 * ck });
-      const pe = owned.get('phantom_edge') ?? 0;
+      const pe = owned.get('edge_cut') ?? 0;
       if (pe) {
         // 대시 방향으로 참격이 날아간다 — 차지 킥이 자리에 남는 것과 반대다
         const n = 1 + pe;
@@ -4603,7 +4603,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // 가드 셸 — 도는 방패 조각
-    const shellDraw = owned.get('guard_shell') ?? 0;
+    const shellDraw = owned.get('shell_guard') ?? 0;
     if (shellDraw && phase === 'play') {
       const rr = 28 + 5 * shellDraw;
       specialG.circle(px, py - 10, rr)
@@ -4617,7 +4617,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // 크림슨 오빗 — 주위를 도는 구슬
-    const orbitLv = owned.get('crimson_orbit') ?? 0;
+    const orbitLv = owned.get('flame_orbit') ?? 0;
     if (orbitLv && phase === 'play') {
       const n = 2 + orbitLv;
       for (let i = 0; i < n; i++) {

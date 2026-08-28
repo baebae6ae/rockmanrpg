@@ -1,7 +1,7 @@
 {
-  "id": "guard_turtlan",
-  "name": "가드 터틀란",
-  "series": "x",
+  "id": "shell_wall",
+  "name": "껍데기",
+  "series": "rift",
   "tier": "boss",
   "sprite_scale": 1,
   "hitbox": {

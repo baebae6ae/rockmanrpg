@@ -198,12 +198,13 @@ function partTone(m: Uint8Array, cx: number, cy: number): number {
 // ---------------------------------------------------------------- 팔레트
 export interface CrewPal {
   suit: string; metal: string; glow: string;
-  /** 살색 — 여기서 그늘·하이라이트를 파생한다 */
-  skin: string;
-  /** 홍채 — 아홉을 가르는 제일 싼 수단이다. 눈 색이 다르면 남으로 보인다 */
-  iris: string;
-  /** 머리카락 — 헬멧 밖으로 나오는 대원만 실제로 보인다 */
-  hair: string;
+  /**
+   * 아래 셋은 얼굴이 있는 대상에만 쓴다. 균열에서 나온 개체는 사람이
+   * 아니라서 살도 눈동자도 머리카락도 없다 — 그쪽은 비워 둔다.
+   */
+  skin?: string;
+  iris?: string;
+  hair?: string;
 }
 
 /**
@@ -213,8 +214,8 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   const m = f.m;
   const out = new Uint8Array(CELL * CELL * 4);
   const suit = hex(c.suit);
-  const sk = skinTones(c.skin);
-  const iris = hex(c.iris);
+  const sk = skinTones(c.skin ?? '#e0a882');
+  const iris = hex(c.iris ?? c.glow);
   const trim = mix(suit, COOL, 0.42);
   const R: Partial<Record<M, Ramp>> = {
     [M.suit]: ramp(suit),
@@ -222,13 +223,13 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.metal]: ramp(c.metal),
     [M.accent]: ramp(c.glow),
     [M.glow]: ramp(c.glow),
-    [M.skin]: ramp(c.skin),
+    [M.skin]: ramp(sk[1]),
     [M.skinS]: ramp(sk[0]),
     [M.skinH]: ramp(sk[2]),
     [M.eye]: ramp(EYE),
     [M.iris]: ramp(iris),
     [M.white]: ramp(EYE_LIT),
-    [M.hair]: ramp(c.hair),
+    [M.hair]: ramp(c.hair ?? c.suit),
     // 반대편 팔다리 — 색을 따로 주는 게 아니라 같은 색을 한 단 죽인다.
     // 다른 색을 쓰면 다른 재질로 보이고, 안 죽이면 앞뒤가 안 갈린다.
     [M.suitB]: ramp(mix(suit, COOL, 0.24)),

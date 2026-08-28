@@ -1,7 +1,7 @@
 {
   "id": "wall_turret",
-  "name": "벽면 포탑",
-  "series": "x",
+  "name": "박힌것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {

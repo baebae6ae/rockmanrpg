@@ -5,7 +5,7 @@
   "cost": 4,
   "cooldown": 0.42,
   "animation_tag": "attack_main",
-  "unlock": { "source": "boss", "boss_id": "sting_chameleon" },
+  "unlock": { "source": "boss", "boss_id": "water_shade" },
   "upgrade": {
     "max_level": 5,
     "sp_cost": [1, 2, 3, 5, 8],

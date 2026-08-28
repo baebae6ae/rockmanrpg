@@ -1,7 +1,7 @@
 {
   "id": "hopper",
-  "name": "호퍼 미니언",
-  "series": "x",
+  "name": "뛰는것",
+  "series": "rift",
   "tier": "mob",
   "sprite_scale": 1,
   "hitbox": {
