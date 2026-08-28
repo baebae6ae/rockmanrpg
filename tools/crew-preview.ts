@@ -45,6 +45,8 @@ const mix = (a: RGB, b: RGB, t: number): RGB => [
   Math.round(a[2] + (b[2] - a[2]) * t),
 ];
 const WHITE: RGB = [255, 255, 255];
+/** 밝은 쪽은 순백이 아니라 따뜻한 빛으로 민다 — 흰색으로 올리면 색이 빠진다 */
+const LIGHT: RGB = [255, 246, 222];
 /** 어두운 쪽은 검정이 아니라 차가운 남색으로 민다 — 검정으로 내리면 도트가 죽는다 */
 const COOL: RGB = [22, 26, 44];
 /** 눈은 2px 밖에 안 돼서 음영을 먹이면 뭉개진다. 고정색으로 박는다 */
@@ -61,20 +63,32 @@ function skinTones(base: string): [RGB, RGB, RGB] {
   return [mix(b, SKIN_SHADE, 0.5), b, mix(b, WHITE, 0.3)];
 }
 
-/** 5단 램프 + 윤곽선 두 단(빛 쪽 / 그늘 쪽) */
-interface Ramp { t: RGB[]; edgeLit: RGB; edgeDark: RGB }
+/** 바닥에서 튀어오르는 반사광. 하늘빛이라 차갑다 */
+const BOUNCE: RGB = [84, 118, 172];
+
+/**
+ * 7단 램프 + 윤곽선 두 단(빛 쪽 / 그늘 쪽) + 반사광.
+ *
+ * 5단으로는 부족했다. 형태광과 파츠 경계를 겹쳐 쓰려면 가운데가 넉넉해야
+ * 하는데, 5단이면 둘 중 하나만 세게 먹여도 곧바로 끝(0 또는 4)에 붙어서
+ * 계단이 뭉텅뭉텅 진다.
+ */
+interface Ramp { t: RGB[]; edgeLit: RGB; edgeDark: RGB; bounce: RGB }
 function ramp(base: string | RGB): Ramp {
   const b = typeof base === 'string' ? hex(base) : base;
   return {
     t: [
-      mix(b, COOL, 0.58),
-      mix(b, COOL, 0.30),
+      mix(b, COOL, 0.62),
+      mix(b, COOL, 0.44),
+      mix(b, COOL, 0.23),
       b,
-      mix(b, WHITE, 0.24),
-      mix(b, WHITE, 0.52),
+      mix(b, LIGHT, 0.15),
+      mix(b, LIGHT, 0.32),
+      mix(b, LIGHT, 0.55),
     ],
     edgeLit: mix(b, COOL, 0.70),
     edgeDark: mix(b, COOL, 0.88),
+    bounce: mix(mix(b, COOL, 0.44), BOUNCE, 0.34),
   };
 }
 
@@ -116,63 +130,81 @@ class F {
   }
 }
 
+/**
+ * 윗모서리 깎기 — 사각형을 그대로 두면 갑옷이 아니라 쌓아 올린 블록으로
+ * 보인다. 꼭짓점 두 개만 지워도 판이 둥글게 다듬어진 것으로 읽힌다.
+ */
+function bevel(f: F, x: number, y: number, w: number, h: number): void {
+  f.set(x, y + h - 1, M.none);
+  f.set(x + w - 1, y + h - 1, M.none);
+}
+
 // ---------------------------------------------------------------- 공용 몸
 /**
  * 아홉이 공유하는 사람 몸. 여기가 갈리면 한 팀으로 안 보인다.
  * 개성은 전부 장비(build)가 낸다.
  *
  * 판을 나누는 선(무릎·팔꿈치·벨트·가슴판)이 있어야 한 덩어리가 아니라
- * 조립된 장구로 읽힌다. 다만 1px 선을 남발하면 40px 에서는 노이즈가 된다.
+ * 조립된 장구로 읽힌다. 다만 가로선만 늘어놓으면 40px 에서는 갑옷이 아니라
+ * 줄무늬 옷으로 보인다 — 세로 솔기를 섞어야 판이 판으로 읽힌다.
+ *
+ * s 는 체격이다(-1 마른 / 0 보통 / +1 두꺼운). 아홉이 전부 같은 굵기면
+ * 색만 다른 같은 사람이 아홉 있는 것이지 팀이 아니다. 다만 골격 자체는
+ * 안 건드린다 — 관절 위치가 갈리면 애니메이션을 아홉 벌 만들어야 한다.
  */
-function body(f: F): void {
+function body(f: F, s: number): void {
   // 부츠 — 발이 커야 록맨 계열 실루엣이 선다
-  f.rect(-7, 0, 6, 5, M.trim);
-  f.rect(1, 0, 6, 5, M.trim);
-  f.rect(-7, 4, 6, 1, M.accent);
-  f.rect(1, 4, 6, 1, M.accent);
-  f.rect(-7, 1, 6, 1, M.metal);  // 발목 링
-  f.rect(1, 1, 6, 1, M.metal);
+  f.rect(-7 - s, 0, 6 + s, 5, M.trim);
+  f.rect(1, 0, 6 + s, 5, M.trim);
+  f.rect(-7 - s, 4, 6 + s, 1, M.accent);
+  f.rect(1, 4, 6 + s, 1, M.accent);
+  f.rect(-7 - s, 1, 6 + s, 1, M.metal);  // 발목 링
+  f.rect(1, 1, 6 + s, 1, M.metal);
+  f.rect(-8 - s, 0, 1, 2, M.trim);       // 밑창이 밖으로 벌어진다 —
+  f.rect(7 + s, 0, 1, 2, M.trim);        // 직육면체는 부츠로 안 읽힌다
 
-  f.rect(-5, 5, 4, 5, M.suit);   // 정강이
-  f.rect(1, 5, 4, 5, M.suit);
-  f.rect(-6, 9, 5, 3, M.metal);  // 무릎 판
-  f.rect(1, 9, 5, 3, M.metal);
-  f.rect(-6, 11, 5, 1, M.accent);
-  f.rect(1, 11, 5, 1, M.accent);
-  f.rect(-5, 12, 4, 4, M.suit);  // 허벅지
-  f.rect(1, 12, 4, 4, M.suit);
-  f.rect(-5, 15, 4, 1, M.trim);
-  f.rect(1, 15, 4, 1, M.trim);
+  f.rect(-5 - s, 5, 4 + s, 5, M.suit);   // 정강이
+  f.rect(1, 5, 4 + s, 5, M.suit);
+  f.rect(-6 - s, 9, 5 + s, 3, M.metal);  // 무릎 판
+  f.rect(1, 9, 5 + s, 3, M.metal);
+  f.set(-6 - s, 9, M.none); f.set(5 + s, 9, M.none);
+  f.rect(-5 - s, 12, 4 + s, 4, M.suit);  // 허벅지
+  f.rect(1, 12, 4 + s, 4, M.suit);
+  f.rect(-5 - s, 12, 1, 4, M.trim);      // 바깥쪽 솔기
+  f.rect(4 + s, 12, 1, 4, M.trim);
+  f.rect(-5 - s, 15, 4 + s, 1, M.trim);
+  f.rect(1, 15, 4 + s, 1, M.trim);
 
-  f.rect(-4, 15, 8, 4, M.suit);  // 허리
-  f.rect(-5, 13, 10, 2, M.trim); // 벨트
-  f.rect(-1, 13, 2, 2, M.accent);
+  f.rect(-4 - s, 15, 8 + 2 * s, 4, M.suit);  // 허리
+  f.rect(-5 - s, 13, 10 + 2 * s, 2, M.trim); // 벨트
+  f.rect(-1, 13, 2, 2, M.accent);            // 버클
 
-  f.rect(-6, 18, 12, 8, M.suit); // 가슴
-  f.rect(-5, 18, 10, 1, M.trim); // 복부 구분선
-  f.rect(-4, 20, 8, 4, M.metal); // 가슴판
-  f.rect(-4, 23, 8, 1, M.accent);
-  f.rect(-2, 21, 4, 2, M.glow);  // 코어
+  f.rect(-6 - s, 18, 12 + 2 * s, 8, M.suit); // 가슴
+  f.rect(-5 - s, 18, 10 + 2 * s, 1, M.trim); // 복부 구분선
+  f.rect(-4 - s, 20, 8 + 2 * s, 4, M.metal); // 가슴판
+  f.rect(-4 - s, 20, 1, 4, M.trim);          // 가슴판 옆선 — 가로줄만
+  f.rect(3 + s, 20, 1, 4, M.trim);           // 있으면 몸이 줄무늬가 된다
+  f.rect(-4 - s, 23, 8 + 2 * s, 1, M.accent);
+  f.rect(-2, 21, 4, 2, M.glow);              // 코어
 
-  f.rect(-10, 16, 4, 8, M.suit); // 팔
-  f.rect(6, 16, 4, 8, M.suit);
-  f.rect(-10, 19, 4, 1, M.trim); // 팔꿈치
-  f.rect(6, 19, 4, 1, M.trim);
-  f.rect(-10, 21, 4, 1, M.accent); // 팔뚝 보호대
-  f.rect(6, 21, 4, 1, M.accent);
-  f.rect(-11, 14, 5, 4, M.trim); // 장갑
-  f.rect(6, 14, 5, 4, M.trim);
-  f.rect(-11, 17, 5, 1, M.accent);
-  f.rect(6, 17, 5, 1, M.accent);
+  f.rect(-10 - s, 16, 4, 8, M.suit);         // 팔
+  f.rect(6 + s, 16, 4, 8, M.suit);
+  f.rect(-10 - s, 19, 4, 1, M.trim);         // 팔꿈치
+  f.rect(6 + s, 19, 4, 1, M.trim);
+  f.rect(-11 - s, 14, 5, 4, M.trim);         // 장갑
+  f.rect(6 + s, 14, 5, 4, M.trim);
+  f.rect(-11 - s, 16, 1, 2, M.suit);         // 엄지
+  f.rect(10 + s, 16, 1, 2, M.suit);
 
-  f.rect(-10, 23, 6, 5, M.metal); // 어깨 패드
-  f.rect(4, 23, 6, 5, M.metal);
-  f.rect(-10, 27, 6, 1, M.accent);
-  f.rect(4, 27, 6, 1, M.accent);
-  f.rect(-9, 24, 1, 1, M.accent); // 리벳
-  f.rect(8, 24, 1, 1, M.accent);
+  f.rect(-10 - s, 23, 6 + s, 5, M.metal);    // 어깨 패드
+  f.rect(4, 23, 6 + s, 5, M.metal);
+  f.rect(-10 - s, 27, 6 + s, 1, M.accent);
+  f.rect(4, 27, 6 + s, 1, M.accent);
+  f.rect(-9 - s, 24, 1, 1, M.accent);        // 리벳
+  f.rect(8 + s, 24, 1, 1, M.accent);
+  f.set(-10 - s, 27, M.none); f.set(9 + s, 27, M.none);
 
-  f.rect(-2, 26, 4, 2, M.trim);   // 목
+  f.rect(-2, 26, 4, 2, M.trim);              // 목
   // 머리는 대원마다 다르다 — HEADS 가 따로 그린다
 }
 
@@ -246,6 +278,7 @@ const HEADS: Record<string, Head> = {
     face(f);
     f.rect(-6, 35, 13, 5, M.suit);
     f.rect(-6, 39, 13, 1, M.metal);
+    bevel(f, -6, 35, 13, 5);
     f.rect(-2, 40, 5, 2, M.metal);   // 볏
     f.rect(-6, 35, 13, 1, M.accent); // 이마 띠
     f.rect(-7, 30, 3, 5, M.metal);   // 볼가리개
@@ -261,6 +294,7 @@ const HEADS: Record<string, Head> = {
     f.rect(-5, 35, 11, 4, M.suit);
     f.rect(-5, 38, 11, 1, M.metal);
     f.rect(-5, 35, 11, 1, M.accent);
+    bevel(f, -5, 35, 11, 4);
     f.rect(-9, 29, 4, 7, M.metal);   // 귀덮개
     f.rect(6, 29, 4, 7, M.metal);
     f.rect(-9, 32, 4, 1, M.accent);
@@ -272,19 +306,21 @@ const HEADS: Record<string, Head> = {
     face(f);
     // 마스크는 얼굴보다 넓게 튀어나와야 '쓴 것'으로 보인다. 얼굴 폭에
     // 딱 맞추면 그냥 살색 위에 얹은 띠로 읽힌다
-    f.rect(-6, 28, 13, 3, M.metal);  // 코 아래를 덮는 마스크
-    f.rect(-6, 30, 13, 1, M.trim);   // 마스크 윗단이 눈 밑에 드리운 그늘
-    f.rect(-6, 28, 13, 1, M.accent); // 아랫단
+    // 어깨 폭까지 넓히면 마스크가 아니라 목깃으로 읽힌다. 얼굴보다 한 칸씩만
+    // 넓게 두고, 대신 광대 위로 끈을 올려 '묶어 쓴 것'으로 만든다.
+    f.rect(-5, 28, 11, 3, M.metal);  // 코 아래를 덮는 마스크
+    f.rect(-5, 30, 11, 1, M.trim);   // 마스크 윗단이 눈 밑에 드리운 그늘
+    f.rect(-5, 28, 11, 1, M.accent); // 아랫단
     f.rect(-2, 29, 5, 1, M.trim);    // 배기 그릴
     f.set(-1, 29, M.metal); f.set(1, 29, M.metal);
-    f.rect(7, 28, 3, 4, M.metal);    // 옆으로 나온 필터통
-    f.rect(7, 30, 3, 1, M.accent);
-    f.rect(7, 31, 3, 1, M.trim);
-    f.rect(-7, 31, 2, 4, M.metal);   // 마스크 고정대
-    f.rect(5, 31, 2, 4, M.metal);
+    f.rect(-6, 30, 1, 5, M.trim);    // 광대를 타고 올라간 끈
+    f.rect(5, 30, 1, 5, M.trim);
+    f.rect(6, 28, 3, 4, M.metal);    // 옆으로 나온 필터통
+    f.rect(6, 30, 3, 1, M.accent);
     f.rect(-5, 35, 11, 4, M.suit);
     f.rect(-5, 38, 11, 1, M.metal);
     f.rect(-5, 35, 11, 1, M.accent);
+    bevel(f, -5, 35, 11, 4);
   },
   // 거울 — 제 빛에 눈이 상한다. 챙을 길게 빼서 그늘을 만든다
   '거울': (f) => {
@@ -344,6 +380,7 @@ const HEADS: Record<string, Head> = {
     face(f);
     f.rect(-5, 35, 11, 3, M.suit);
     f.rect(-5, 37, 11, 1, M.metal);
+    bevel(f, -5, 35, 11, 3);
     f.rect(-1, 38, 2, 5, M.metal);   // 볏
     f.rect(-1, 43, 2, 1, M.glow);
     f.rect(-5, 35, 11, 1, M.accent);
@@ -358,6 +395,7 @@ const HEADS: Record<string, Head> = {
     f.rect(-5, 28, 11, 3, M.trim);   // 입을 가린 천
     f.rect(-5, 30, 11, 1, M.suit);   // 천의 윗단
     f.rect(-6, 35, 12, 3, M.suit);
+    bevel(f, -6, 35, 12, 3);
     f.line(-5, 36, -12, 32, 3, M.suit);
     f.rect(-6, 34, 12, 1, M.trim);   // 이마에 드리운 그늘
     f.rect(-7, 31, 2, 4, M.suit);
@@ -365,7 +403,13 @@ const HEADS: Record<string, Head> = {
   },
 };
 
-type Build = (f: F) => void;
+/**
+ * 장비. s(체격)를 받는 이유는 하나뿐이다 — 체격이 바뀌면 손 위치가
+ * 같이 움직이는데, 무기를 고정 좌표에 그리면 손에서 떨어져 공중에 뜬다.
+ *
+ * 오른손: x 6+s .. 10+s, y 14..17   왼손: x -11-s .. -7-s, y 14..17
+ */
+type Build = (f: F, s: number) => void;
 interface Crew {
   name: string; suit: string; metal: string; glow: string;
   /** 살색 — 여기서 그늘·하이라이트를 파생한다 */
@@ -374,6 +418,8 @@ interface Crew {
   iris: string;
   /** 머리카락 — 헬멧 밖으로 나오는 대원만 실제로 보인다 */
   hair: string;
+  /** 체격 — -1 마른 / 0 보통 / +1 두꺼운 */
+  bulk: -1 | 0 | 1;
   build: Build;
 }
 
@@ -382,21 +428,24 @@ const CREW: Crew[] = [
   {
     name: '못', suit: '#3f4756', metal: '#aab4c2', glow: '#ff9a4c', skin: '#e0a882',
     iris: '#c9743c', hair: '#2e2a30',
-    build: (f) => {
-      f.line(9, 23, 20, 29, 7, M.metal);
-      f.line(9, 25, 19, 31, 2, M.trim);
-      f.rect(7, 20, 6, 7, M.trim);
-      f.rect(18, 27, 3, 3, M.accent);
+    bulk: 1,
+    build: (f, s) => {
+      const hx = 8 + s;                              // 오른손
+      f.rect(hx - 2, 13, 6, 6, M.trim);              // 손에 쥔 뭉치
+      f.line(hx + 2, 17, hx + 13, 23, 7, M.metal);   // 위로 겨눈 캐논
+      f.line(hx + 2, 19, hx + 12, 25, 2, M.trim);
+      f.rect(hx + 11, 22, 3, 3, M.accent);           // 총구
     },
   },
   {
     name: '종', suit: '#6b5a34', metal: '#c9a04a', glow: '#ffe08a', skin: '#c98c62',
     iris: '#e0b45a', hair: '#4a3824',
-    build: (f) => {
+    bulk: 1,
+    build: (f, s) => {
       // 등에 매달면 무슨 모양이든 망토로 읽힌다 — 손에 들려 낮게 내린다.
       // 위가 통이고 아래만 벌어져야 종이 된다.
       const bx = 15;
-      f.rect(bx - 1, 13, 2, 5, M.trim);
+      f.line(8 + s, 15, bx, 13, 2, M.trim);          // 오른손에서 내려간 줄
       for (let i = 0; i < 9; i++) {
         const w = i < 5 ? 5 : Math.min(9, 5 + (i - 4) * 2);
         f.rect(bx - Math.floor(w / 2), 12 - i, w, 1, M.metal);
@@ -410,7 +459,8 @@ const CREW: Crew[] = [
   {
     name: '불씨', suit: '#7a3f2e', metal: '#7d858f', glow: '#ff6a2c', skin: '#f0c6a0',
     iris: '#ff8a44', hair: '#3a241c',
-    build: (f) => {
+    bulk: 0,
+    build: (f, s) => {
       f.rect(-17, 15, 5, 17, M.metal);
       f.rect(-17, 32, 5, 2, M.trim);
       f.rect(-17, 27, 5, 1, M.accent);
@@ -418,15 +468,18 @@ const CREW: Crew[] = [
       f.rect(-11, 31, 5, 2, M.trim);
       f.rect(-11, 26, 5, 1, M.accent);
       f.line(-14, 32, -8, 31, 2, M.trim);
-      f.rect(7, 21, 11, 4, M.metal);
-      f.rect(7, 21, 11, 1, M.trim);
-      f.rect(17, 22, 2, 2, M.glow);
+      const hx = 6 + s;                              // 오른손
+      f.rect(hx + 1, 14, 11, 4, M.metal);            // 손에서 뻗은 노즐
+      f.rect(hx + 1, 14, 11, 1, M.trim);
+      f.rect(hx + 12, 15, 2, 2, M.glow);
     },
   },
   {
-    name: '거울', suit: '#49505e', metal: '#d8dfe8', glow: '#eaf6ff', skin: '#e8b48c',
+    name: '거울', suit: '#49505e', metal: '#b6c2d2', glow: '#eaf6ff', skin: '#e8b48c',
     iris: '#9fd8ff', hair: '#6e7280',
-    build: (f) => {
+    bulk: 0,
+    build: (f, s) => {
+      f.line(-9 - s, 16, -14, 21, 3, M.metal);       // 왼손에서 올린 자루
       f.disc(-14, 22, 8, M.metal);
       f.disc(-14, 22, 6, M.accent);
       f.disc(-14, 22, 4, M.glow);
@@ -436,16 +489,19 @@ const CREW: Crew[] = [
   {
     name: '바늘', suit: '#25514e', metal: '#8fa8a4', glow: '#5ce0d0', skin: '#a8734c',
     iris: '#5ce0d0', hair: '#1e3a36',
-    build: (f) => {
-      f.rect(5, 21, 25, 2, M.metal);       // 아주 긴 총열
-      f.rect(3, 19, 6, 6, M.trim);
-      f.rect(3, 23, 6, 1, M.accent);
-      f.rect(28, 21, 2, 2, M.glow);
+    bulk: -1,
+    build: (f, s) => {
+      const hx = 6 + s;                              // 오른손
+      f.rect(hx, 15, 24, 2, M.metal);                // 아주 긴 총열
+      f.rect(hx - 2, 13, 6, 6, M.trim);
+      f.rect(hx - 2, 17, 6, 1, M.accent);
+      f.rect(hx + 22, 15, 2, 2, M.glow);
     },
   },
   {
     name: '반딧불', suit: '#5b6a2e', metal: '#a3b268', glow: '#c8ff5c', skin: '#f0c6a0',
     iris: '#c2e85a', hair: '#40401f',
+    bulk: -1,
     build: (f) => {
       f.rect(-15, 23, 7, 8, M.metal);
       f.rect(8, 23, 7, 8, M.metal);
@@ -462,35 +518,41 @@ const CREW: Crew[] = [
   {
     name: '도끼', suit: '#6b4326', metal: '#b3bcc7', glow: '#ff7a5a', skin: '#c98c62',
     iris: '#e8664a', hair: '#8a4526',
-    build: (f) => {
-      f.line(-11, 31, -5, 13, 3, M.trim);
-      f.crescent(-11, 31, 9, 4, -1, M.metal);
-      f.crescent(-11, 31, 6, 4, -1, M.accent);
+    bulk: 1,
+    build: (f, s) => {
+      const hx = -9 - s;                             // 왼손
+      f.line(hx + 1, 9, hx - 3, 30, 3, M.trim);      // 손을 관통하는 자루
+      f.crescent(hx - 3, 30, 9, 4, -1, M.metal);
+      f.crescent(hx - 3, 30, 6, 4, -1, M.accent);
     },
   },
   {
     name: '작살', suit: '#2f3f6b', metal: '#93a6c8', glow: '#7cc4ff', skin: '#e0a882',
     iris: '#7cc4ff', hair: '#22385c',
-    build: (f) => {
-      f.rect(11, 3, 3, 42, M.metal);
-      f.rect(11, 20, 3, 2, M.accent);
-      f.rect(10, 45, 5, 5, M.metal);
-      f.rect(8, 42, 2, 5, M.metal);
-      f.rect(15, 42, 2, 5, M.metal);
-      f.rect(11, 47, 3, 3, M.glow);
+    bulk: 0,
+    build: (f, s) => {
+      const hx = 7 + s;                              // 오른손을 지나가는 자루
+      f.rect(hx, 3, 3, 42, M.metal);
+      f.rect(hx, 20, 3, 2, M.accent);
+      f.rect(hx - 1, 45, 5, 5, M.metal);
+      f.rect(hx - 3, 42, 2, 5, M.metal);             // 미늘
+      f.rect(hx + 4, 42, 2, 5, M.metal);
+      f.rect(hx, 47, 3, 3, M.glow);
     },
   },
   {
     name: '사슬', suit: '#3a3446', metal: '#b3a6ce', glow: '#c79bee', skin: '#a8734c',
     iris: '#c79bee', hair: '#2a2438',
-    build: (f) => {
-      f.disc(-11, 16, 5, M.metal);
-      f.disc(-11, 16, 2, M.trim);
-      f.disc(-13, 11, 4, M.metal);
-      f.rect(-9, 13, 6, 6, M.trim);
-      f.line(9, 17, 15, 23, 3, M.trim);
-      f.crescent(15, 23, 6, 3, 1, M.metal);
-      f.crescent(15, 23, 6, 5, 1, M.glow);
+    bulk: -1,
+    build: (f, s) => {
+      f.disc(-11 - s, 16, 5, M.metal);               // 왼손에 쥔 추
+      f.disc(-11 - s, 16, 2, M.trim);
+      f.disc(-13 - s, 11, 4, M.metal);
+      f.rect(-9 - s, 13, 6, 6, M.trim);              // 늘어진 사슬
+      const hx = 8 + s;                              // 오른손
+      f.line(hx, 16, hx + 7, 23, 3, M.trim);
+      f.crescent(hx + 7, 23, 6, 3, 1, M.metal);
+      f.crescent(hx + 7, 23, 6, 5, 1, M.glow);
     },
   },
 ];
@@ -500,27 +562,37 @@ const at = (m: Uint8Array, x: number, y: number): number =>
   x < 0 || x >= CELL || y < 0 || y >= CELL ? 0 : m[y * CELL + x];
 
 /**
- * 가장자리를 읽어서 톤을 정한다. 빛은 왼쪽 위에서 온다.
- *   위가 비었으면       밝게
- *   위·좌상 둘 다 비면  림라이트
- *   아래가 비었으면     그림자
- * 빛 쪽/그늘 쪽으로 한 칸씩 더 번지게 해야 통이 납작한 판이 아니라
- * 원통으로 읽힌다.
+ * 형태광 — 실루엣 '전체'를 하나의 덩어리로 보고 빛을 먼저 깐다.
+ *
+ * 파츠 가장자리만 보고 톤을 정하면 작은 사각형마다 제 하이라이트가 생겨
+ * 몸이 잘게 부서진다. 조각조각은 입체인데 전체는 평평한, 종이를 오려
+ * 붙인 것 같은 그림이 나오는 게 그 때문이다.
+ *
+ * 광원 쪽(왼쪽 위)과 그늘 쪽(오른쪽 아래)으로 각각 몇 칸 만에 실루엣을
+ * 벗어나는지 재서 그 차이를 밝기로 쓴다. 가까운 쪽이 이긴다.
  */
-function toneOf(m: Uint8Array, cx: number, cy: number): number {
-  const up = at(m, cx, cy - 1);
-  const down = at(m, cx, cy + 1);
-  const upLeft = at(m, cx - 1, cy - 1);
-  const left = at(m, cx - 1, cy);
+const FORM_R = 6;
+function formTone(m: Uint8Array, cx: number, cy: number): number {
+  let lit = FORM_R + 1;
+  let sh = FORM_R + 1;
+  for (let i = 1; i <= FORM_R; i++) if (!at(m, cx - i, cy - i)) { lit = i; break; }
+  for (let i = 1; i <= FORM_R; i++) if (!at(m, cx + i, cy + i)) { sh = i; break; }
+  return Math.max(-2, Math.min(2, Math.round((sh - lit) / 2)));
+}
 
-  if (!up && !upLeft) return 4;
-  if (!up) return 3;
-  if (!left) return 3;
-  if (!down) return 0;
-  if (!at(m, cx + 1, cy)) return 1;
-  if (!at(m, cx - 2, cy)) return 3;
-  if (!at(m, cx + 2, cy)) return 1;
-  return 2;
+/**
+ * 파츠 경계 — 형태광 위에 얹는 잔 디테일. 여기서 세게 주면 다시 부서지니
+ * 한 단씩만 움직인다.
+ */
+function partTone(m: Uint8Array, cx: number, cy: number): number {
+  const mat = at(m, cx, cy);
+  const up = at(m, cx, cy - 1);
+  let d = 0;
+  if (!up) d += 1;                 // 실루엣 윗면 — 빛을 정면으로 받는다
+  else if (up !== mat) d -= 1;     // 다른 파츠가 위에 얹혔다 — 접촉 그림자
+  if (!at(m, cx, cy + 1)) d -= 1;  // 실루엣 밑면
+  if (!at(m, cx - 1, cy)) d += 1;  // 광원 쪽 옆면
+  return Math.max(-1, Math.min(1, d));
 }
 
 // ---------------------------------------------------------------- 출력
@@ -528,15 +600,17 @@ const rows = Math.ceil(CREW.length / COLS);
 const W = COLS * CELL * SCALE;
 const H = rows * CELL * SCALE;
 const png = new PNG({ width: W, height: H });
+const BG: RGB = [0x18, 0x1c, 0x25];
+const SHADOW: RGB = [0x0e, 0x10, 0x17];
 for (let i = 0; i < W * H; i++) {
-  png.data[i * 4] = 0x14; png.data[i * 4 + 1] = 0x16; png.data[i * 4 + 2] = 0x1b; png.data[i * 4 + 3] = 255;
+  png.data[i * 4] = BG[0]; png.data[i * 4 + 1] = BG[1]; png.data[i * 4 + 2] = BG[2]; png.data[i * 4 + 3] = 255;
 }
 
 CREW.forEach((c, idx) => {
   const f = new F();
-  body(f);
+  body(f, c.bulk);
   HEADS[c.name](f);
-  c.build(f);
+  c.build(f, c.bulk);
   const m = f.m;
 
   const suit = hex(c.suit);
@@ -560,6 +634,7 @@ CREW.forEach((c, idx) => {
   const ox = (idx % COLS) * CELL * SCALE;
   const oy = Math.floor(idx / COLS) * CELL * SCALE;
   const put = (x: number, y: number, col: RGB): void => {
+    if (x < 0 || x >= CELL || y < 0 || y >= CELL) return;
     for (let sy = 0; sy < SCALE; sy++) {
       for (let sx = 0; sx < SCALE; sx++) {
         const i = ((oy + y * SCALE + sy) * W + (ox + x * SCALE + sx)) * 4;
@@ -567,6 +642,16 @@ CREW.forEach((c, idx) => {
       }
     }
   };
+
+  // 바닥 그림자 — 발밑에 이게 없으면 서 있는 게 아니라 떠 있는 것으로
+  // 보인다. 캐릭터보다 먼저 깔아서 발이 그림자를 밟게 한다.
+  for (let y = 61; y <= 63; y++) {
+    for (let x = 20; x <= 44; x++) {
+      const dx = (x - 32) / 12;
+      const dy = (y - 63) / 2.2;
+      if (dx * dx + dy * dy <= 1) put(x, y, SHADOW);
+    }
+  }
 
   // 윤곽선 — 이웃 재질에서 색을 가져온다. 전부 같은 검정으로 두르면
   // 오려 붙인 스티커처럼 보인다. 빛 쪽 외곽은 조금 덜 어둡게 둔다.
@@ -587,18 +672,25 @@ CREW.forEach((c, idx) => {
       if (!mat) continue;
       // 발광체와 얼굴은 자동 음영을 안 먹인다. 이목구비가 한두 픽셀이라
       // 톤 램프를 태우면 눈·코·입이 서로 뭉개져 표정이 사라진다.
-      if (mat === M.glow) { put(x, y, R[mat].t[4]); continue; }
+      if (mat === M.glow) { put(x, y, R[mat].t[5]); continue; }
       if (mat === M.eye) { put(x, y, EYE); continue; }
       if (mat === M.white) { put(x, y, EYE_LIT); continue; }
       if (mat === M.iris) { put(x, y, iris); continue; }
       if (mat === M.skin) { put(x, y, sk[1]); continue; }
       if (mat === M.skinS) { put(x, y, sk[0]); continue; }
       if (mat === M.skinH) { put(x, y, sk[2]); continue; }
-      let tone = toneOf(m, x, y);
-      // 접촉 그림자 — 다른 파츠가 위에 얹혀 있으면 한 단 어둡게.
-      // 이 한 줄이 있어야 파츠가 겹쳐 놓인 것으로 보인다.
-      const above = at(m, x, y - 1);
-      if (above && above !== mat) tone = Math.max(0, tone - 1);
+      const form = formTone(m, x, y);
+      // 반사광 — 그늘 쪽 아랫면까지 완전히 죽이면 바닥에서 오려낸 것처럼
+      // 보인다. 하늘빛이 튀어오른 한 줄을 넣어 아래쪽을 띄운다.
+      if (form <= -1 && !at(m, x, y + 1) && at(m, x, y - 1)) {
+        put(x, y, R[mat].bounce);
+        continue;
+      }
+      // 형태광과 파츠 디테일을 그냥 더하면 둘이 겹칠 때 곧장 맨 위 칸까지
+      // 올라가 하얗게 날아간다. 위로는 두 단까지만 허용한다 —
+      // 제일 밝은 칸은 발광체 몫으로 남겨 둔다.
+      const d = Math.max(-3, Math.min(2, form + partTone(m, x, y)));
+      const tone = Math.max(0, Math.min(6, 3 + d));
       put(x, y, R[mat].t[tone]);
     }
   }
