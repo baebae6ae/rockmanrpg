@@ -21,9 +21,14 @@ const COLS = Number(process.env.CO ?? 3);
  * 재질 — 같은 재질끼리 같은 램프를 쓴다.
  *   suit  본체 색        trim  부츠·장갑·벨트 (본체에서 어둡게 파생)
  *   metal 장비           accent 밝은 테두리 (강조색을 음영 먹여 쓴다)
- *   glow  발광체         (음영을 안 먹이고 항상 최대 밝기)
+ *   glow  발광체         skin  얼굴
+ *   eye   눈동자         white 눈빛
+ * glow·eye·white 는 음영을 안 먹인다 — 작아서 톤을 먹이면 뭉개진다.
  */
-const enum M { none = 0, suit = 1, trim = 2, metal = 3, accent = 4, glow = 5 }
+const enum M {
+  none = 0, suit = 1, trim = 2, metal = 3, accent = 4,
+  glow = 5, skin = 6, eye = 7, white = 8,
+}
 
 // ---------------------------------------------------------------- 색
 type RGB = [number, number, number];
@@ -38,6 +43,9 @@ const mix = (a: RGB, b: RGB, t: number): RGB => [
 const WHITE: RGB = [255, 255, 255];
 /** 어두운 쪽은 검정이 아니라 차가운 남색으로 민다 — 검정으로 내리면 도트가 죽는다 */
 const COOL: RGB = [22, 26, 44];
+/** 눈은 2px 밖에 안 돼서 음영을 먹이면 뭉개진다. 고정색으로 박는다 */
+const EYE: RGB = [26, 22, 40];
+const EYE_LIT: RGB = [246, 248, 255];
 
 /** 5단 램프 + 윤곽선 두 단(빛 쪽 / 그늘 쪽) */
 interface Ramp { t: RGB[]; edgeLit: RGB; edgeDark: RGB }
@@ -108,151 +116,187 @@ function body(f: F): void {
   f.rect(1, 0, 6, 5, M.trim);
   f.rect(-7, 4, 6, 1, M.accent);
   f.rect(1, 4, 6, 1, M.accent);
+  f.rect(-7, 1, 6, 1, M.metal);  // 발목 링
+  f.rect(1, 1, 6, 1, M.metal);
 
   f.rect(-5, 5, 4, 5, M.suit);   // 정강이
   f.rect(1, 5, 4, 5, M.suit);
   f.rect(-6, 9, 5, 3, M.metal);  // 무릎 판
   f.rect(1, 9, 5, 3, M.metal);
-  f.rect(-5, 11, 4, 4, M.suit);  // 허벅지
-  f.rect(1, 11, 4, 4, M.suit);
+  f.rect(-6, 11, 5, 1, M.accent);
+  f.rect(1, 11, 5, 1, M.accent);
+  f.rect(-5, 12, 4, 4, M.suit);  // 허벅지
+  f.rect(1, 12, 4, 4, M.suit);
+  f.rect(-5, 15, 4, 1, M.trim);
+  f.rect(1, 15, 4, 1, M.trim);
 
-  f.rect(-4, 14, 8, 4, M.suit);  // 허리
-  f.rect(-5, 12, 10, 2, M.trim); // 벨트
-  f.rect(-1, 12, 2, 2, M.accent);
+  f.rect(-4, 15, 8, 4, M.suit);  // 허리
+  f.rect(-5, 13, 10, 2, M.trim); // 벨트
+  f.rect(-1, 13, 2, 2, M.accent);
 
-  f.rect(-6, 17, 12, 8, M.suit); // 가슴
-  f.rect(-5, 17, 10, 1, M.trim); // 복부 구분선
-  f.rect(-4, 19, 8, 4, M.metal); // 가슴판
-  f.rect(-2, 20, 4, 2, M.glow);  // 코어
+  f.rect(-6, 18, 12, 8, M.suit); // 가슴
+  f.rect(-5, 18, 10, 1, M.trim); // 복부 구분선
+  f.rect(-4, 20, 8, 4, M.metal); // 가슴판
+  f.rect(-4, 23, 8, 1, M.accent);
+  f.rect(-2, 21, 4, 2, M.glow);  // 코어
 
-  f.rect(-10, 15, 4, 8, M.suit); // 팔
-  f.rect(6, 15, 4, 8, M.suit);
-  f.rect(-10, 18, 4, 1, M.trim); // 팔꿈치
-  f.rect(6, 18, 4, 1, M.trim);
-  f.rect(-11, 13, 5, 4, M.trim); // 장갑
-  f.rect(6, 13, 5, 4, M.trim);
-  f.rect(-11, 16, 5, 1, M.accent);
-  f.rect(6, 16, 5, 1, M.accent);
+  f.rect(-10, 16, 4, 8, M.suit); // 팔
+  f.rect(6, 16, 4, 8, M.suit);
+  f.rect(-10, 19, 4, 1, M.trim); // 팔꿈치
+  f.rect(6, 19, 4, 1, M.trim);
+  f.rect(-10, 21, 4, 1, M.accent); // 팔뚝 보호대
+  f.rect(6, 21, 4, 1, M.accent);
+  f.rect(-11, 14, 5, 4, M.trim); // 장갑
+  f.rect(6, 14, 5, 4, M.trim);
+  f.rect(-11, 17, 5, 1, M.accent);
+  f.rect(6, 17, 5, 1, M.accent);
 
-  f.rect(-10, 22, 6, 5, M.metal); // 어깨 패드
-  f.rect(4, 22, 6, 5, M.metal);
-  f.rect(-10, 26, 6, 1, M.accent);
-  f.rect(4, 26, 6, 1, M.accent);
+  f.rect(-10, 23, 6, 5, M.metal); // 어깨 패드
+  f.rect(4, 23, 6, 5, M.metal);
+  f.rect(-10, 27, 6, 1, M.accent);
+  f.rect(4, 27, 6, 1, M.accent);
+  f.rect(-9, 24, 1, 1, M.accent); // 리벳
+  f.rect(8, 24, 1, 1, M.accent);
 
-  f.rect(-2, 25, 4, 2, M.trim);   // 목
+  f.rect(-2, 26, 4, 2, M.trim);   // 목
   // 머리는 대원마다 다르다 — HEADS 가 따로 그린다
+}
+
+/**
+ * 얼굴 — 록맨류의 핵심은 "헬멧이 얼굴을 감싸되 가리지 않는다"는 것이다.
+ * 바이저로 덮어버리면 로봇이 되고, 눈이 보이면 사람이 된다.
+ *
+ * 2px 짜리 눈에 1px 눈빛을 찍는 게 표정을 만드는 전부다. 이 한 점이
+ * 없으면 눈이 아니라 검은 구멍으로 보인다.
+ */
+function face(f: F): void {
+  f.rect(-3, 29, 7, 5, M.skin);
+  f.rect(-3, 29, 7, 1, M.trim);   // 턱 그늘
+  f.rect(-3, 31, 2, 2, M.eye);
+  f.rect(1, 31, 2, 2, M.eye);
+  f.rect(-3, 32, 1, 1, M.white);  // 눈빛
+  f.rect(1, 32, 1, 1, M.white);
 }
 
 /**
  * 머리 — 아홉을 가르는 제일 중요한 파츠.
  *
- * 얼굴이 전부 같으면 색만 바꾼 같은 사람으로 보인다. 그래서 각자
- * 하는 일에 맞는 머리를 준다. 불을 지르는 놈은 방독면을 쓰고,
- * 제일 시끄러운 무기를 든 놈은 귀를 막고, 저격수는 한쪽 눈만 내놓는다.
+ * 각자 하는 일에서 머리 모양이 나오게 잡았다. 불을 지르는 놈은 방독면을
+ * 쓰고, 제일 시끄러운 무기를 든 놈은 귀를 막고, 저격수는 한쪽 눈을
+ * 조준경으로 덮는다 — 설정이 생김새를 설명해야 기억에 남는다.
  *
- * 다만 셋은 공통으로 지킨다 — 빛나는 눈, 아래쪽 턱 그늘, 폭 8~11px.
- * 이게 있어야 얼굴이 다 달라도 여전히 한 팀으로 읽힌다.
+ * 전부 face() 를 먼저 깔고 그 위에 헬멧을 두른다.
+ * 얼굴 자리(x -3..3, y 29..34)를 비워두는 게 규칙이다.
  */
 type Head = (f: F) => void;
 
 const HEADS: Record<string, Head> = {
-  // 못 — 정면으로 얻어맞는 자리다. 통짜 방호 헬멧에 가로 슬릿 하나
+  // 못 — 정면으로 얻어맞는 자리다. 두꺼운 통짜 헬멧에 볼가리개까지
   '못': (f) => {
-    f.rect(-5, 27, 11, 9, M.suit);
-    f.rect(-5, 34, 11, 2, M.metal);
-    f.rect(-2, 36, 5, 2, M.metal);      // 짧은 볏
-    f.rect(-4, 30, 9, 2, M.glow);       // 가로 슬릿
-    f.rect(-5, 32, 11, 1, M.accent);
-    f.rect(-5, 27, 11, 1, M.trim);
+    face(f);
+    f.rect(-5, 34, 11, 4, M.suit);
+    f.rect(-5, 37, 11, 2, M.metal);
+    f.rect(-2, 39, 5, 2, M.metal);
+    f.rect(-5, 33, 11, 1, M.accent);
+    f.rect(-6, 30, 3, 5, M.metal);
+    f.rect(4, 30, 3, 5, M.metal);
+    f.rect(-6, 32, 3, 1, M.accent);
+    f.rect(4, 32, 3, 1, M.accent);
   },
   // 종 — 자기 무기가 제일 시끄럽다. 귀를 크게 덮는다
   '종': (f) => {
-    f.rect(-4, 28, 9, 8, M.suit);
-    f.rect(-7, 29, 3, 5, M.metal);
-    f.rect(5, 29, 3, 5, M.metal);
-    f.rect(-7, 31, 3, 1, M.accent);
-    f.rect(5, 31, 3, 1, M.accent);
-    f.rect(-4, 34, 9, 2, M.metal);
-    f.rect(-2, 30, 6, 3, M.glow);
-    f.rect(-4, 28, 9, 1, M.trim);
+    face(f);
+    f.rect(-4, 34, 9, 4, M.suit);
+    f.rect(-4, 37, 9, 1, M.metal);
+    f.rect(-4, 33, 9, 1, M.accent);
+    f.rect(-8, 29, 4, 6, M.metal);
+    f.rect(4, 29, 4, 6, M.metal);
+    f.rect(-8, 31, 4, 1, M.accent);
+    f.rect(4, 31, 4, 1, M.accent);
   },
-  // 불씨 — 불을 지르는 놈이라 방독면. 앞으로 필터통이 튀어나온다.
-  // 둥근 고글 둘은 이 크기에서 서로 뭉쳐 지저분해진다 — 네모로 또렷하게 뗀다
+  // 불씨 — 불을 지르는 놈이라 방독면. 입은 가리고 눈은 내놓는다
   '불씨': (f) => {
-    f.rect(-5, 28, 10, 8, M.suit);
-    f.rect(-5, 34, 10, 2, M.metal);
-    f.rect(-5, 28, 10, 1, M.trim);
-    f.rect(-4, 29, 9, 3, M.metal);      // 얼굴 아래를 덮는 마스크
+    face(f);
+    f.rect(-4, 29, 9, 2, M.metal);
     f.rect(-4, 29, 9, 1, M.trim);
-    f.rect(5, 29, 3, 3, M.metal);       // 앞으로 나온 필터통
+    f.rect(5, 29, 3, 3, M.metal);   // 앞으로 나온 필터통
     f.rect(5, 30, 3, 1, M.accent);
-    f.rect(-4, 32, 3, 2, M.glow);       // 고글 둘
-    f.rect(1, 32, 3, 2, M.glow);
+    f.rect(-6, 31, 2, 3, M.metal);
+    f.rect(-5, 34, 10, 4, M.suit);
+    f.rect(-5, 37, 10, 1, M.metal);
+    f.rect(-5, 33, 10, 1, M.accent);
   },
-  // 거울 — 제 빛에 눈이 상한다. 챙을 길게 빼고 바이저를 넓게
+  // 거울 — 제 빛에 눈이 상한다. 챙을 길게 빼서 그늘을 만든다
   '거울': (f) => {
-    f.rect(-5, 28, 10, 8, M.suit);
-    f.rect(-7, 33, 14, 2, M.metal);     // 양옆으로 나온 챙
-    f.rect(-7, 33, 14, 1, M.accent);
-    f.rect(-4, 29, 9, 3, M.glow);
-    f.rect(-5, 28, 10, 1, M.trim);
+    face(f);
+    f.rect(-5, 34, 10, 3, M.suit);
+    f.rect(-7, 36, 14, 2, M.metal);
+    f.rect(-7, 36, 14, 1, M.accent);
+    f.rect(-5, 33, 10, 1, M.trim);  // 챙이 드리운 그늘
+    f.rect(-6, 30, 2, 4, M.metal);
+    f.rect(5, 30, 2, 4, M.metal);
   },
-  // 바늘 — 후드에 조준경. 한쪽 눈만 내놓는다
+  // 바늘 — 후드. 조준경이 한쪽 눈을 덮는다
   '바늘': (f) => {
-    f.rect(-6, 27, 11, 9, M.suit);
-    f.line(-5, 35, -12, 28, 4, M.suit); // 후드 뒷자락
-    f.rect(-6, 33, 11, 1, M.accent);
-    f.rect(-3, 30, 4, 3, M.glow);
-    f.rect(2, 31, 3, 1, M.metal);       // 조준경 팔
-    f.rect(-6, 27, 11, 1, M.trim);
+    face(f);
+    f.rect(-6, 33, 12, 5, M.suit);
+    f.line(-5, 37, -12, 30, 4, M.suit);
+    f.rect(-6, 32, 12, 1, M.trim);  // 후드가 드리운 그늘
+    f.rect(1, 30, 5, 3, M.metal);   // 조준경 — 오른눈을 덮는다
+    f.rect(4, 31, 2, 2, M.glow);
   },
   // 반딧불 — 유도탄을 부리려면 안테나가 있어야 한다
   '반딧불': (f) => {
-    f.rect(-4, 28, 9, 7, M.suit);
-    f.rect(-4, 34, 9, 1, M.metal);
-    f.rect(-3, 35, 1, 4, M.metal);
-    f.rect(3, 35, 1, 4, M.metal);
-    f.rect(-3, 39, 1, 1, M.glow);
-    f.rect(3, 39, 1, 1, M.glow);
-    f.rect(-3, 30, 7, 3, M.glow);
-    f.rect(-4, 28, 9, 1, M.trim);
+    face(f);
+    f.rect(-4, 34, 9, 4, M.suit);
+    f.rect(-4, 37, 9, 1, M.metal);
+    f.rect(-4, 33, 9, 1, M.accent);
+    f.rect(-3, 38, 1, 4, M.metal);
+    f.rect(3, 38, 1, 4, M.metal);
+    f.rect(-3, 42, 1, 1, M.glow);
+    f.rect(3, 42, 1, 1, M.glow);
+    f.rect(-6, 30, 2, 4, M.metal);
+    f.rect(5, 30, 2, 4, M.metal);
   },
-  // 도끼 — 혼자 헬멧을 안 쓴다. 맨머리에 머리띠 하나, 두 눈이 다 보인다
+  // 도끼 — 혼자 헬멧을 안 쓴다. 맨머리에 머리띠 하나
   '도끼': (f) => {
-    f.rect(-4, 28, 8, 7, M.suit);
-    f.rect(-4, 33, 8, 2, M.accent);     // 머리띠
-    f.rect(-7, 33, 3, 2, M.accent);     // 뒤로 흐르는 자락
-    f.rect(-3, 30, 2, 2, M.glow);
-    f.rect(1, 30, 2, 2, M.glow);
-    f.rect(-4, 28, 8, 1, M.trim);
+    face(f);
+    f.rect(-4, 34, 9, 3, M.trim);   // 머리카락
+    f.rect(-5, 30, 1, 5, M.trim);   // 옆머리
+    f.rect(4, 30, 1, 5, M.trim);
+    f.rect(-4, 33, 9, 2, M.accent); // 머리띠
+    f.rect(-7, 33, 3, 2, M.accent); // 뒤로 흐르는 자락
   },
-  // 작살 — 위로 솟은 얇은 볏 + 세로 슬릿
+  // 작살 — 위로 솟은 얇은 볏 + 볼가리개
   '작살': (f) => {
-    f.rect(-5, 27, 10, 8, M.suit);
-    f.rect(-5, 34, 10, 1, M.metal);
-    f.rect(-1, 35, 2, 5, M.metal);      // 볏
-    f.rect(-1, 40, 2, 1, M.glow);
-    f.rect(-1, 29, 2, 5, M.glow);       // 세로 슬릿
-    f.rect(-5, 32, 10, 1, M.accent);
-    f.rect(-5, 27, 10, 1, M.trim);
+    face(f);
+    f.rect(-5, 34, 10, 3, M.suit);
+    f.rect(-5, 36, 10, 1, M.metal);
+    f.rect(-1, 37, 2, 5, M.metal);  // 볏
+    f.rect(-1, 42, 2, 1, M.glow);
+    f.rect(-5, 33, 10, 1, M.accent);
+    f.rect(-6, 29, 2, 5, M.metal);
+    f.rect(5, 29, 2, 5, M.metal);
   },
   // 사슬 — 아래 얼굴을 천으로 가리고 눈만 내놓는다
   '사슬': (f) => {
-    f.rect(-5, 28, 10, 8, M.suit);
-    f.rect(-5, 28, 10, 4, M.trim);      // 천 복면
-    f.line(-5, 30, -12, 26, 3, M.suit); // 뒤로 흐르는 자락
-    f.rect(-3, 32, 7, 2, M.glow);       // 눈
-    f.rect(-5, 35, 10, 1, M.accent);
+    face(f);
+    f.rect(-4, 29, 9, 2, M.trim);   // 입을 가린 천
+    f.rect(-5, 34, 10, 3, M.suit);
+    f.line(-5, 35, -12, 31, 3, M.suit);
+    f.rect(-5, 33, 10, 1, M.accent);
+    f.rect(-6, 30, 2, 4, M.suit);
+    f.rect(5, 30, 2, 4, M.suit);
   },
 };
 
 type Build = (f: F) => void;
-interface Crew { name: string; suit: string; metal: string; glow: string; build: Build }
+interface Crew { name: string; suit: string; metal: string; glow: string; skin: string; build: Build }
 
 /** 앞쪽 = 오른쪽(+x), 등 = 왼쪽(-x). 장비는 머리 상자를 침범하지 않는다. */
 const CREW: Crew[] = [
   {
-    name: '못', suit: '#3f4756', metal: '#aab4c2', glow: '#ff9a4c',
+    name: '못', suit: '#3f4756', metal: '#aab4c2', glow: '#ff9a4c', skin: '#e0a882',
     build: (f) => {
       f.line(9, 23, 20, 29, 7, M.metal);
       f.line(9, 25, 19, 31, 2, M.trim);
@@ -261,7 +305,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '종', suit: '#6b5a34', metal: '#c9a04a', glow: '#ffe08a',
+    name: '종', suit: '#6b5a34', metal: '#c9a04a', glow: '#ffe08a', skin: '#c98c62',
     build: (f) => {
       // 등에 매달면 무슨 모양이든 망토로 읽힌다 — 손에 들려 낮게 내린다.
       // 위가 통이고 아래만 벌어져야 종이 된다.
@@ -278,7 +322,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '불씨', suit: '#7a3f2e', metal: '#7d858f', glow: '#ff6a2c',
+    name: '불씨', suit: '#7a3f2e', metal: '#7d858f', glow: '#ff6a2c', skin: '#f0c6a0',
     build: (f) => {
       f.rect(-17, 15, 5, 17, M.metal);
       f.rect(-17, 32, 5, 2, M.trim);
@@ -293,16 +337,16 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '거울', suit: '#49505e', metal: '#d8dfe8', glow: '#eaf6ff',
+    name: '거울', suit: '#49505e', metal: '#d8dfe8', glow: '#eaf6ff', skin: '#e8b48c',
     build: (f) => {
-      f.disc(-13, 23, 9, M.metal);
-      f.disc(-13, 23, 7, M.accent);
-      f.disc(-13, 23, 5, M.glow);
-      f.disc(-13, 23, 2, M.metal);
+      f.disc(-14, 22, 8, M.metal);
+      f.disc(-14, 22, 6, M.accent);
+      f.disc(-14, 22, 4, M.glow);
+      f.disc(-14, 22, 2, M.metal);
     },
   },
   {
-    name: '바늘', suit: '#25514e', metal: '#8fa8a4', glow: '#5ce0d0',
+    name: '바늘', suit: '#25514e', metal: '#8fa8a4', glow: '#5ce0d0', skin: '#a8734c',
     build: (f) => {
       f.rect(5, 21, 25, 2, M.metal);       // 아주 긴 총열
       f.rect(3, 19, 6, 6, M.trim);
@@ -311,7 +355,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '반딧불', suit: '#5b6a2e', metal: '#a3b268', glow: '#c8ff5c',
+    name: '반딧불', suit: '#5b6a2e', metal: '#a3b268', glow: '#c8ff5c', skin: '#f0c6a0',
     build: (f) => {
       f.rect(-15, 23, 7, 8, M.metal);
       f.rect(8, 23, 7, 8, M.metal);
@@ -326,7 +370,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '도끼', suit: '#6b4326', metal: '#b3bcc7', glow: '#ff7a5a',
+    name: '도끼', suit: '#6b4326', metal: '#b3bcc7', glow: '#ff7a5a', skin: '#c98c62',
     build: (f) => {
       f.line(-11, 31, -5, 13, 3, M.trim);
       f.crescent(-11, 31, 9, 4, -1, M.metal);
@@ -334,7 +378,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '작살', suit: '#2f3f6b', metal: '#93a6c8', glow: '#7cc4ff',
+    name: '작살', suit: '#2f3f6b', metal: '#93a6c8', glow: '#7cc4ff', skin: '#e0a882',
     build: (f) => {
       f.rect(11, 3, 3, 42, M.metal);
       f.rect(11, 20, 3, 2, M.accent);
@@ -345,7 +389,7 @@ const CREW: Crew[] = [
     },
   },
   {
-    name: '사슬', suit: '#3a3446', metal: '#b3a6ce', glow: '#c79bee',
+    name: '사슬', suit: '#3a3446', metal: '#b3a6ce', glow: '#c79bee', skin: '#a8734c',
     build: (f) => {
       f.disc(-11, 16, 5, M.metal);
       f.disc(-11, 16, 2, M.trim);
@@ -409,6 +453,9 @@ CREW.forEach((c, idx) => {
     [M.metal]: ramp(c.metal),
     [M.accent]: ramp(c.glow),
     [M.glow]: ramp(c.glow),
+    [M.skin]: ramp(c.skin),
+    [M.eye]: ramp(EYE),
+    [M.white]: ramp(EYE_LIT),
   };
 
   const ox = (idx % COLS) * CELL * SCALE;
@@ -439,7 +486,10 @@ CREW.forEach((c, idx) => {
     for (let x = 0; x < CELL; x++) {
       const mat = m[y * CELL + x];
       if (!mat) continue;
-      if (mat === M.glow) { put(x, y, R[mat].t[4]); continue; } // 발광체는 음영을 안 먹인다
+      // 발광체·눈은 음영을 안 먹인다 — 2px 짜리에 톤을 먹이면 뭉개진다
+      if (mat === M.glow) { put(x, y, R[mat].t[4]); continue; }
+      if (mat === M.eye) { put(x, y, EYE); continue; }
+      if (mat === M.white) { put(x, y, EYE_LIT); continue; }
       let tone = toneOf(m, x, y);
       // 접촉 그림자 — 다른 파츠가 위에 얹혀 있으면 한 단 어둡게.
       // 이 한 줄이 있어야 파츠가 겹쳐 놓인 것으로 보인다.
