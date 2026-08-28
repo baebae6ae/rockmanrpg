@@ -356,6 +356,44 @@ const STYLE_DESC: Record<Style, string> = {
   saber: '근접이지만 넓게 베는 강타',
 };
 
+/**
+ * 대원별 공격 서명.
+ *
+ * 방식(차지/연사/세이버)은 밸런스의 뼈대라 그대로 두되, 같은 방식을 쓰는
+ * 넷이 색만 다른 같은 총을 쏘면 아홉을 만든 의미가 없다. 그래서 '무엇을
+ * 쏘는가'를 대원마다 다르게 잡는다.
+ *
+ * 세이버 셋은 모양만 바꾸면 거짓말이 된다 — 전방위 파문을 그려 놓고
+ * 판정은 부채꼴이면 안 닿는 이유를 알 수가 없다. 그래서 판정도 같이
+ * 바꾸되 넓이(0.5·span·r²)를 맞춰 뒀다. 셋 다 6050±60 이라 세이버끼리의
+ * 초당 위력은 그대로다.
+ *   종   2π  × 44  전방위로 짧게      도끼 1.08π × 60  넓은 부채꼴
+ *   사슬 0.6π × 80  길게 뻗는 얇은 낫
+ */
+type ShotLook = 'nail' | 'lance' | 'needle' | 'harpoon' | 'ember' | 'firefly';
+type SaberLook = 'ring' | 'fan' | 'crescent';
+
+interface Sig {
+  shot?: ShotLook;
+  saber?: SaberLook;
+  arcR?: number;
+  arcSpan?: number;
+  /** 유도 세기(rad/s). 반딧불만 쓴다 */
+  homing?: number;
+}
+
+const SIG: Record<string, Sig> = {
+  nail: { shot: 'nail' },                                     // 굵고 짧은 대못
+  mirror: { shot: 'lance' },                                  // 각진 빛의 조각
+  needle: { shot: 'needle' },                                 // 가늘고 긴 침
+  harpoon: { shot: 'harpoon' },                               // 촉 + 뒤로 끌리는 줄
+  ember: { shot: 'ember' },                                   // 번지는 불티
+  firefly: { shot: 'firefly', homing: 2.2 },                  // 알아서 따라간다
+  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2 },
+  axe: { saber: 'fan', arcR: 60, arcSpan: Math.PI * 1.08 },
+  chain: { saber: 'crescent', arcR: 80, arcSpan: Math.PI * 0.6 },
+};
+
 const STYLE_NAME: Record<Style, string> = {
   charge: '차지 버스터',
   rapid: '연사',
@@ -391,6 +429,8 @@ interface Arc {
   life: number;
   max: number;
   color: number;
+  /** 그리는 방식. 특수무기가 만드는 자국은 기본 부채꼴이다 */
+  look?: SaberLook;
 }
 
 interface Upgrade {
@@ -788,6 +828,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let charDef: HordeChar = CHAR_DEFS[0];
   let shotColor = 0xff8a2c;
   let shotCore = 0xfff0b0;
+  /** 이번 판 주무기의 생김새. 한 판 안에서는 안 바뀐다 */
+  let shotLook: ShotLook = 'nail';
+  let saberLook: SaberLook = 'fan';
+  let shotHoming = 0;
 
   const droneG = new Graphics();
   const petG = new Graphics();
@@ -1040,8 +1084,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (phase === 'boss_select') {
       for (let i = 0; i < bossSelRects.length && i < bossPickList.length; i++) {
         if (!inside(bossSelRects[i])) continue;
-        bossSelIndex = i;
-        chooseBoss();
+        // 캐릭터 선택과 같은 두 단계. 여기는 설명을 못 읽어서가 아니라
+        // 잘못 짚은 손가락 하나로 보스전이 바로 시작되기 때문이다.
+        if (i === bossSelIndex) chooseBoss();
+        else bossSelIndex = i;
         break;
       }
       return;
@@ -1352,13 +1398,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       pierce: w.pierce,
       lastHit: null,
       alive: true,
-      // 차지는 크고 느린 덩어리, 연사는 작고 빠른 실선
+      // 모양은 대원 서명이 정한다. shape 은 판정·묶음 처리용이고
+      // 실제로 화면에 뭘 그릴지는 shotLook 이 정한다
       shape: w.style === 'charge' ? 'orb' : 'tracer',
       color: shotColor,
-      r: w.style === 'charge' ? 7 : 2,
+      r: w.style === 'charge' ? (shotLook === 'needle' ? 4 : 7) : shotLook === 'ember' ? 3 : 2,
       spin: 0,
-      angle: 0,
-      homing: 0,
+      angle: ax,
+      homing: shotHoming,
       boomR: 0,
       boomDmg: 0,
       back: 0,
@@ -1446,7 +1493,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    * 여러 마리를 베고 밀쳐내서, 파고들어 쓸어내는 방식으로 성립하게 했다.
    */
   function swingSaber(angle: number): void {
-    arcs.push({ x: px, y: py - 10, angle, r: w.arcR, span: w.arcSpan, life: 0.16, max: 0.16, color: shotColor });
+    arcs.push({
+      x: px, y: py - 10, angle, r: w.arcR, span: w.arcSpan,
+      life: 0.16, max: 0.16, color: shotColor, look: saberLook,
+    });
     shake = Math.max(shake, 1.5);
 
     const half = w.arcSpan / 2;
@@ -3127,6 +3177,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     w.drones = 0; w.magnet = 40;
     legsMul = 1; baseMagnet = 40; armorBanner = 0; armorGot = null;
     w.arcR = 50; w.arcSpan = Math.PI * 1.1;
+    const sig = SIG[charDef.id] ?? {};
+    shotLook = sig.shot ?? 'nail';
+    saberLook = sig.saber ?? 'fan';
+    shotHoming = sig.homing ?? 0;
 
     // 초당 위력은 세 방식이 비슷하게 두고, 그 위력을 어떻게 꺼내느냐만
     // 다르게 한다 — 한 방이 큰가, 자잘하게 많은가, 붙어서 쓸어내는가.
@@ -3142,7 +3196,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       w.interval = 0.42;
       w.dmg = 12 + Math.round(si.power * 0.75);
       w.shots = 1; w.spread = 0; w.pierce = 0;
-      w.arcR = 60; w.arcSpan = Math.PI * 1.08;
+      // 넓이를 맞춰 둔 값이라 셋 다 초당 위력이 같다 — SIG 주석 참고
+      w.arcR = sig.arcR ?? 60;
+      w.arcSpan = sig.arcSpan ?? Math.PI * 1.08;
       w.baseDmg = w.dmg;
     } else {
       w.interval = 0.3;
@@ -3350,7 +3406,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossSelG.rect(W / 2 - 60, 40, 120, 2).fill({ color: 0x8ef0ff, alpha: 0.7 });
 
     const picked = bossPickList[bossSelIndex];
-    bossSelHint.text = picked ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ 눌러서 도전` : '';
+    bossSelHint.text = picked
+      ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ ${touchMode ? '다시 눌러서' : '눌러서'} 도전`
+      : '';
   }
 
   /** 고른 보스로 문을 연다 — 실제 등장은 bossIntroT 연출이 끝난 뒤다 */
@@ -4233,48 +4291,139 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    // 탄 — 궤적 선 두 겹(넓은 잔광 + 밝은 심지). 각각 stroke 는 한 번씩만.
+    // 주무기 탄 — 대원 서명(shotLook)마다 다르게 그린다.
+    //
+    // 여기가 통째로 하나였을 때는 아홉이 색만 다른 같은 총을 쐈다.
+    // 한 판 안에서 생김새가 안 바뀌므로 탄마다 분기하지 않고 판 시작에
+    // 정해진 shotLook 으로 한 번만 갈라 — 도형 묶음 그리기를 유지한다.
     bulletG.clear();
-    let drew = false;
+    const mine: Bullet[] = [];
     for (const b of bullets) {
-      if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
-      bulletG.moveTo(b.x - b.vx * 0.028, b.y - b.vy * 0.028).lineTo(b.x, b.y);
-      drew = true;
-    }
-    if (drew) {
-      // 밝아진 배경에 탄이 묻히지 않도록 어두운 외곽선을 먼저 깐다
-      bulletG.stroke({ color: 0x0a1024, width: 7, alpha: 0.55 });
-      for (const b of bullets) {
-        if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
-        bulletG.moveTo(b.x - b.vx * 0.028, b.y - b.vy * 0.028).lineTo(b.x, b.y);
-      }
-      bulletG.stroke({ color: shotColor, width: 5, alpha: 0.55 });
-      for (const b of bullets) {
-        if (b.shape !== 'tracer' || !onScreen(b.x, b.y)) continue;
-        bulletG.moveTo(b.x - b.vx * 0.016, b.y - b.vy * 0.016).lineTo(b.x, b.y);
-      }
-      bulletG.stroke({ color: shotCore, width: 3 });
+      if (b.color !== shotColor || !onScreen(b.x, b.y)) continue;
+      if (b.shape === 'tracer' || b.shape === 'orb') mine.push(b);
     }
 
-    // 차지 탄 — 크고 둥근 덩어리. 궤적선과 달리 원으로 그린다.
-    let orbAny = false;
-    for (const b of bullets) {
-      if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
-      bulletG.circle(b.x, b.y, b.r + 2);
-      orbAny = true;
-    }
-    if (orbAny) {
-      bulletG.fill({ color: 0x0a1024, alpha: 0.55 });
-      for (const b of bullets) {
-        if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
-        bulletG.circle(b.x, b.y, b.r);
+    if (mine.length) {
+      /** 진행 방향 단위벡터. 세로가 눌린 좌표라 vy 를 그대로 쓴다 */
+      const dir = (b: Bullet): [number, number] => {
+        const l = Math.hypot(b.vx, b.vy) || 1;
+        return [b.vx / l, b.vy / l];
+      };
+
+      if (shotLook === 'needle') {
+        // 바늘 — 아주 가늘고 긴 침. 길이로 사거리를 읽게 한다
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 16, b.y - dy * 16).lineTo(b.x + dx * 4, b.y + dy * 4);
+        }
+        bulletG.stroke({ color: 0x0a1024, width: 5, alpha: 0.55 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 16, b.y - dy * 16).lineTo(b.x + dx * 4, b.y + dy * 4);
+        }
+        bulletG.stroke({ color: shotColor, width: 3 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 6, b.y - dy * 6).lineTo(b.x + dx * 4, b.y + dy * 4);
+        }
+        bulletG.stroke({ color: shotCore, width: 1 });
+      } else if (shotLook === 'nail') {
+        // 못 — 굵고 짧은 대못. 머리가 뒤에 붙어 있어야 못으로 보인다
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 9, b.y - dy * 9).lineTo(b.x + dx * 3, b.y + dy * 3);
+        }
+        bulletG.stroke({ color: 0x0a1024, width: 9, alpha: 0.6 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 8, b.y - dy * 8).lineTo(b.x + dx * 3, b.y + dy * 3);
+        }
+        bulletG.stroke({ color: shotColor, width: 5 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.rect(b.x - dx * 11 - 3, b.y - dy * 11 - 3, 6, 6);  // 못머리
+        }
+        bulletG.fill({ color: shotCore });
+      } else if (shotLook === 'lance') {
+        // 거울 — 각진 빛 조각. 둥글게 하면 다른 넷과 구별이 안 된다
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          const nx = -dy;
+          const ny = dx;
+          bulletG.moveTo(b.x + dx * 10, b.y + dy * 10)
+            .lineTo(b.x + nx * 4, b.y + ny * 4)
+            .lineTo(b.x - dx * 10, b.y - dy * 10)
+            .lineTo(b.x - nx * 4, b.y - ny * 4)
+            .closePath();
+        }
+        bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          const nx = -dy;
+          const ny = dx;
+          bulletG.moveTo(b.x + dx * 8, b.y + dy * 8)
+            .lineTo(b.x + nx * 3, b.y + ny * 3)
+            .lineTo(b.x - dx * 8, b.y - dy * 8)
+            .lineTo(b.x - nx * 3, b.y - ny * 3)
+            .closePath();
+        }
+        bulletG.fill({ color: shotColor });
+        for (const b of mine) bulletG.circle(b.x, b.y, 2);
+        bulletG.fill({ color: shotCore });
+      } else if (shotLook === 'harpoon') {
+        // 작살 — 촉 뒤로 줄이 끌린다. 줄이 없으면 그냥 화살촉이다
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 22, b.y - dy * 22).lineTo(b.x - dx * 6, b.y - dy * 6);
+        }
+        bulletG.stroke({ color: shotColor, width: 1, alpha: 0.5 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          const nx = -dy;
+          const ny = dx;
+          bulletG.moveTo(b.x + dx * 8, b.y + dy * 8)
+            .lineTo(b.x - dx * 4 + nx * 5, b.y - dy * 4 + ny * 5)
+            .lineTo(b.x - dx * 4 - nx * 5, b.y - dy * 4 - ny * 5)
+            .closePath();
+        }
+        bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          const nx = -dy;
+          const ny = dx;
+          bulletG.moveTo(b.x + dx * 6, b.y + dy * 6)
+            .lineTo(b.x - dx * 3 + nx * 4, b.y - dy * 3 + ny * 4)
+            .lineTo(b.x - dx * 3 - nx * 4, b.y - dy * 3 - ny * 4)
+            .closePath();
+        }
+        bulletG.fill({ color: shotColor });
+      } else if (shotLook === 'ember') {
+        // 불씨 — 날아가며 번진다. 뒤로 갈수록 커지고 옅어지는 불티
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          for (let k = 1; k <= 3; k++) {
+            bulletG.circle(b.x - dx * k * 4, b.y - dy * k * 4, 1 + k * 1.4);
+          }
+        }
+        bulletG.fill({ color: shotColor, alpha: 0.3 });
+        for (const b of mine) bulletG.circle(b.x, b.y, 3);
+        bulletG.fill({ color: shotColor });
+        for (const b of mine) bulletG.circle(b.x, b.y, 1.5);
+        bulletG.fill({ color: shotCore });
+      } else {
+        // 반딧불 — 작은 유도탄. 꼬리가 휘어야 따라가는 게 보인다
+        for (const b of mine) {
+          const [dx, dy] = dir(b);
+          bulletG.moveTo(b.x - dx * 12, b.y - dy * 12).lineTo(b.x, b.y);
+        }
+        bulletG.stroke({ color: shotColor, width: 2, alpha: 0.45 });
+        for (const b of mine) bulletG.circle(b.x, b.y, 3.5);
+        bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        for (const b of mine) bulletG.circle(b.x, b.y, 2.5);
+        bulletG.fill({ color: shotColor });
+        for (const b of mine) bulletG.circle(b.x, b.y, 1.2);
+        bulletG.fill({ color: shotCore });
       }
-      bulletG.fill({ color: shotColor });
-      for (const b of bullets) {
-        if (b.shape !== 'orb' || b.color !== shotColor || !onScreen(b.x, b.y)) continue;
-        bulletG.circle(b.x, b.y, Math.max(2, b.r - 3));
-      }
-      bulletG.fill({ color: shotCore });
     }
 
     // 특수무기 탄 — 무기 색이 몇 개 안 되므로 색깔별로 묶어 한 번씩만 그린다
@@ -4301,10 +4450,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const r = ac.r * (0.55 + k * 0.45);
       const a0 = ac.angle - ac.span / 2;
       const a1 = ac.angle + ac.span / 2;
-      specialG.moveTo(ac.x, ac.y).arc(ac.x, ac.y, r, a0, a1).closePath();
-      specialG.fill({ color: ac.color, alpha: (1 - k) * 0.28 });
-      specialG.arc(ac.x, ac.y, r, a0, a1);
-      specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.9 });
+      if (ac.look === 'ring') {
+        // 종 — 휘두른 자리에서 퍼져 나가는 파문. 안이 비어야 '남은 충격'이지
+        // 채우면 그냥 커지는 원이 된다
+        specialG.circle(ac.x, ac.y, r);
+        specialG.stroke({ color: ac.color, width: 5 - k * 3, alpha: (1 - k) * 0.7 });
+        specialG.circle(ac.x, ac.y, r * 0.72);
+        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
+      } else if (ac.look === 'crescent') {
+        // 사슬 — 길게 뻗는 얇은 낫. 부채꼴로 채우면 짧고 뭉툭해 보인다
+        specialG.moveTo(ac.x + Math.cos(a0) * r, ac.y + Math.sin(a0) * r)
+          .arc(ac.x, ac.y, r, a0, a1)
+          .arc(ac.x, ac.y, r * 0.66, a1, a0, true)
+          .closePath();
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.32 });
+        specialG.arc(ac.x, ac.y, r, a0, a1);
+        specialG.stroke({ color: 0xffffff, width: 3, alpha: (1 - k) * 0.95 });
+      } else {
+        specialG.moveTo(ac.x, ac.y).arc(ac.x, ac.y, r, a0, a1).closePath();
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.28 });
+        specialG.arc(ac.x, ac.y, r, a0, a1);
+        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.9 });
+      }
     }
 
     for (const color of SPECIAL_COLORS) {
