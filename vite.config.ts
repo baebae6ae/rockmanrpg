@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     // 프로젝트 페이지는 하위 경로로 게시된다. Artifact 는 단일 파일이라 상대 경로.
+    // 경로는 저장소 이름에 묶여 있다. 게임 이름을 바꿨다고 여기까지
+    // 손대면 지금 배포된 주소가 죽고 설치된 PWA 도 같이 끊긴다.
     base: isArtifact ? './' : '/rockmanrpg/',
 
     plugins: isArtifact
@@ -21,9 +23,9 @@ export default defineConfig(({ mode }) => {
             registerType: 'autoUpdate',
             includeAssets: ['icon-192.png', 'icon-512.png'],
             manifest: {
-              name: '록맨 RPG',
-              short_name: '록맨 RPG',
-              description: '메이플식 사냥터를 도는 록맨 액션 RPG — 몰이사냥 생존 모드 포함',
+              name: '균열 회수반',
+              short_name: '균열 회수반',
+              description: '균열에서 나온 것들을 회수하는 아홉 대원 — 몰이사냥 생존 액션',
               // 아이콘을 누르면 가장 최근에 만든 몰이사냥 모드로 바로 들어간다
               start_url: '/rockmanrpg/?horde',
               scope: '/rockmanrpg/',
