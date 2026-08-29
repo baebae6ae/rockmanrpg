@@ -372,26 +372,74 @@ const STYLE_DESC: Record<Style, string> = {
  */
 type ShotLook = 'nail' | 'lance' | 'needle' | 'harpoon' | 'ember' | 'firefly';
 type SaberLook = 'ring' | 'fan' | 'crescent';
+/** 차지를 놓았을 때 벌어지는 일. 대원마다 다르다 */
+type ChargeLook =
+  | 'drive'    // 못 — 짧고 두꺼운 말뚝. 밀어낸다
+  | 'thread'   // 바늘 — 화면 끝까지 가는 실 한 줄
+  | 'split'    // 거울 — 세 갈래로 갈라지는 빛
+  | 'reel'     // 작살 — 꿰어서 끌고 온다
+  | 'flame'    // 불씨 — 코앞을 태우는 부채꼴
+  | 'volley'   // 반딧불 — 보이는 적 전부에게 유도탄
+  | 'lunge'    // 도끼 — 조준선을 따라 파고드는 돌진 연참
+  | 'quake'    // 종 — 제자리에서 세 번 퍼지는 파문
+  | 'reap';    // 사슬 — 더 멀리, 더 얇게 지나간다
 
 interface Sig {
   shot?: ShotLook;
   saber?: SaberLook;
   arcR?: number;
   arcSpan?: number;
-  /** 유도 세기(rad/s). 반딧불만 쓴다 */
+  /** 유도 세기(rad/s) */
   homing?: number;
+  // --- 기본 공격 특성. 곱을 서로 상쇄시켜 초당 위력은 건드리지 않는다
+  dmgMul?: number;
+  intervalMul?: number;
+  /** 탄 수명 배수 = 사거리 */
+  rangeMul?: number;
+  speedMul?: number;
+  spreadMul?: number;
+  shots?: number;
+  pierce?: number;
+  /** 명중 시 밀어내기 배수 */
+  knock?: number;
+  /** 세이버 잔류 파문의 위력 배수. 종만 쓴다 */
+  echo?: number;
+  charge: ChargeLook;
 }
 
+/**
+ * 대원별 공격 서명.
+ *
+ * 방식(차지/연사/세이버)은 밸런스의 뼈대라 그대로 두되, 같은 방식을 쓰는
+ * 넷이 색만 다른 같은 총을 쏘면 아홉을 만든 의미가 없다.
+ *
+ * 수치는 전부 '서로 상쇄되는 쌍'으로만 넣었다 — 사거리를 늘리면 위력을
+ * 깎고, 간격을 늘리면 한 방을 키운다. 그래야 고르는 이유가 세기가 아니라
+ * 취향이 된다. 한쪽만 올리면 그 대원이 정답이 되고 나머지 여덟은 장식이다.
+ *
+ * 세이버 셋은 모양만 바꾸면 거짓말이 된다 — 전방위 파문을 그려 놓고
+ * 판정은 부채꼴이면 안 닿는 이유를 알 수가 없다. 그래서 판정도 같이
+ * 바꾸되 넓이(0.5·span·r²)를 맞춰 뒀다. 셋 다 6050±60 이다.
+ */
 const SIG: Record<string, Sig> = {
-  nail: { shot: 'nail' },                                     // 굵고 짧은 대못
-  mirror: { shot: 'lance' },                                  // 각진 빛의 조각
-  needle: { shot: 'needle' },                                 // 가늘고 긴 침
-  harpoon: { shot: 'harpoon' },                               // 촉 + 뒤로 끌리는 줄
-  ember: { shot: 'ember' },                                   // 번지는 불티
-  firefly: { shot: 'firefly', homing: 2.2 },                  // 알아서 따라간다
-  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2 },
-  axe: { saber: 'fan', arcR: 60, arcSpan: Math.PI * 1.08 },
-  chain: { saber: 'crescent', arcR: 80, arcSpan: Math.PI * 0.6 },
+  // 제일 두껍다. 버티면서 쏜다 — 밀어내는 힘이 세다
+  nail: { shot: 'nail', knock: 2.6, charge: 'drive' },
+  // 얇지만 한 발이 무겁다 — 느리게 쏘고 크게 때린다
+  mirror: { shot: 'lance', dmgMul: 1.4, intervalMul: 1.4, charge: 'split' },
+  // 가장 튼튼하고 사거리가 길다 — 멀리 가는 대신 한 발이 가볍다
+  needle: { shot: 'needle', rangeMul: 1.8, speedMul: 1.3, dmgMul: 0.82, charge: 'thread' },
+  // 꿰뚫어 여럿을 한 줄로 눕힌다 — 많이 뚫는 대신 하나에겐 약하다
+  harpoon: { shot: 'harpoon', pierce: 9, dmgMul: 0.74, charge: 'reel' },
+  // 가까이 붙어야 제 몫을 한다 — 사거리를 절반으로 깎고 발수를 늘렸다
+  ember: { shot: 'ember', rangeMul: 0.5, shots: 3, dmgMul: 0.75, spreadMul: 1.5, charge: 'flame' },
+  // 알아서 따라가는 탄 — 빗나가지 않는 만큼 한 발이 가볍다
+  firefly: { shot: 'firefly', homing: 2.2, dmgMul: 0.8, charge: 'volley' },
+  // 휘두른 자리에 충격이 남는다 — 첫 타를 깎고 남는 파문으로 채운다
+  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2, dmgMul: 0.7, echo: 0.45, charge: 'quake' },
+  // 느리지만 한 번에 크게 벤다
+  axe: { saber: 'fan', arcR: 60, arcSpan: Math.PI * 1.08, dmgMul: 1.35, intervalMul: 1.35, charge: 'lunge' },
+  // 제일 세고 제일 잘 죽는다 — 겨눠야 닿는 대신 한 방이 크다
+  chain: { saber: 'crescent', arcR: 80, arcSpan: Math.PI * 0.6, dmgMul: 1.2, intervalMul: 1.2, charge: 'reap' },
 };
 
 const STYLE_NAME: Record<Style, string> = {
@@ -831,7 +879,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 이번 판 주무기의 생김새. 한 판 안에서는 안 바뀐다 */
   let shotLook: ShotLook = 'nail';
   let saberLook: SaberLook = 'fan';
+  let chargeLook: ChargeLook = 'drive';
   let shotHoming = 0;
+  /** 명중 시 밀어내기 배수 */
+  let shotKnock = 1;
+  /** 주무기 탄 수명 = 사거리. 방식 기본 0.5 초에 서명 배수를 곱한다 */
+  let shotLife = 0.5;
+  /** 세이버 잔류 파문의 위력 배수. 0 이면 안 남는다 */
+  let saberEcho = 0;
+  /**
+   * 예약 타격 — 지금 판정하지 않고 잠시 뒤에 터지는 원형 피해.
+   * "휘두른 자리에 충격이 남는다"를 그림만이 아니라 실제로 만들려면
+   * 시간이 지난 뒤 한 번 더 때려야 한다.
+   */
+  interface Echo { x: number; y: number; r: number; t: number; dmg: number }
+  const echoes: Echo[] = [];
 
   const droneG = new Graphics();
   const petG = new Graphics();
@@ -1497,6 +1559,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       x: px, y: py - 10, angle, r: w.arcR, span: w.arcSpan,
       life: 0.16, max: 0.16, color: shotColor, look: saberLook,
     });
+    if (saberEcho > 0) {
+      echoes.push({
+        x: px, y: py - 10, r: w.arcR * 1.35, t: 0.24,
+        dmg: Math.max(1, Math.round(w.dmg * saberEcho)),
+      });
+    }
     shake = Math.max(shake, 1.5);
 
     const half = w.arcSpan / 2;
@@ -1880,101 +1948,225 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    *   연사        — 짧은 시간 폭주 난사
    *   세이버      — 몸을 돌리며 조준선으로 파고드는 회전 돌진 연참
    */
+  /**
+   * 조준선을 따라 즉발 관통 광선 한 줄. 차지 넷이 파라미터만 바꿔 쓴다.
+   * 날아가는 시간이 없으니 탄이 뭔가에 걸려 방향이 흔들릴 일 자체가 없다.
+   *
+   * pull 이 있으면 맞은 것을 플레이어 쪽으로 끌어당긴다(작살).
+   */
+  function chargeBeam(a: number, range: number, width: number, dmg: number, pull = 0): void {
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    // 거울처럼 한 번에 여러 줄기를 쏘는 대원이 있어서 각도는 쌓아 둔다.
+    // 하나만 기억하면 마지막 줄기만 그려지고 나머지는 판정만 있고 안 보인다.
+    if (chargeBeamT <= 0) chargeBeamAngles.length = 0;
+    chargeBeamAngles.push(a);
+    chargeBeamRange = range;
+    chargeBeamWidth = width;
+    chargeBeamT = 0.3;
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const rx = f.x - px;
+      const ry = (f.y - 8 - (py - 10)) / 0.78;
+      const along = rx * c + ry * sn;
+      if (along < -f.def.r || along > range) continue;
+      const perp = Math.abs(-rx * sn + ry * c);
+      if (perp > width + f.def.r) continue;
+      // 음수면 밀어내기(못), 양수면 끌어당기기(작살)다.
+      // pull > 0 으로 막아 두면 밀어내는 쪽이 조용히 사라진다
+      if (pull !== 0) {
+        const len = Math.hypot(rx, ry) || 1;
+        f.kx -= (rx / len) * pull;
+        f.ky -= (ry / len) * pull * 0.78;
+      }
+      hurtFoe(f, dmg, w.elem);
+    }
+    if (boss) {
+      const rx = boss.x - px;
+      const ry = (boss.y - 14 - (py - 10)) / 0.78;
+      const along = rx * c + ry * sn;
+      const perp = Math.abs(-rx * sn + ry * c);
+      if (along > -18 && along < range && perp < width + 18) hurtBoss(dmg, w.elem);
+    }
+  }
+
+  /** 조준선을 따라 몸으로 파고드는 돌진 연참. 도끼와 사슬이 나눠 쓴다 */
+  function chargeLunge(a: number, range: number, width: number, dmg: number): void {
+    const c = Math.cos(a);
+    const sn = Math.sin(a);
+    const fromX = px;
+    const fromY = py;
+    const toX = clamp(px + c * range, 12, ARENA_W - 12);
+    const toY = py + sn * range * 0.78;
+    iframe = Math.max(iframe, LUNGE_MOVE_DUR + 0.05);
+
+    // 순간이동처럼 보이면 뭘 당했는지 읽을 수가 없다 — 실제 위치는 여기서
+    // 바로 옮기지 않고, updateLegends() 가 매 프레임 조금씩 이동시켜서 눈으로
+    // 좇을 수 있는 돌진으로 보이게 한다.
+    lungeMoveT = LUNGE_MOVE_DUR;
+    slashLungeT = 0.3;
+    slashLungeFromX = fromX;
+    slashLungeFromY = fromY;
+    slashLungeToX = toX;
+    slashLungeToY = toY;
+    slashLungeWidth = width;
+
+    // 경로 위에 큰 참격을 여러 개 겹쳐 찍으면 정작 돌아가는 캐릭터가 그
+    // 밑에 파묻힌다. 착지 지점에 마무리 일격 하나만 남긴다.
+    arcs.push({
+      x: toX, y: toY - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
+      life: 0.16, max: 0.16, color: 0xffffff,
+    });
+
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const rx = f.x - fromX;
+      const ry = (f.y - 8 - (fromY - 10)) / 0.78;
+      const along = rx * c + ry * sn;
+      if (along < -f.def.r || along > range + f.def.r) continue;
+      const perp = Math.abs(-rx * sn + ry * c);
+      if (perp > width + f.def.r) continue;
+      hurtFoe(f, dmg, w.elem);
+    }
+    if (boss) {
+      const rx = boss.x - fromX;
+      const ry = (boss.y - 14 - (fromY - 10)) / 0.78;
+      const along = rx * c + ry * sn;
+      const perp = Math.abs(-rx * sn + ry * c);
+      if (along > -18 && along < range + 18 && perp < width + 18) hurtBoss(dmg, w.elem);
+    }
+    rings.push({ x: toX, y: toY - 10, r: 32, life: 0.3, max: 0.3, color: shotCore });
+  }
+
+  /** 제자리 원형 타격 한 번 */
+  function chargeBurstRing(r: number, dmg: number, color: number): void {
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const dx = f.x - px;
+      const dy = (f.y - 8 - (py - 10)) / 0.78;
+      const reach = r + f.def.r * f.scale;
+      if (dx * dx + dy * dy <= reach * reach) hurtFoe(f, dmg, w.elem);
+    }
+    if (boss) {
+      const dx = boss.x - px;
+      const dy = (boss.y - 14 - (py - 10)) / 0.78;
+      if (dx * dx + dy * dy <= (r + 18) * (r + 18)) hurtBoss(dmg, w.elem);
+    }
+    arcs.push({ x: px, y: py - 10, angle: 0, r, span: Math.PI * 2, life: 0.2, max: 0.2, color, look: 'ring' });
+  }
+
+  /**
+   * 차지 해제 — 아홉이 전부 다르다.
+   *
+   * 방식이 같아도 차지까지 같으면 결국 같은 캐릭터다. 차지는 한 판에
+   * 몇 번 안 쓰는 대신 화면이 크게 바뀌는 순간이라, 여기가 갈려야
+   * "이 대원을 고른 이유"가 생긴다.
+   *
+   * 기대 피해는 대략 맞춰 뒀다. 멀리 가는 것은 얇고, 두꺼운 것은 짧다.
+   */
   function releaseCharge(lv: number): void {
     const t = nearestFoe(px, py);
     const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
-    const mult = lv === 2 ? 1 : 0.5;
+    const full = lv === 2;
+    const mult = full ? 1 : 0.5;
     // 세이버는 근접이라 위험을 감수한 만큼, 다 찬 차지는 확실히 세게 흔들린다
-    shake = Math.max(shake, w.style === 'saber' ? (lv === 2 ? 9 : 4) : lv === 2 ? 6 : 3);
+    shake = Math.max(shake, w.style === 'saber' ? (full ? 9 : 4) : full ? 6 : 3);
+    const base = w.dmg;
 
-    if (w.style === 'saber') {
-      // 돌진 연참 — 버스터처럼 먼 곳에 빔을 쏘면 세이버가 세이버일 이유가
-      // 없다. 대신 몸 자체가 칼이 되어 조준선을 따라 순식간에 파고들며
-      // 몇 차례 베어 넘기고, 착지 지점엔 마무리 일격을 꽂는다. 붙어야
-      // 때리는 근접의 위험은 그대로 두고, 그 위험을 감수한 만큼 짧고
-      // 굵게 보상한다.
-      const range = lv === 2 ? 190 : 110;
-      const width = w.arcR * (lv === 2 ? 1.25 : 1.0);
-      const dmg = Math.round(w.dmg * (lv === 2 ? 6.5 : 3.2));
-      const c = Math.cos(a);
-      const sn = Math.sin(a);
-      const fromX = px;
-      const fromY = py;
-      const toX = clamp(px + c * range, 12, ARENA_W - 12);
-      const toY = py + sn * range * 0.78;
-      iframe = Math.max(iframe, LUNGE_MOVE_DUR + 0.05);
+    switch (chargeLook) {
+      case 'drive':
+        // 못 — 말뚝 박기. 코앞만 닿지만 두껍고, 맞은 것은 멀리 밀린다
+        chargeBeam(a, full ? 190 : 130, full ? 34 : 24, Math.round(base * (full ? 9 : 4.5)), -260);
+        shake = Math.max(shake, full ? 11 : 6);
+        break;
+      case 'thread':
+        // 바늘 — 화면 끝까지 가는 실 한 줄. 얇아서 겨눠야 맞는다
+        chargeBeam(a, full ? 900 : 560, full ? 7 : 5, Math.round(base * (full ? 6.2 : 3.1)));
+        break;
+      case 'split':
+        // 거울 — 세 갈래로 갈라진다. 한 줄씩은 약해도 잘 빗나가지 않는다
+        for (const off of [-0.42, 0, 0.42]) {
+          chargeBeam(a + off, full ? 380 : 260, full ? 11 : 8, Math.round(base * (full ? 2.7 : 1.35)));
+        }
+        break;
+      case 'reel':
+        // 작살 — 꿰어서 끌고 온다. 흩어진 것을 한 줄로 모으는 게 목적이다
+        chargeBeam(a, full ? 460 : 300, full ? 13 : 10, Math.round(base * (full ? 5 : 2.5)), 300);
+        break;
+      case 'flame': {
+        // 불씨 — 코앞을 부채꼴로 태운다. 사거리가 짧은 대신 폭이 넓다
+        const r = full ? 96 : 66;
+        const span = Math.PI * 0.62;
+        const dmg = Math.round(base * (full ? 7 : 3.5));
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          const dx = f.x - px;
+          const dy = (f.y - 8 - (py - 10)) / 0.78;
+          if (dx * dx + dy * dy > (r + f.def.r) * (r + f.def.r)) continue;
+          let d = Math.atan2(dy, dx) - a;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          if (Math.abs(d) > span / 2) continue;
+          hurtFoe(f, dmg, w.elem);
+        }
+        if (boss) {
+          const dx = boss.x - px;
+          const dy = (boss.y - 14 - (py - 10)) / 0.78;
+          if (dx * dx + dy * dy <= (r + 18) * (r + 18)) {
+            let d = Math.atan2(dy, dx) - a;
+            while (d > Math.PI) d -= Math.PI * 2;
+            while (d < -Math.PI) d += Math.PI * 2;
+            if (Math.abs(d) <= span / 2) hurtBoss(dmg, w.elem);
+          }
+        }
+        arcs.push({ x: px, y: py - 10, angle: a, r, span, life: 0.22, max: 0.22, color: shotColor });
+        for (let i = 0; i < 10; i++) {
+          const d = a + (Math.random() - 0.5) * span;
+          const l = r * (0.3 + Math.random() * 0.7);
+          spawnPart(px + Math.cos(d) * l, py - 10 + Math.sin(d) * l * 0.78, 2, shotCore, 150);
+        }
+        burstT = full ? 0.5 : 0.25;
+        break;
+      }
+      case 'volley': {
+        // 반딧불 — 보이는 것 전부에게 한 발씩. 겨눌 필요가 없다
+        // 사방으로 흩뿌리고 유도에 맡긴다 — 여기서 표적을 직접 배정하면
+        // 적이 몇 없을 때 같은 놈에게 열 발이 몰린다
+        const n = full ? 10 : 5;
+        const dmg = Math.round(base * (full ? 2.1 : 1.4));
+        for (let i = 0; i < n; i++) {
+          const ang = a + (i / n) * Math.PI * 2;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(ang) * 150, vy: Math.sin(ang) * 150 * 0.8,
+            dmg, life: 2.2, color: shotColor, r: 3,
+            homing: 6, elem: w.elem,
+          });
+        }
+        break;
+      }
+      case 'quake':
+        // 종 — 돌진이 안 어울린다. 전방위로 싸우는 대원이라 제자리에서
+        // 세 번 크게 퍼뜨린다. 두 번째·세 번째는 예약으로 밀어 둔다
+        chargeBurstRing(full ? 56 : 42, Math.round(base * (full ? 3.4 : 1.8)), shotCore);
+        for (let i = 1; i <= 2; i++) {
+          echoes.push({
+            x: px, y: py - 10, r: (full ? 56 : 42) + i * (full ? 26 : 18), t: i * 0.16,
+            dmg: Math.round(base * (full ? 2.4 : 1.2)),
+          });
+        }
+        break;
+      case 'reap':
+        // 사슬 — 더 멀리, 더 얇게 지나간다. 겨냥이 맞으면 한 줄을 쓸어낸다
+        chargeLunge(a, full ? 280 : 170, w.arcR * (full ? 0.72 : 0.6), Math.round(base * (full ? 6 : 3)));
+        break;
+      default:
+        // 도끼 — 몸 자체가 칼이 되어 조준선을 따라 파고든다
+        chargeLunge(a, full ? 190 : 110, w.arcR * (full ? 1.25 : 1), Math.round(base * (full ? 6.5 : 3.2)));
+        break;
+    }
 
-      // 순간이동처럼 보이면 뭘 당했는지 읽을 수가 없다 — 실제 위치는
-      // 여기서 바로 옮기지 않고, updateLegends() 가 매 프레임 조금씩
-      // 이동시켜서 눈으로 좇을 수 있는 돌진으로 보이게 한다. 몸이 도는
-      // 회전도 그 타이밍에 맞춰 hv.rotation 에 건다.
-      lungeMoveT = LUNGE_MOVE_DUR;
-      slashLungeT = 0.3;
-      slashLungeFromX = fromX;
-      slashLungeFromY = fromY;
-      slashLungeToX = toX;
-      slashLungeToY = toY;
-      slashLungeWidth = width;
-
-      // 회전하며 지나가는 몸 자체가 참격이다 — 경로 위에 큰 참격을 여러 개
-      // 겹쳐 찍으면 정작 돌아가는 캐릭터가 그 밑에 파묻힌다. 착지 지점에
-      // 흰빛 마무리 일격 하나만 남긴다.
-      arcs.push({
-        x: toX, y: toY - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
-        life: 0.16, max: 0.16, color: 0xffffff,
-      });
-
-      for (let j = foes.length - 1; j >= 0; j--) {
-        const f = foes[j];
-        const rx = f.x - fromX;
-        const ry = (f.y - 8 - (fromY - 10)) / 0.78;
-        const along = rx * c + ry * sn;
-        if (along < -f.def.r || along > range + f.def.r) continue;
-        const perp = Math.abs(-rx * sn + ry * c);
-        if (perp > width + f.def.r) continue;
-        hurtFoe(f, dmg, w.elem);
-      }
-      if (boss) {
-        const rx = boss.x - fromX;
-        const ry = (boss.y - 14 - (fromY - 10)) / 0.78;
-        const along = rx * c + ry * sn;
-        const perp = Math.abs(-rx * sn + ry * c);
-        if (along > -18 && along < range + 18 && perp < width + 18) hurtBoss(dmg, w.elem);
-      }
-      rings.push({ x: toX, y: toY - 10, r: 32, life: 0.3, max: 0.3, color: shotCore });
-    } else if (w.style === 'rapid') {
-      // 폭주 — 잠깐 발사 간격이 무너진다
-      burstT = lv === 2 ? 0.9 : 0.45;
-    } else {
-      // 일직선 관통샷 — 날아가는 탄 하나를 쏘는 대신, 조준선을 따라 화면을
-      // 가르는 즉발 관통 광선이다. 날아가는 시간이 없으니 탄이 뭔가에
-      // 걸려 방향이 흔들릴 일 자체가 없다.
-      const range = lv === 2 ? 460 : 300;
-      const width = lv === 2 ? 16 : 11;
-      const dmg = Math.round(w.dmg * (lv === 2 ? 6 : 3));
-      const c = Math.cos(a);
-      const sn = Math.sin(a);
-      chargeBeamAngle = a;
-      chargeBeamRange = range;
-      chargeBeamWidth = width;
-      chargeBeamT = 0.3;
-      for (let j = foes.length - 1; j >= 0; j--) {
-        const f = foes[j];
-        const rx = f.x - px;
-        const ry = (f.y - 8 - (py - 10)) / 0.78;
-        const along = rx * c + ry * sn;
-        if (along < -f.def.r || along > range) continue;
-        const perp = Math.abs(-rx * sn + ry * c);
-        if (perp > width + f.def.r) continue;
-        hurtFoe(f, dmg, w.elem);
-      }
-      if (boss) {
-        const rx = boss.x - px;
-        const ry = (boss.y - 14 - (py - 10)) / 0.78;
-        const along = rx * c + ry * sn;
-        const perp = Math.abs(-rx * sn + ry * c);
-        if (along > -18 && along < range && perp < width + 18) hurtBoss(dmg, w.elem);
-      }
+    if (chargeLook === 'drive' || chargeLook === 'thread' || chargeLook === 'split' || chargeLook === 'reel') {
       for (let i = 0; i < 2; i++) {
         rings.push({ x: px, y: py - 10, r: 18 + i * 14, life: 0.22, max: 0.22, color: shotCore });
       }
@@ -2033,7 +2225,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const t = w.shots === 1 ? 0 : i / (w.shots - 1) - 0.5;
       // 연사는 매 발이 조금씩 흩어져야 "갈긴다"는 느낌이 난다
       const jitter = w.style === 'rapid' ? (Math.random() - 0.5) * 0.1 : 0;
-      fireOne(base + t * w.spread + jitter, w.style === 'charge' ? 0.75 : 0.5, muzX, muzY, w.dmg);
+      fireOne(base + t * w.spread + jitter, shotLife * (w.style === 'charge' ? 1.5 : 1), muzX, muzY, w.dmg);
     }
     spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
     sfx.shot(w.style);
@@ -2761,7 +2953,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let lungeMoveT = 0;
   /** 버스터 차지 — 일직선 관통 광선 표시 시간·방향·사거리·폭 */
   let chargeBeamT = 0;
-  let chargeBeamAngle = 0;
+  const chargeBeamAngles: number[] = [];
   let chargeBeamRange = 0;
   let chargeBeamWidth = 0;
 
@@ -3166,6 +3358,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     attackHold = 0; attackBeat = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
     spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
+    echoes.length = 0;
     stageAt = 45; stageBanner = 0;
     useTheme(0);
     speedMul = 1;
@@ -3177,10 +3370,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     w.drones = 0; w.magnet = 40;
     legsMul = 1; baseMagnet = 40; armorBanner = 0; armorGot = null;
     w.arcR = 50; w.arcSpan = Math.PI * 1.1;
-    const sig = SIG[charDef.id] ?? {};
+    const sig: Sig = SIG[charDef.id] ?? { charge: 'drive' };
     shotLook = sig.shot ?? 'nail';
     saberLook = sig.saber ?? 'fan';
+    chargeLook = sig.charge;
     shotHoming = sig.homing ?? 0;
+    shotKnock = sig.knock ?? 1;
+    saberEcho = sig.echo ?? 0;
 
     // 초당 위력은 세 방식이 비슷하게 두고, 그 위력을 어떻게 꺼내느냐만
     // 다르게 한다 — 한 방이 큰가, 자잘하게 많은가, 붙어서 쓸어내는가.
@@ -3206,6 +3402,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       w.shots = 1; w.spread = 0.06; w.pierce = 3;
       w.baseDmg = w.dmg;
     }
+
+    // 서명은 방식 기본값 '뒤에' 곱한다. 앞에 두면 방식 분기가 덮어써서
+    // 아무 일도 안 일어난다.
+    w.dmg = Math.max(1, Math.round(w.dmg * (sig.dmgMul ?? 1)));
+    w.baseDmg = w.dmg;
+    w.interval *= sig.intervalMul ?? 1;
+    w.speed = Math.round(w.speed * (sig.speedMul ?? 1));
+    w.spread *= sig.spreadMul ?? 1;
+    if (sig.shots !== undefined) w.shots = sig.shots;
+    if (sig.pierce !== undefined) w.pierce = sig.pierce;
+    shotLife = 0.5 * (sig.rangeMul ?? 1);
+
     applyArmor();
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
@@ -4146,8 +4354,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
               break;
             }
 
-            f.kx += (b.vx / w.speed) * 120;
-            f.ky += (b.vy / w.speed) * 120;
+            const kn = b.color === shotColor ? shotKnock : 1;
+            f.kx += (b.vx / w.speed) * 120 * kn;
+            f.ky += (b.vy / w.speed) * 120 * kn;
             spawnPart(b.x, b.y, 2, b.shape === 'tracer' ? 0xfff0a0 : b.color, 110);
             sfx.hit();
             b.lastHit = f;
@@ -4160,6 +4369,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           }
         }
       }
+    }
+
+    // ---- 예약 타격(종의 잔류 파문)
+    for (let i = echoes.length - 1; i >= 0; i--) {
+      const e = echoes[i];
+      e.t -= dt;
+      if (e.t > 0) continue;
+      echoes.splice(i, 1);
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - e.x;
+        const dy = (f.y - 8 - e.y) / 0.78;
+        const reach = e.r + f.def.r * f.scale;
+        if (dx * dx + dy * dy <= reach * reach) hurtFoe(f, e.dmg, w.elem);
+      }
+      if (boss) {
+        const dx = boss.x - e.x;
+        const dy = (boss.y - 14 - e.y) / 0.78;
+        const reach = e.r + 18;
+        if (dx * dx + dy * dy <= reach * reach) hurtBoss(e.dmg, w.elem);
+      }
+      arcs.push({
+        x: e.x, y: e.y, angle: 0, r: e.r, span: Math.PI * 2,
+        life: 0.18, max: 0.18, color: shotCore, look: 'ring',
+      });
     }
 
     updateOrbs(dt);
@@ -4751,21 +4985,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선
     if (chargeBeamT > 0 && phase === 'play') {
       const k = chargeBeamT / 0.3;
-      const c = Math.cos(chargeBeamAngle);
-      const sn = Math.sin(chargeBeamAngle) * 0.78;
       const hy = py - 10;
       const widths = [
         { w: chargeBeamWidth * 1.3 * k, c: shotColor, a: 0.3 },
         { w: chargeBeamWidth * 0.75 * k, c: shotCore, a: 0.6 },
         { w: chargeBeamWidth * 0.3 * k, c: 0xffffff, a: 0.95 },
       ];
-      for (const L of widths) {
-        specialG.moveTo(px - sn * L.w, hy + c * L.w)
-          .lineTo(px + c * chargeBeamRange - sn * L.w, hy + sn * chargeBeamRange + c * L.w)
-          .lineTo(px + c * chargeBeamRange + sn * L.w, hy + sn * chargeBeamRange - c * L.w)
-          .lineTo(px + sn * L.w, hy - c * L.w)
-          .closePath()
-          .fill({ color: L.c, alpha: L.a });
+      for (const ang of chargeBeamAngles) {
+        const c = Math.cos(ang);
+        const sn = Math.sin(ang) * 0.78;
+        for (const L of widths) {
+          specialG.moveTo(px - sn * L.w, hy + c * L.w)
+            .lineTo(px + c * chargeBeamRange - sn * L.w, hy + sn * chargeBeamRange + c * L.w)
+            .lineTo(px + c * chargeBeamRange + sn * L.w, hy + sn * chargeBeamRange - c * L.w)
+            .lineTo(px + sn * L.w, hy - c * L.w)
+            .closePath()
+            .fill({ color: L.c, alpha: L.a });
+        }
       }
       specialG.circle(px, hy, chargeBeamWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.85 });
     }
