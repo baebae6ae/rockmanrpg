@@ -553,6 +553,55 @@ function drawPanel(
   }
 }
 
+/**
+ * 원형 조작 버튼 — 대시와 차지가 지금까지 서로 다른 손으로 그려진
+ * 것처럼 보였다. 대시는 옅은 원 하나, 차지는 그림이 아예 없이 글자
+ * 일곱 글자뿐이었다. 하나는 배경에 묻히고 하나는 존재 자체가 안 보였다.
+ *
+ * drawPanel() 과 같은 시각 언어(이중 테두리 + 모서리 브라켓)를 원형으로
+ * 옮겨 하나로 통일한다. 방향(사각 모서리)이 없는 원에서는 브라켓 대신
+ * 8방향 눈금을 두른다 — 조준 다이얼처럼 읽혀서 "누르는 자리"가 명확해진다.
+ *
+ * fill01 은 두 버튼이 서로 다른 값을 넣는 공용 파라미터다. 대시는
+ * 쿨다운 회복률, 차지는 눌러 모은 정도 — 그림 문법은 같고 채워지는
+ * 이유만 다르다.
+ */
+function drawTouchButton(
+  g: Graphics,
+  cx: number, cy: number, r: number,
+  opts: { accent: number; fill01: number; ready: boolean; pressed: boolean },
+): void {
+  const { accent, pressed } = opts;
+  const fill01 = clamp(opts.fill01, 0, 1);
+
+  // 바탕 — 배경보다 확실히 어둡게 깔아야 그 위의 얇은 테두리가 산다
+  g.circle(cx, cy, r).fill({ color: 0x05070f, alpha: 0.62 });
+
+  // 채움 쐐기 — 12시에서 시계방향으로 fill01 만큼. 대시는 회복될수록,
+  // 차지는 모을수록 이 쐐기가 자란다. 다 찼을 때만 확 밝아져야
+  // "지금 쓸 수 있다"가 곁눈으로도 읽힌다.
+  if (fill01 > 0.02) {
+    const a0 = -Math.PI / 2;
+    g.moveTo(cx, cy).arc(cx, cy, r - 3, a0, a0 + fill01 * Math.PI * 2).closePath();
+    g.fill({ color: accent, alpha: opts.ready ? 0.32 : 0.16 });
+  }
+  if (pressed) g.circle(cx, cy, r - 7).fill({ color: accent, alpha: 0.3 });
+
+  // 이중 테두리
+  g.circle(cx, cy, r).stroke({ color: accent, width: 2, alpha: opts.ready ? 0.9 : 0.4 });
+  g.circle(cx, cy, r - 4).stroke({ color: accent, width: 1, alpha: opts.ready ? 0.5 : 0.22 });
+
+  // 8방향 눈금 — drawPanel 의 모서리 브라켓을 원형으로 옮긴 것
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    g.moveTo(cx + c * (r - 6), cy + s * (r - 6))
+      .lineTo(cx + c * (r + 2), cy + s * (r + 2))
+      .stroke({ color: accent, width: i % 2 === 0 ? 2 : 1, alpha: opts.ready ? 0.85 : 0.35 });
+  }
+}
+
 /** 색을 흰색 쪽으로 amount 만큼 민다 — 탄 심지를 캐릭터 색의 밝은 판으로 쓴다 */
 function lighten(color: number, amount: number): number {
   const r = (color >> 16) & 255;
@@ -5539,13 +5588,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     fireLabel.visible = touchMode && phase === 'play';
     if (fireLabel.visible) fireLabel.position.set(FIRE_BTN.x, FIRE_BTN.y);
     if (touchMode && phase === 'play') {
+      // 대시 — 쿨다운 회복률을 쐐기로 채운다. 다 차면 테두리가 확 밝아진다.
       dashLabel.position.set(DASH_BTN.x, DASH_BTN.y);
       const cd = dashCd > 0 ? 1 - dashCd / DASH_CD : 1;
-      dashLabel.alpha = cd >= 1 ? 0.85 : 0.3;
-      padG.circle(DASH_BTN.x, DASH_BTN.y, DASH_BTN.r).fill({ color: 0x8ef0ff, alpha: 0.07 + cd * 0.07 });
-      padG
-        .circle(DASH_BTN.x, DASH_BTN.y, DASH_BTN.r)
-        .stroke({ color: 0x8ef0ff, alpha: cd >= 1 ? 0.55 : 0.2, width: 1 });
+      dashLabel.alpha = cd >= 1 ? 0.95 : 0.45;
+      drawTouchButton(padG, DASH_BTN.x, DASH_BTN.y, DASH_BTN.r, {
+        accent: 0x8ef0ff, fill01: cd, ready: cd >= 1, pressed: dashId !== null,
+      });
+
+      // 차지 — 눌러 모은 정도를 같은 쐐기로 채운다. 다 찬 뒤(2단)에는
+      // 색을 금빛으로 바꿔 "지금 놓으면 최대치"를 알린다. 지금까지는
+      // 이 자리에 글자 일곱 개뿐이라 버튼 자체가 안 보였다.
+      fireLabel.position.set(FIRE_BTN.x, FIRE_BTN.y);
+      const chargeFrac = chargeT > 0 ? Math.min(1, chargeT / CHARGE_STEP[1]) : 0;
+      const chargeReady = chargeLevel > 0;
+      fireLabel.alpha = chargeReady ? 1 : 0.55;
+      drawTouchButton(padG, FIRE_BTN.x, FIRE_BTN.y, FIRE_BTN.r, {
+        accent: chargeLevel === 2 ? 0xfff2c0 : 0xffd85c,
+        fill01: chargeFrac, ready: chargeReady, pressed: fireId !== null,
+      });
+
       if (stick) {
         padG.circle(stick.ox, stick.oy, STICK.radius).fill({ color: 0xffffff, alpha: 0.06 });
         padG.circle(stick.ox, stick.oy, STICK.radius).stroke({ color: 0xffffff, alpha: 0.22, width: 1 });
