@@ -1,7 +1,7 @@
 {
   "id": "bell",
   "name": "종",
-  "desc": "휘두른 자리에 충격이 남는다",
+  "desc": "전방위로 짧고 빠르게 휘두른다",
   "series": "recovery",
   "archetype": "saber",
   "hitbox": {

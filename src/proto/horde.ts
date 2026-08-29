@@ -408,8 +408,6 @@ interface Sig {
   pierce?: number;
   /** 명중 시 밀어내기 배수 */
   knock?: number;
-  /** 세이버 잔류 파문의 위력 배수. 종만 쓴다 */
-  echo?: number;
   charge: ChargeLook;
 }
 
@@ -440,10 +438,14 @@ const SIG: Record<string, Sig> = {
   ember: { shot: 'ember', rangeMul: 0.5, shots: 3, dmgMul: 0.75, spreadMul: 1.5, charge: 'flame' },
   // 알아서 따라가는 탄 — 빗나가지 않는 만큼 한 발이 가볍다
   firefly: { shot: 'firefly', homing: 2.2, dmgMul: 0.8, charge: 'volley' },
-  // 휘두른 자리에 충격이 남는다 — 첫 타를 깎고 남는 파문으로 채운다.
-  // 0.7 + 0.3 = 1.0 이라야 초당 위력이 그대로다. 한때 0.45 였는데 그러면
-  // 1.15 가 되어 종이 세이버 중 조용히 제일 센 캐릭터가 돼 있었다.
-  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2, dmgMul: 0.7, echo: 0.3, charge: 'quake' },
+  // 전방위로 짧고 빠르게 — interval 을 안 늘려서 셋 중 제일 자주 휘두른다.
+  // 한때 여기에 "0.24초 뒤 한 번 더 때리는 잔류 파문"을 더해서 DPS를
+  // 맞췄는데, 그러면 스윙 한 번마다 적이 두 번 flash 를 먹는다. 실제
+  // 스윙 간격(도끼보다 35% 빠름)보다 체감 타격 빈도가 훨씬 크게
+  // 뛰어서 "종만 두 배는 빠르다"는 소리가 나왔다 — 겨눔이 아니라 이
+  // 이중 타격이 원인이었다. dmgMul 을 없애 한 방을 정직하게 키우는
+  // 쪽으로 되돌렸다: 간격만 빠르고 한 스윙엔 한 번만 맞는다.
+  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2, charge: 'quake' },
   // 느리지만 한 번에 크게 벤다
   axe: { saber: 'fan', arcR: 60, arcSpan: Math.PI * 1.08, dmgMul: 1.35, intervalMul: 1.35, charge: 'lunge' },
   // 제일 세고 제일 잘 죽는다 — 겨눠야 닿는 대신 한 방이 크다
@@ -487,8 +489,6 @@ interface Arc {
   color: number;
   /** 그리는 방식. 특수무기가 만드는 자국은 기본 부채꼴이다 */
   look?: SaberLook;
-  /** 잔향처럼 옅게 — 방금 벤 자리에 남는 흔적이지 새로운 공격이 아니다 */
-  weak?: boolean;
 }
 
 interface Upgrade {
@@ -963,14 +963,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let shotKnock = 1;
   /** 주무기 탄 수명 = 사거리. 방식 기본 0.5 초에 서명 배수를 곱한다 */
   let shotLife = 0.5;
-  /** 세이버 잔류 파문의 위력 배수. 0 이면 안 남는다 */
-  let saberEcho = 0;
   /**
-   * 예약 타격 — 지금 판정하지 않고 잠시 뒤에 터지는 원형 피해.
-   * "휘두른 자리에 충격이 남는다"를 그림만이 아니라 실제로 만들려면
-   * 시간이 지난 뒤 한 번 더 때려야 한다.
+   * 예약 타격 — 지금 판정하지 않고 잠시 뒤에 터지는 원형 피해. 종의
+   * 차지(quake)가 쓴다 — 제자리에서 세 번 퍼뜨리는 파문 중 두·세 번째를
+   * 여기 밀어 둔다. 한때 자동공격에도 붙여 "스윙마다 두 번 때린다"를
+   * 만들었는데, 그러면 실제 스윙 간격보다 체감 타격 빈도가 훨씬 크게
+   * 뛰어서 "느리게 쐈는데 유독 빠르게 느껴진다"는 문제가 됐다 — 차지처럼
+   * 드물게 쓰는 연출에만 남긴다.
    */
-  interface Echo { x: number; y: number; r: number; t: number; dmg: number; weak?: boolean }
+  interface Echo { x: number; y: number; r: number; t: number; dmg: number }
   const echoes: Echo[] = [];
 
   const droneG = new Graphics();
@@ -1651,15 +1652,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       x: px, y: py - 10, angle, r: w.arcR, span: w.arcSpan,
       life: 0.16, max: 0.16, color: shotColor, look: saberLook,
     });
-    if (saberEcho > 0) {
-      // 자동공격의 잔류 파문 — 원래 스윙(w.arcR)보다 크게 그리면 두 번째
-      // 공격처럼 보인다. 같은 반경으로 두고 weak 로 표시해 그리기 단계에서
-      // 옅게 만든다.
-      echoes.push({
-        x: px, y: py - 10, r: w.arcR, t: 0.24,
-        dmg: Math.max(1, Math.round(w.dmg * saberEcho)), weak: true,
-      });
-    }
     shake = Math.max(shake, 1.5);
 
     const half = w.arcSpan / 2;
@@ -3499,7 +3491,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     chargeLook = sig.charge;
     shotHoming = sig.homing ?? 0;
     shotKnock = sig.knock ?? 1;
-    saberEcho = sig.echo ?? 0;
 
     // 초당 위력은 세 방식이 비슷하게 두고, 그 위력을 어떻게 꺼내느냐만
     // 다르게 한다 — 한 방이 큰가, 자잘하게 많은가, 붙어서 쓸어내는가.
@@ -4514,34 +4505,30 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    // ---- 예약 타격(종의 잔류 파문)
+    // ---- 예약 타격(종의 차지 파문) — swingSaber() 의 매 스윙이 아니라
+    // releaseCharge() 의 quake 하나만 여기로 밀어 넣는다. 드물게 쓰는
+    // 연출이라 항상 크고 밝게 띄운다.
     for (let i = echoes.length - 1; i >= 0; i--) {
       const e = echoes[i];
       e.t -= dt;
       if (e.t > 0) continue;
       echoes.splice(i, 1);
-      let hit = false;
       for (let j = foes.length - 1; j >= 0; j--) {
         const f = foes[j];
         const dx = f.x - e.x;
         const dy = (f.y - 8 - e.y) / 0.78;
         const reach = e.r + f.def.r * f.scale;
-        if (dx * dx + dy * dy <= reach * reach) { hurtFoe(f, e.dmg, w.elem); hit = true; }
+        if (dx * dx + dy * dy <= reach * reach) hurtFoe(f, e.dmg, w.elem);
       }
       if (boss) {
         const dx = boss.x - e.x;
         const dy = (boss.y - 14 - e.y) / 0.78;
         const reach = e.r + 18;
-        if (dx * dx + dy * dy <= reach * reach) { hurtBoss(e.dmg, w.elem); hit = true; }
+        if (dx * dx + dy * dy <= reach * reach) hurtBoss(e.dmg, w.elem);
       }
-      // 약한 잔류 파문은 아무것도 못 맞혔으면 아예 안 띄운다 — 혼자 있을 때도
-      // 0.42초마다 빈 링이 번쩍이면 그 자체로 "쉬지 않고 뭔가 터진다"는
-      // 인상을 준다. 큰 파문(차지)은 연출이 목적이라 그대로 항상 띄운다.
-      if (e.weak && !hit) continue;
       arcs.push({
         x: e.x, y: e.y, angle: 0, r: e.r, span: Math.PI * 2,
-        life: e.weak ? 0.12 : 0.18, max: e.weak ? 0.12 : 0.18,
-        color: e.weak ? shotColor : shotCore, look: 'ring', weak: e.weak,
+        life: 0.18, max: 0.18, color: shotCore, look: 'ring',
       });
     }
 
@@ -4835,20 +4822,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const a1 = ac.angle + ac.span / 2;
       if (ac.look === 'ring') {
         // 종 — 휘두른 자리에서 퍼져 나가는 파문. 안이 비어야 '남은 충격'이지
-        // 채우면 그냥 커지는 원이 된다.
-        //
-        // weak(자동공격 잔류 파문)는 눈에 확 띄는 흰 테두리를 빼고 알파도
-        // 낮춘다 — 안 그러면 0.42초마다 도는 원래 스윙과 밝기가 똑같은
-        // 두 번째 링이 0.24초 뒤에 또 뜨는 꼴이 되어, 실제로는 초당 2.4번
-        // 베는 걸 초당 5번 가까이 번쩍이는 것처럼 보이게 만든다 — "종만
-        // 연사가 미친듯이 빠르다"는 게 바로 이 이중 플래시였다.
-        const wk = ac.weak;
+        // 채우면 그냥 커지는 원이 된다
         specialG.circle(ac.x, ac.y, r);
-        specialG.stroke({ color: ac.color, width: (wk ? 3 : 5) - k * 2, alpha: (1 - k) * (wk ? 0.35 : 0.7) });
-        if (!wk) {
-          specialG.circle(ac.x, ac.y, r * 0.72);
-          specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
-        }
+        specialG.stroke({ color: ac.color, width: 5 - k * 3, alpha: (1 - k) * 0.7 });
+        specialG.circle(ac.x, ac.y, r * 0.72);
+        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
       } else if (ac.look === 'crescent') {
         // 사슬 — 길게 뻗는 얇은 낫. 부채꼴로 채우면 짧고 뭉툭해 보인다
         specialG.moveTo(ac.x + Math.cos(a0) * r, ac.y + Math.sin(a0) * r)
