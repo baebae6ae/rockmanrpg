@@ -176,6 +176,12 @@ const BOSS_DEFS: BossDef[] = [
   { id: 'flame_ring', pattern: 'barrier', color: 0xff5c5c, elem: 'fire', drop: 'flame_orbit' },
 ];
 
+/**
+ * 스테이지 배경 — 고른 보스의 속성에 맞춰 한 번 정해진다.
+ * 테마가 4개뿐이라 냉각 구획을 수·빙 둘이 나눠 쓴다.
+ */
+const THEME_FOR_ELEM: Record<Element, number> = { elec: 0, aqua: 1, ice: 1, fire: 2, none: 3 };
+
 
 interface EnemyLite { id: string; name?: string }
 const ENEMY_NAMES: Record<string, string> = {};
@@ -434,8 +440,10 @@ const SIG: Record<string, Sig> = {
   ember: { shot: 'ember', rangeMul: 0.5, shots: 3, dmgMul: 0.75, spreadMul: 1.5, charge: 'flame' },
   // 알아서 따라가는 탄 — 빗나가지 않는 만큼 한 발이 가볍다
   firefly: { shot: 'firefly', homing: 2.2, dmgMul: 0.8, charge: 'volley' },
-  // 휘두른 자리에 충격이 남는다 — 첫 타를 깎고 남는 파문으로 채운다
-  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2, dmgMul: 0.7, echo: 0.45, charge: 'quake' },
+  // 휘두른 자리에 충격이 남는다 — 첫 타를 깎고 남는 파문으로 채운다.
+  // 0.7 + 0.3 = 1.0 이라야 초당 위력이 그대로다. 한때 0.45 였는데 그러면
+  // 1.15 가 되어 종이 세이버 중 조용히 제일 센 캐릭터가 돼 있었다.
+  bell: { saber: 'ring', arcR: 44, arcSpan: Math.PI * 2, dmgMul: 0.7, echo: 0.3, charge: 'quake' },
   // 느리지만 한 번에 크게 벤다
   axe: { saber: 'fan', arcR: 60, arcSpan: Math.PI * 1.08, dmgMul: 1.35, intervalMul: 1.35, charge: 'lunge' },
   // 제일 세고 제일 잘 죽는다 — 겨눠야 닿는 대신 한 방이 크다
@@ -803,6 +811,25 @@ function saveBest(all: Record<string, Best>): void {
   }
 }
 
+/** 한 번이라도 클리어한 스테이지 — 스테이지 선택 화면에 표시만 하고 다시 도전을 막지는 않는다 */
+const CLEARED_KEY = 'horde.cleared';
+
+function loadCleared(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(CLEARED_KEY) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+
+function saveCleared(ids: string[]): void {
+  try {
+    localStorage.setItem(CLEARED_KEY, JSON.stringify(ids));
+  } catch {
+    // 저장이 안 되는 환경이면 이번 판 표시만 못 남길 뿐이다
+  }
+}
+
 const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
@@ -1021,6 +1048,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
   const sfx = createSfx();
   const best = loadBest();
+  const clearedStages = new Set<string>(loadCleared());
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -1058,15 +1086,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const BOSS_INTRO_FILL_START = 0.5;
   const BOSS_INTRO_FILL_END = 1.4;
   const BOSS_INTRO_TICKS = 8;
-  /**
-   * 보스 러시 — 판의 절정. 3분 30초를 버티면 여덟이 연달아 나온다.
-   * 지금까지 판이 끝없이 같은 밀도로만 이어져서 "끝까지 갔다"는 지점이
-   * 없었다. 여기가 그 지점이다.
-   */
-  let rushT = 0;
-  let rushIndex = 0;
-  const RUSH_AT = 210;
-  let rushBanner = 0;
   let newRecord = false;
   /** 가챠 코인 — 정예를 잡으면 하나, 보스는 셋. 모이면 자동으로 돌아간다 */
   let coins = 2;
@@ -1106,14 +1125,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let spawnAcc = 0;
   let fireAcc = 0;
   let surgeAt = 32;
-  let stageAt = 45;
   /** 구역 이름을 띄워두는 남은 시간 */
   let stageBanner = 0;
   /** 배경 애니메이션용 시계 — 일시정지 중에도 흘러야 자연스럽다 */
   let animClock = 0;
   let shake = 0;
   let hitstop = 0;
-  let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' | 'boss_select' = 'select';
+  let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' | 'boss_select' | 'stage_clear' = 'select';
   let selIndex = 0;
   /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
   let attackHold = 0;
@@ -1136,6 +1154,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let pickIndex = 0;
   let pickList: PickOption[] = [];
   let deadTimer = 0;
+  /** 이번 판이 목표로 하는 스테이지의 보스. 캐릭터 선택 뒤 스테이지
+      선택에서 정해지고, 판이 끝날 때까지 안 바뀐다(재도전에도 유지). */
+  let stageBoss: BossDef | null = null;
+  /** 이 판에서 stageBoss 를 이미 등장시켰는지 — 두 번 뜨는 걸 막는다 */
+  let stageBossSpawned = false;
+  /** 방금 잡은 보스가 stageBoss 였는지 — 가챠 연출이 끝난 뒤 결과 화면으로
+      갈지, 그냥 농사를 계속할지를 가른다 */
+  let pendingStageClear = false;
+  let clearTimer = 0;
+  let lastClearWeaponName: string | null = null;
 
   // 레벨업 카드는 손가락으로 직접 짚는 게 맞다. 가상 스틱으로 커서를 옮겨
   // 버튼으로 확정하는 방식은 눈앞에 카드가 세 장 떠 있는데도 조작이
@@ -1220,6 +1248,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (deadTimer <= 0.5) return;
       if (inside(BTN_CHAR)) { phase = 'select'; return; }
       reset();
+      return;
+    }
+    if (phase === 'stage_clear') {
+      if (clearTimer <= 0.5) return;
+      if (inside(BTN_CHAR)) { phase = 'select'; return; }
+      openBossSelect();
       return;
     }
 
@@ -1317,7 +1351,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   const UPGRADES: Upgrade[] = [
     {
-      id: 'rapid', name: '연사 강화', desc: '발사 간격 -20%', max: 9,
+      // 세이버를 막지 않으면 근접 스윙이 20%씩 9번 빨라져 0.42초 → 0.06초,
+      // 초당 16번 넘게 도는 회전베기가 된다. 몸 전체가 도는 연출이라
+      // 이 속도에서는 애니메이션이 아니라 그냥 깜빡이는 잔상이 된다 —
+      // "종 캐릭터 연사 속도가 비정상적으로 빨라졌다"는 게 바로 이거였다.
+      // 세이버의 성장은 참격 확장(반경) 카드가 맡는다.
+      id: 'rapid', name: '연사 강화', desc: '발사 간격 -20%', max: 9, only: ['charge', 'rapid'],
       apply: () => { w.interval = Math.max(0.026, w.interval * 0.8); },
     },
     {
@@ -1430,7 +1469,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 선형으로 두면 30초 넘어가는 순간 스폰 즉시 증발해서 화면이 텅 빈다.
     // 난이도는 체력이 아니라 머릿수가 끌고 간다. 체력을 가파르게 올리면
     // 킬 수가 줄고 → 레벨이 안 오르고 → 화력이 멈춰서 교착에 빠진다.
-    const grow = 1 + time * 0.05 + time * time * 0.0012;
+    // "너무 어렵다" 피드백을 받고 곡선을 조금 눕혔다. 계수를 낮췄을 뿐
+    // 모양(선형+2차)은 그대로다 — 5분 지점 기준 체력이 대략 20% 낮아진다.
+    const grow = 1 + time * 0.045 + time * time * 0.00095;
     const view = takeView(kind);
     const scale = def.scale * (elite ? 1.6 : 1);
     view.scale.set(scale, scale);
@@ -1441,7 +1482,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foes.push({
       mode: 0, timer: Math.random() * 1.2, ax: 0, ay: 0,
       kind, x, y, kx: 0, ky: 0,
-      hp: def.hp * grow * (elite ? 7 : 1),
+      hp: def.hp * grow * (elite ? 5.5 : 1),
       def, scale, elite, flash: 0, view, alive: true,
     });
   }
@@ -1679,7 +1720,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     view.scale.set(1.9, 1.9);
     foeLayer.addChild(view);
     const a = Math.random() * Math.PI * 2;
-    const maxHp = Math.round(220 + time * 46);
+    // 보스도 잡몹과 같은 비율로 눕힌다 — 여기만 그대로 두면 무기를
+    // 다 갖춰도 첫 보스보다 마지막 보스가 불균형하게 벅차진다.
+    const maxHp = Math.round(200 + time * 40);
     boss = {
       id, name: ENEMY_NAMES[id] ?? id,
       x: clamp(px + Math.cos(a) * 190, 40, ARENA_W - 40),
@@ -1971,6 +2014,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foeLayer.removeChild(b.view);
     boss = null;
     bossKills++;
+    // 이번에 잡은 게 이 판의 목표(스테이지 보스)인지 — 맞다면 가챠가
+    // 끝난 뒤 농사를 계속하는 게 아니라 클리어 화면으로 간다.
+    const isStageBoss = !!stageBoss && b.def.id === stageBoss.id;
     // Weapon Get — 그 보스의 무기를 준다. 시리즈의 핵심이 이거다.
     // 이미 갖고 있으면 한 단계 올려준다.
     const dropId = b.def.drop;
@@ -1978,6 +2024,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dropDef = BOSS_WEAPONS.find((x) => x.id === dropId);
     if (dropDef && (owned.get(dropId) ?? 0) < dropDef.max) {
       pullResult = dropDef;
+      pendingStageClear = isStageBoss;
       // 릴에는 보스 무기 여덟만 올린다 — 어떤 보스가 뭘 주는지가 같이 보인다
       reel.start(
         BOSS_WEAPONS.map((x) => ({ name: x.name, color: x.color, rarity: x.rarity ?? 'R' })),
@@ -1988,7 +2035,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     } else {
       coins += COINS_PER_PULL;
       sfx.coin();
+      // 무기를 못 주는 경우(이미 판 안에서 이 보스를 또 잡은 경우)에도
+      // 스테이지 보스라면 클리어는 클리어다 — 가챠 없이 바로 결과로 간다.
+      if (isStageBoss) {
+        markStageCleared(b.def.id);
+        clearTimer = 0;
+        phase = 'stage_clear';
+      }
     }
+  }
+
+  /** 스테이지 클리어 표시를 남긴다 — 다시 도전은 막지 않고 배지만 붙는다 */
+  function markStageCleared(id: string): void {
+    clearedStages.add(id);
+    saveCleared([...clearedStages]);
   }
 
   /**
@@ -3321,8 +3381,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   }
 
   function startRun(): void {
+    // 예전엔 캐릭터를 고르면 곧장 시작해서, 보스는 시간이 지나야
+    // 무작위로 고르게 되는 중간 이벤트였다. 이제 보스(=스테이지)를
+    // 먼저 정하고 그 스테이지 안에서 판이 벌어진다.
     setCharacter(CHAR_DEFS[selIndex]);
-    reset();
+    openBossSelect();
   }
 
   function choosePick(): void {
@@ -3380,7 +3443,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossAt = 70;
     bossBanner = 0;
     bossKills = 0;
-    rushT = 0; rushIndex = 0; rushBanner = 0;
     newRecord = false;
     coins = 2;
     pityCount = 0;
@@ -3400,7 +3462,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     px = ARENA_W / 2; py = ARENA_H / 2;
     // 캐릭터마다 체력과 탄이 다르다. 검증해 둔 곡선에서 크게 벗어나지 않도록
     // 원본 수치를 그대로 쓰지 않고 좁은 폭으로만 반영한다.
-    maxHp = Math.round(charDef.base_stats.hp * 1.2);
+    // 1.2 → 1.3. 아홉 전원에게 균일하게 걸리는 값이라 캐릭터 간 격차는
+    // 안 건드리면서 전반적인 생존 여유만 넓힌다.
+    maxHp = Math.round(charDef.base_stats.hp * 1.3);
     hp = maxHp;
     iframe = 0;
     dashTimer = 0; dashCd = 0;
@@ -3408,8 +3472,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
     spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
     echoes.length = 0;
-    stageAt = 45; stageBanner = 0;
-    useTheme(0);
+    stageBanner = 0;
+    stageBossSpawned = false;
+    pendingStageClear = false;
+    clearTimer = 0;
+    // 배경은 고른 스테이지의 속성으로 정한다. 재도전(reset 만 다시 호출되는
+    // 경로)에도 stageBoss 는 그대로 남아 있으니 같은 배경으로 다시 들어간다.
+    useTheme(stageBoss ? THEME_FOR_ELEM[stageBoss.elem] : 0);
     speedMul = 1;
     w.interval = 0.16; w.shots = 1; w.spread = 0.06;
     const si = SHOTS.get(charDef.id)!;
@@ -3586,7 +3655,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossSelWeak.push(wk);
   }
 
-  const bossSelTitle = new Text({ text: '다음 상대를 고른다', style: { ...mono, fontSize: 13, fill: 0xffffff } });
+  const bossSelTitle = new Text({ text: '스테이지 선택', style: { ...mono, fontSize: 13, fill: 0xffffff } });
   bossSelTitle.anchor.set(0.5);
   bossSelTitle.position.set(W / 2, 26);
   const bossSelHint = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
@@ -3599,8 +3668,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let bossSelIndex = 0;
 
   function openBossSelect(): void {
-    bossPickList = BOSS_DEFS.filter((d) => !owned.has(d.drop));
-    if (!bossPickList.length) bossPickList = BOSS_DEFS.slice();
+    // 예전엔 '이미 이번 판에서 잡은 보스'만 걸렀다(owned 는 판마다
+    // 비워지는 판 내부 상태). 이제는 판을 시작하기 '전' 화면이라 owned 로
+    // 거를 게 없다 — 여덟 스테이지를 늘 전부 보여주고, 대신 예전에 한
+    // 번이라도 깬 적 있는 스테이지는 clearedStages 로 표시만 해 준다.
+    bossPickList = BOSS_DEFS.slice();
     bossSelIndex = 0;
     phase = 'boss_select';
   }
@@ -3648,9 +3720,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       v.alpha = on ? 1 : 0.6;
       v.update(dtMs);
 
-      bossSelNames[i].text = ENEMY_NAMES[def.id] ?? def.id;
+      // 클리어한 스테이지는 다시 도전을 막지 않되, 한 번 깼다는 건
+      // 표시해 준다 — 안 그러면 여덟 칸이 매번 똑같아 보여서 진행감이 없다
+      const cleared = clearedStages.has(def.id);
+      bossSelNames[i].text = (ENEMY_NAMES[def.id] ?? def.id) + (cleared ? '  ✓' : '');
       bossSelNames[i].position.set(cx, cyTop + BOSS_CELL_H - 29);
-      bossSelNames[i].style.fill = on ? 0xffffff : 0x7d8cb8;
+      bossSelNames[i].style.fill = on ? 0xffffff : cleared ? 0xa8d8b0 : 0x7d8cb8;
 
       const counter = (Object.keys(BEATS) as Element[]).find((e) => e !== 'none' && BEATS[e] === def.elem);
       bossSelWeak[i].text = def.elem === 'none' ? '무속성' : `[${ELEM_NAME[def.elem]}] 약점 ${counter ? ELEM_NAME[counter] : '-'}`;
@@ -3664,19 +3739,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     const picked = bossPickList[bossSelIndex];
     bossSelHint.text = picked
-      ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ ${touchMode ? '다시 눌러서' : '눌러서'} 도전`
+      ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ ${touchMode ? '다시 눌러서' : '눌러서'} 출발`
       : '';
   }
 
-  /** 고른 보스로 문을 연다 — 실제 등장은 bossIntroT 연출이 끝난 뒤다 */
+  /**
+   * 스테이지를 고른다 — 그 보스가 이번 판의 목표가 된다.
+   *
+   * 예전엔 여기서 곧장 보스를 등장시켰다(판 도중에 뽑는 중간 이벤트였으니
+   * 등장 연출만 있으면 됐다). 이제는 판을 처음부터 다시 시작해야 하므로
+   * reset() 을 부른다 — 그 안에서 stageBoss 를 보고 배경 테마를 정하고,
+   * 실제 등장은 farm 시간(bossAt)이 지난 뒤 메인 루프에서 한 번만 한다.
+   */
   function chooseBoss(): void {
     if (phase !== 'boss_select') return;
     const def = bossPickList[bossSelIndex];
     if (!def) return;
-    phase = 'play';
-    bossIntroT = BOSS_INTRO_DUR;
-    bossIntroTicks = 0;
-    void spawnBoss(def, false);
+    stageBoss = def;
+    reset();
+    stageBanner = 2.4;
     sfx.stage();
   }
 
@@ -3684,16 +3765,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   {
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
-    dbg.__hordeSpawnBoss = (): void => { void spawnBoss(); };
+    // id 를 주면 그 보스를 강제로 등장시킨다 — 70초 농사 시간을 기다리지
+    // 않고 "보스 등장 → 처치 → 클리어" 파이프라인을 바로 검증하는 용도
+    dbg.__hordeSpawnBoss = (id?: string): void => {
+      void spawnBoss(id ? BOSS_DEFS.find((d) => d.id === id) : undefined);
+    };
     dbg.__hordeOpenBossSelect = (): void => { openBossSelect(); };
     dbg.__hordeChooseBoss = (id: string): void => {
       const i = bossPickList.findIndex((d) => d.id === id);
       if (i >= 0) { bossSelIndex = i; chooseBoss(); }
     };
+    dbg.__hordeStageBoss = (): string | null => stageBoss?.id ?? null;
+    dbg.__hordeClearedStages = (): string[] => [...clearedStages];
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
-    dbg.__hordeRush = (): void => { rushT = 1; rushIndex = 0; rushBanner = 3; };
     dbg.__hordeCapsule = (): void => {
       const left = (['head', 'body', 'arm', 'foot'] as ArmorSlot[]).filter((k) => !armor.has(k));
       if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
@@ -3756,11 +3842,24 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash') || gachaTap) {
         gachaTap = false;
         if (reel.canDismiss) {
+          // 방금 받은 게 스테이지 보스의 무기였다면 농사를 계속하는 대신
+          // 클리어 화면으로 간다 — grantPull() 이 pullResult 를 비우니
+          // 이름은 그 전에 챙겨 둔다.
+          const wasStageClear = pendingStageClear;
+          const weaponName = pullResult?.name ?? null;
           grantPull();
           reel.dismiss();
-          phase = 'play';
-          // 코인이 더 있으면 연달아 돌린다
-          tryPull();
+          if (wasStageClear) {
+            pendingStageClear = false;
+            lastClearWeaponName = weaponName;
+            if (stageBoss) markStageCleared(stageBoss.id);
+            clearTimer = 0;
+            phase = 'stage_clear';
+          } else {
+            phase = 'play';
+            // 코인이 더 있으면 연달아 돌린다
+            tryPull();
+          }
         } else {
           reel.skip();
         }
@@ -3786,6 +3885,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (deadTimer > 0.5) {
         if (input.pressed('menu') || input.pressed('weapon')) phase = 'select';
         else if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) reset();
+      }
+      draw(dt);
+      input.endFrame();
+      return;
+    }
+
+    if (phase === 'stage_clear') {
+      clearTimer += dt;
+      if (clearTimer > 0.5) {
+        if (input.pressed('menu') || input.pressed('weapon')) phase = 'select';
+        else if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) openBossSelect();
       }
       draw(dt);
       input.endFrame();
@@ -4010,38 +4120,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     spawnAcc += rate * dt;
     while (spawnAcc >= 1) { spawnAcc -= 1; spawnFoe(false); }
 
-    // 45초마다 구역이 바뀐다. 배경 한 장으로 끝까지 가면 5분쯤에 눈이
-    // 완전히 죽는데, 장소가 바뀌면 "더 깊이 들어왔다"는 진행감이 생긴다.
-    if (time >= stageAt) {
-      stageAt += 45;
-      useTheme(themeIndex + 1);
-      stageBanner = 2.2;
-      shake = Math.max(shake, 5);
-      sfx.stage();
+    // 스테이지의 보스는 미리 골라 뒀다(stageBoss) — 여기서는 농사 시간이
+    // 끝나면 그 보스 '하나'를 등장시키는 게 전부다. 예전처럼 시간이 지날
+    // 때마다 새로 고르지 않는다 — 고르는 건 스테이지 선택 화면에서 이미
+    // 끝났고, 여기서 또 고르면 스테이지가 도중에 다른 보스로 바뀌는
+    // 꼴이 된다.
+    if (!stageBossSpawned && !boss && stageBoss && time >= bossAt) {
+      stageBossSpawned = true;
+      bossIntroT = BOSS_INTRO_DUR;
+      bossIntroTicks = 0;
+      void spawnBoss(stageBoss, false);
     }
-
-    // 보스 러시 진입 — 한 번만
-    if (time >= RUSH_AT && rushT <= 0 && rushIndex === 0) {
-      rushT = 1;
-      rushIndex = 0;
-      rushBanner = 3;
-      shake = Math.max(shake, 14);
-      sfx.boss();
-    }
-
-    if (rushT > 0) {
-      // 하나 잡히면 곧바로 다음이 나온다
-      if (!boss && rushIndex < BOSS_DEFS.length) {
-        void spawnBoss(BOSS_DEFS[rushIndex]);
-        rushIndex++;
-      } else if (!boss && rushIndex >= BOSS_DEFS.length) {
-        rushT = 0;
-      }
-    } else if (time >= bossAt && !boss) {
-      bossAt += 62;
-      openBossSelect();
-    }
-    if (rushBanner > 0) rushBanner -= dt;
     if (bossBanner > 0) bossBanner -= dt;
     updateBoss(dt);
 
@@ -4258,7 +4347,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       const rr = f.def.r * f.scale + PLAYER_R;
       if (iframe <= 0 && dx * dx + dy * dy < rr * rr) {
-        hp -= f.def.touch * (f.elite ? 2 : 1);
+        hp -= f.def.touch * (f.elite ? 1.7 : 1);
         iframe = 0.82;
         hitstop = 0.055;
         shake = 8;
@@ -5318,6 +5407,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeTime = time;
     dbg.__hordeDead = phase === 'dead';
+    dbg.__hordeStageClear = phase === 'stage_clear';
+    dbg.__hordePhase = phase;
     dbg.__hordeStat = {
       foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp),
       shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS),
@@ -5343,7 +5434,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeETank = eTanks;
     dbg.__hordeCaps = capsules.length;
     dbg.__hordeRideT = Math.round(rideT);
-    dbg.__hordeRushIdx = rushIndex;
     dbg.__hordePos = [Math.round(px), Math.round(py)];
     dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
     dbg.__hordeHostiles = hostiles.length;
@@ -5353,10 +5443,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       r: b.r, spin: b.spin, homing: b.homing, angle: +b.angle.toFixed(2),
     }));
 
-    // 구역 배너 — 바뀐 직후 잠깐 뜬다
+    // 스테이지 진입 배너 — 어떤 구역에 누구를 잡으러 왔는지 시작하자마자 보여준다
     stageLabel.visible = stageBanner > 0 && phase === 'play';
     if (stageLabel.visible) {
-      stageLabel.text = `${theme.name}`;
+      const bossName = stageBoss ? (ENEMY_NAMES[stageBoss.id] ?? stageBoss.id) : '';
+      stageLabel.text = bossName ? `${theme.name} · ${bossName}` : theme.name;
       stageLabel.style.fill = theme.accent;
       stageLabel.alpha = Math.min(1, stageBanner / 0.6);
     }
@@ -5512,19 +5603,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     if (bossBanner > 0 && phase === 'play') {
       stageLabel.visible = true;
-      stageLabel.text = rushT > 0 ? `보스 러시  ${rushIndex}/${BOSS_DEFS.length}` : '경 고';
-      stageLabel.style.fill = rushT > 0 ? 0xffd05c : 0xff5c78;
+      stageLabel.text = '경 고';
+      stageLabel.style.fill = 0xff5c78;
       stageLabel.alpha = Math.floor(bossBanner * 8) % 2 === 0 ? 1 : 0.25;
-    }
-    if (rushBanner > 0 && phase === 'play') {
-      stageLabel.visible = true;
-      stageLabel.text = '보 스  러 시';
-      stageLabel.style.fill = 0xffd05c;
-      stageLabel.alpha = Math.floor(rushBanner * 7) % 2 === 0 ? 1 : 0.3;
-    }
-    // 러시 중에는 몇 마리째인지 계속 보여준다
-    if (rushT > 0 && boss && phase === 'play') {
-      killLabel.text = `러시 ${rushIndex}/${BOSS_DEFS.length}`;
     }
 
     timeLabel.text = `${Math.floor(time)}s`;
@@ -5539,7 +5620,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       subLabel.text =
         `${Math.floor(time)}초 · ${kills}킬 · Lv.${level}` +
         (bossKills ? ` · 보스 ${bossKills}` : '') +
-        (rushIndex >= BOSS_DEFS.length ? ' · 러시 완주' : '') +
         (newRecord ? '\n★ 최고 기록 ★' : b ? `\n최고 ${b.t}초 · ${b.kills}킬` : '') +
         '\n화면을 누르면 재시도';
       hintLabel.text = '';
@@ -5549,6 +5629,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       for (const b of cardBadges) b.visible = false;
       cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).fill({ color: 0x05070f, alpha: 0.9 });
       cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).stroke({ color: 0x3a4a90, width: 1 });
+      cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).fill({ color: 0x16203f });
+      cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).stroke({ color: 0x4f6198, width: 1 });
+      charBtnLabel.visible = true;
+    } else if (phase === 'stage_clear') {
+      centerLabel.position.set(W / 2, H / 2 - 34);
+      centerLabel.text = 'STAGE CLEAR';
+      subLabel.position.set(W / 2, H / 2 + 2);
+      const nm = stageBoss ? (ENEMY_NAMES[stageBoss.id] ?? stageBoss.id) : '';
+      subLabel.text =
+        `${nm} 격파 · ${Math.floor(time)}초 · ${kills}킬 · Lv.${level}` +
+        (lastClearWeaponName ? `\n무기 획득 · ${lastClearWeaponName}` : '') +
+        '\n화면을 누르면 다음 스테이지로';
+      hintLabel.text = '';
+      cardG.clear();
+      for (const t of cardTexts) t.text = '';
+      for (const b of cardBadges) b.visible = false;
+      // 죽음 화면과 같은 틀에 테두리만 금빛으로 — 같은 종류의 결과 화면인데
+      // 이건 실패가 아니라 성공이라는 걸 색으로 구분한다
+      cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).fill({ color: 0x05070f, alpha: 0.9 });
+      cardG.roundRect(14, H / 2 - 56, W - 28, 112, 5).stroke({ color: 0xffd05c, width: 1 });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).fill({ color: 0x16203f });
       cardG.roundRect(BTN_CHAR.x, BTN_CHAR.y, BTN_CHAR.w, BTN_CHAR.h, 4).stroke({ color: 0x4f6198, width: 1 });
       charBtnLabel.visible = true;
@@ -5574,7 +5674,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         : time < 9 ? (touchMode ? '끌어서 이동 · CHARGE 길게 눌러 차지' : '방향키 이동 · X 길게 눌러 차지') : '';
     }
 
-    if (phase !== 'pick' && phase !== 'dead') {
+    if (phase !== 'pick' && phase !== 'dead' && phase !== 'stage_clear') {
       cardG.clear();
       for (const t of cardTexts) t.text = '';
       for (const b of cardBadges) b.visible = false;
