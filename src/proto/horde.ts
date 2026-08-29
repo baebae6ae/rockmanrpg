@@ -487,6 +487,8 @@ interface Arc {
   color: number;
   /** 그리는 방식. 특수무기가 만드는 자국은 기본 부채꼴이다 */
   look?: SaberLook;
+  /** 잔향처럼 옅게 — 방금 벤 자리에 남는 흔적이지 새로운 공격이 아니다 */
+  weak?: boolean;
 }
 
 interface Upgrade {
@@ -968,7 +970,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    * "휘두른 자리에 충격이 남는다"를 그림만이 아니라 실제로 만들려면
    * 시간이 지난 뒤 한 번 더 때려야 한다.
    */
-  interface Echo { x: number; y: number; r: number; t: number; dmg: number }
+  interface Echo { x: number; y: number; r: number; t: number; dmg: number; weak?: boolean }
   const echoes: Echo[] = [];
 
   const droneG = new Graphics();
@@ -1650,9 +1652,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       life: 0.16, max: 0.16, color: shotColor, look: saberLook,
     });
     if (saberEcho > 0) {
+      // 자동공격의 잔류 파문 — 원래 스윙(w.arcR)보다 크게 그리면 두 번째
+      // 공격처럼 보인다. 같은 반경으로 두고 weak 로 표시해 그리기 단계에서
+      // 옅게 만든다.
       echoes.push({
-        x: px, y: py - 10, r: w.arcR * 1.35, t: 0.24,
-        dmg: Math.max(1, Math.round(w.dmg * saberEcho)),
+        x: px, y: py - 10, r: w.arcR, t: 0.24,
+        dmg: Math.max(1, Math.round(w.dmg * saberEcho)), weak: true,
       });
     }
     shake = Math.max(shake, 1.5);
@@ -4515,22 +4520,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       e.t -= dt;
       if (e.t > 0) continue;
       echoes.splice(i, 1);
+      let hit = false;
       for (let j = foes.length - 1; j >= 0; j--) {
         const f = foes[j];
         const dx = f.x - e.x;
         const dy = (f.y - 8 - e.y) / 0.78;
         const reach = e.r + f.def.r * f.scale;
-        if (dx * dx + dy * dy <= reach * reach) hurtFoe(f, e.dmg, w.elem);
+        if (dx * dx + dy * dy <= reach * reach) { hurtFoe(f, e.dmg, w.elem); hit = true; }
       }
       if (boss) {
         const dx = boss.x - e.x;
         const dy = (boss.y - 14 - e.y) / 0.78;
         const reach = e.r + 18;
-        if (dx * dx + dy * dy <= reach * reach) hurtBoss(e.dmg, w.elem);
+        if (dx * dx + dy * dy <= reach * reach) { hurtBoss(e.dmg, w.elem); hit = true; }
       }
+      // 약한 잔류 파문은 아무것도 못 맞혔으면 아예 안 띄운다 — 혼자 있을 때도
+      // 0.42초마다 빈 링이 번쩍이면 그 자체로 "쉬지 않고 뭔가 터진다"는
+      // 인상을 준다. 큰 파문(차지)은 연출이 목적이라 그대로 항상 띄운다.
+      if (e.weak && !hit) continue;
       arcs.push({
         x: e.x, y: e.y, angle: 0, r: e.r, span: Math.PI * 2,
-        life: 0.18, max: 0.18, color: shotCore, look: 'ring',
+        life: e.weak ? 0.12 : 0.18, max: e.weak ? 0.12 : 0.18,
+        color: e.weak ? shotColor : shotCore, look: 'ring', weak: e.weak,
       });
     }
 
@@ -4824,11 +4835,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const a1 = ac.angle + ac.span / 2;
       if (ac.look === 'ring') {
         // 종 — 휘두른 자리에서 퍼져 나가는 파문. 안이 비어야 '남은 충격'이지
-        // 채우면 그냥 커지는 원이 된다
+        // 채우면 그냥 커지는 원이 된다.
+        //
+        // weak(자동공격 잔류 파문)는 눈에 확 띄는 흰 테두리를 빼고 알파도
+        // 낮춘다 — 안 그러면 0.42초마다 도는 원래 스윙과 밝기가 똑같은
+        // 두 번째 링이 0.24초 뒤에 또 뜨는 꼴이 되어, 실제로는 초당 2.4번
+        // 베는 걸 초당 5번 가까이 번쩍이는 것처럼 보이게 만든다 — "종만
+        // 연사가 미친듯이 빠르다"는 게 바로 이 이중 플래시였다.
+        const wk = ac.weak;
         specialG.circle(ac.x, ac.y, r);
-        specialG.stroke({ color: ac.color, width: 5 - k * 3, alpha: (1 - k) * 0.7 });
-        specialG.circle(ac.x, ac.y, r * 0.72);
-        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
+        specialG.stroke({ color: ac.color, width: (wk ? 3 : 5) - k * 2, alpha: (1 - k) * (wk ? 0.35 : 0.7) });
+        if (!wk) {
+          specialG.circle(ac.x, ac.y, r * 0.72);
+          specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
+        }
       } else if (ac.look === 'crescent') {
         // 사슬 — 길게 뻗는 얇은 낫. 부채꼴로 채우면 짧고 뭉툭해 보인다
         specialG.moveTo(ac.x + Math.cos(a0) * r, ac.y + Math.sin(a0) * r)
