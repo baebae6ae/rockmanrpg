@@ -50,6 +50,24 @@ export const enum M {
   mouth = 22,
   /** 천의 밝은 면 — 어깨 윗면·옷깃처럼 빛을 정면으로 받는 자리 */
   clothH = 23,
+  /**
+   * 또렷한 하이라이트 점 — 헬멧 능선·어깨 끝·부츠 코처럼 볼록한 자리에
+   * 딱 한둘만 찍는다. formTone 그러데이션은 부드러운 대신 화면이
+   * 밋밋해진다 — 록맨 X·제로 스프라이트가 또렷해 보이는 건 여기저기
+   * 그러데이션 대신 볼록한 곳마다 새하얀 점 하나가 딱 박혀 있어서다.
+   * 자동 음영을 끄고 고정 밝기로 찍는다.
+   */
+  spec = 24,
+  /**
+   * 관절용 강철 — 무릎·팔꿈치·손·견갑처럼 몸에 붙은 금속 전용. 대원마다
+   * 다른 c.metal 은 그 대원의 무기(종의 놋쇠 종, 거울의 은색 손잡이 같은)
+   * 색으로 남겨 두고, 몸에 박힌 관절만 옷과 확실히 다른 중성 강철색을
+   * 쓴다 — 예전엔 관절이 옷을 그대로 밝힌 색이라 '같은 페인트의 밝은
+   * 칸'으로만 보였다. 록맨류가 갑옷과 관절이 다른 재질로 읽히는 건
+   * 색상 자체가 다르기 때문이지, 명암만 다르기 때문이 아니다.
+   */
+  joint = 25,
+  jointB = 26,
 }
 
 /** 앞쪽 재질 → 반대편(뒤쪽) 재질 */
@@ -57,6 +75,28 @@ const BACK_OF: Partial<Record<M, M>> = {
   [M.suit]: M.suitB, [M.trim]: M.trimB,
   [M.metal]: M.metalB, [M.accent]: M.trimB,
   [M.cloth]: M.clothB, [M.clothS]: M.clothB, [M.clothH]: M.clothB,
+  [M.joint]: M.jointB,
+};
+
+/**
+ * 부품 그룹 — 다른 그룹끼리 맞닿으면 이음매에 선을 넣는다(아래
+ * seamDarken 참고). 같은 그룹 안에서는 안 넣는다 — 몸통 안의 그늘·
+ * 하이라이트 단끼리 전부 선이 생기면 다시 부서져 보인다.
+ *
+ * 록맨 X·제로가 또렷해 보이는 건 그러데이션이 아니라 부품마다(헬멧·
+ * 얼굴·어깨·팔) 진한 선으로 나뉘어 있어서다. 얼굴 세부(눈·눈썹·입)와
+ * 하이라이트 점은 이미 1~2px 짜리라 선을 더 넣으면 뭉개지므로 뺀다.
+ */
+const enum Fam { skin = 1, hair = 2, plate = 4, metal = 5, accent = 6, glow = 7 }
+const FAMILY: Partial<Record<M, Fam>> = {
+  [M.skin]: Fam.skin, [M.skinS]: Fam.skin, [M.skinH]: Fam.skin,
+  [M.hair]: Fam.hair, [M.hairS]: Fam.hair,
+  [M.suit]: Fam.plate, [M.trim]: Fam.plate, [M.suitB]: Fam.plate, [M.trimB]: Fam.plate,
+  [M.cloth]: Fam.plate, [M.clothS]: Fam.plate, [M.clothB]: Fam.plate, [M.clothH]: Fam.plate,
+  [M.metal]: Fam.metal, [M.metalB]: Fam.metal,
+  [M.joint]: Fam.metal, [M.jointB]: Fam.metal,
+  [M.accent]: Fam.accent,
+  [M.glow]: Fam.glow,
 };
 
 // ---------------------------------------------------------------- 색
@@ -69,6 +109,21 @@ export const mix = (a: RGB, b: RGB, t: number): RGB => [
   Math.round(a[1] + (b[1] - a[1]) * t),
   Math.round(a[2] + (b[2] - a[2]) * t),
 ];
+
+/**
+ * 채도를 밀어 올린다. 작업복이라고 무채색으로 가둬 뒀더니 록맨류
+ * 스프라이트 옆에 놓으면 색이 죽어 보였다 — 채도가 아니라 명도 대비만
+ * 조절하면 칙칙함은 그대로 남는다. 밝기(대략적인 luma)는 지키고
+ * 거기서 벌어지는 만큼만 민다.
+ */
+export const saturate = (c: RGB, amt: number): RGB => {
+  const y = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
+  return [
+    Math.max(0, Math.min(255, Math.round(y + (c[0] - y) * (1 + amt)))),
+    Math.max(0, Math.min(255, Math.round(y + (c[1] - y) * (1 + amt)))),
+    Math.max(0, Math.min(255, Math.round(y + (c[2] - y) * (1 + amt)))),
+  ];
+};
 
 /** 어두운 쪽은 검정이 아니라 차가운 남색으로 민다 — 검정으로 내리면 도트가 죽는다 */
 const COOL: RGB = [22, 26, 44];
@@ -97,32 +152,61 @@ function skinTones(base: string): [RGB, RGB, RGB] {
 interface Ramp { t: RGB[]; edgeLit: RGB; edgeDark: RGB; bounce: RGB }
 
 /**
- * 천·살결처럼 무른 것을 위한 램프. 금속 램프를 그대로 쓰면 옷 주름마다
- * 하이라이트가 번쩍여서 결국 갑옷으로 보인다. 폭을 절반으로 좁히고
- * 제일 밝은 칸도 확 낮춰서, 빛을 '반사'하는 게 아니라 '머금는' 느낌으로 만든다.
+ * 천·살결처럼 무른 것을 위한 램프.
+ *
+ * 예전엔 폭을 절반으로 좁혀서 '반사'가 아니라 '머금는' 느낌을 냈는데,
+ * 그러다 보니 명암이 밋밋해서 록맨 X·제로 스프라이트 옆에 두면 색이
+ * 죽어 보였다. 폭은 그대로 좁게 두되(주름마다 번쩍이면 갑옷이 되는
+ * 건 여전히 맞다) 양 끝을 눌러 대비를 올렸다 — 부드럽게 머금으면서도
+ * 또렷하게 갈린다.
  */
 function softRamp(base: string | RGB): Ramp {
   const b = typeof base === 'string' ? hex(base) : base;
   return {
     t: [
-      mix(b, COOL, 0.42), mix(b, COOL, 0.30), mix(b, COOL, 0.15), b,
-      mix(b, LIGHT, 0.09), mix(b, LIGHT, 0.19), mix(b, LIGHT, 0.30),
+      mix(b, COOL, 0.52), mix(b, COOL, 0.36), mix(b, COOL, 0.17), b,
+      mix(b, LIGHT, 0.12), mix(b, LIGHT, 0.26), mix(b, LIGHT, 0.42),
     ],
     edgeLit: mix(b, COOL, 0.62),
-    edgeDark: mix(b, COOL, 0.84),
+    edgeDark: mix(b, COOL, 0.88),
     bounce: mix(mix(b, COOL, 0.34), BOUNCE, 0.30),
   };
 }
 
+/**
+ * 살을 위한 램프 — formTone 자동 음영을 얼굴에 켜면서 놓친 게 있었다.
+ * 그늘을 아무 생각 없이 ramp() 에 넣었더니 COOL(남색)로 68% 까지
+ * 죽는 금속용 어두운 끝이 그대로 얼굴에 들어갔다. 위 skinTones() 주석에
+ * 이미 적어 뒀던 원칙 — "살 그늘은 남색이 아니라 붉게 죽는다. 차갑게
+ * 내리면 얼굴만 시체색이 된다" — 을 램프에서는 안 지킨 것이다. 그 결과가
+ * "얼룩 같다"는 소리였다. 그늘을 SKIN_SHADE(붉은 갈색) 쪽으로, 폭도
+ * 얼굴 크기에 맞게 훨씬 좁게 잡는다.
+ */
+function skinRamp(base: RGB): Ramp {
+  return {
+    t: [
+      mix(base, SKIN_SHADE, 0.5), mix(base, SKIN_SHADE, 0.34), mix(base, SKIN_SHADE, 0.16), base,
+      mix(base, LIGHT, 0.10), mix(base, LIGHT, 0.20), mix(base, LIGHT, 0.32),
+    ],
+    edgeLit: mix(base, SKIN_SHADE, 0.22),
+    edgeDark: mix(base, SKIN_SHADE, 0.58),
+    bounce: mix(base, BOUNCE, 0.14),
+  };
+}
+
+/**
+ * 금속·홍채처럼 단단한 것을 위한 램프. 대비를 한 단 더 올렸다 —
+ * 어중간한 명암은 부드러워 보이는 게 아니라 색이 탁해 보인다.
+ */
 function ramp(base: string | RGB): Ramp {
   const b = typeof base === 'string' ? hex(base) : base;
   return {
     t: [
-      mix(b, COOL, 0.62), mix(b, COOL, 0.44), mix(b, COOL, 0.23), b,
-      mix(b, LIGHT, 0.15), mix(b, LIGHT, 0.32), mix(b, LIGHT, 0.55),
+      mix(b, COOL, 0.68), mix(b, COOL, 0.48), mix(b, COOL, 0.24), b,
+      mix(b, LIGHT, 0.18), mix(b, LIGHT, 0.38), mix(b, LIGHT, 0.62),
     ],
     edgeLit: mix(b, COOL, 0.70),
-    edgeDark: mix(b, COOL, 0.88),
+    edgeDark: mix(b, COOL, 0.90),
     bounce: mix(mix(b, COOL, 0.44), BOUNCE, 0.34),
   };
 }
@@ -302,56 +386,81 @@ export interface CrewPal {
 export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   const m = f.m;
   const out = new Uint8Array(CELL * CELL * 4);
-  const suit = hex(c.suit);
-  const sk = skinTones(c.skin ?? '#e0a882');
-  const iris = hex(c.iris ?? c.glow);
+  // 작업복이라고 무채색으로 죽여 뒀더니 칙칙해 보였다 — 명도는 그대로
+  // 두고 채도만 밀어 올린다.
+  const suit = saturate(hex(c.suit), 0.28);
+  const hair = saturate(hex(c.hair ?? c.suit), 0.2);
+  const sk = skinTones(c.skin ?? '#e0a882').map((t) => saturate(t, 0.1)) as [RGB, RGB, RGB];
+  const iris = saturate(hex(c.iris ?? c.glow), 0.2);
   const trim = mix(suit, COOL, 0.42);
+  // 관절 강철 — 대원 옷 색과 무관한 고정 중성색. 아주 살짝만 그 대원의
+  // 발광색을 머금여 아홉 명이 전부 똑같은 회색 관절을 달지 않게 한다.
+  const STEEL: RGB = [150, 156, 166];
+  const joint = mix(STEEL, hex(c.glow), 0.12);
   const R: Partial<Record<M, Ramp>> = {
     [M.suit]: ramp(suit),
     [M.trim]: ramp(trim),
-    [M.metal]: ramp(c.metal),
+    [M.metal]: ramp(saturate(hex(c.metal), 0.16)),
+    [M.joint]: ramp(joint),
+    [M.jointB]: ramp(mix(joint, COOL, 0.24)),
     [M.accent]: ramp(c.glow),
     [M.glow]: ramp(c.glow),
-    [M.skin]: ramp(sk[1]),
+    [M.skin]: skinRamp(sk[1]),
     [M.skinS]: ramp(sk[0]),
     [M.skinH]: ramp(sk[2]),
     [M.eye]: ramp(EYE),
     [M.iris]: ramp(iris),
     [M.white]: ramp(EYE_LIT),
-    [M.hair]: softRamp(c.hair ?? c.suit),
+    // 머리카락도 이제 또렷한 램프로 — 애니메 머리 특유의 반짝임은
+    // 무른 램프로는 안 나온다.
+    [M.hair]: ramp(hair),
     // 반대편 팔다리 — 색을 따로 주는 게 아니라 같은 색을 한 단 죽인다.
     // 다른 색을 쓰면 다른 재질로 보이고, 안 죽이면 앞뒤가 안 갈린다.
     [M.suitB]: ramp(mix(suit, COOL, 0.24)),
     [M.trimB]: ramp(mix(trim, COOL, 0.24)),
-    [M.metalB]: ramp(mix(hex(c.metal), COOL, 0.24)),
-    // 천 계열은 부드러운 램프로 — 같은 색이라도 금속처럼 안 번쩍인다
-    [M.cloth]: softRamp(suit),
-    [M.clothS]: softRamp(trim),
-    [M.clothB]: softRamp(mix(suit, COOL, 0.24)),
-    [M.hairS]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.34)),
-    [M.brow]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.2)),
+    [M.metalB]: ramp(mix(saturate(hex(c.metal), 0.16), COOL, 0.24)),
+    // 팔다리·몸통은 이제 갑옷판이다 — 부드러운 램프를 쓰면 록맨류
+    // 옆에서 색이 죽어 보인다. 얼굴 쪽(눈썹·볼·입)만 softRamp 로 남긴다.
+    [M.cloth]: ramp(suit),
+    [M.clothS]: ramp(trim),
+    [M.clothB]: ramp(mix(suit, COOL, 0.24)),
+    [M.hairS]: ramp(mix(hair, COOL, 0.34)),
+    [M.brow]: softRamp(mix(hair, COOL, 0.2)),
     [M.blush]: softRamp(mix(sk[1], [232, 118, 116], 0.44)),
     [M.mouth]: softRamp(mix(sk[0], [122, 60, 62], 0.5)),
-    [M.clothH]: softRamp(mix(suit, [255, 238, 214], 0.3)),
+    [M.clothH]: ramp(mix(suit, [255, 238, 214], 0.3)),
+    [M.spec]: ramp(LIGHT),
   };
+  // 하이라이트 점 — 살짝 따뜻하게, 완전한 흰색은 색이 빠져 보인다
+  const SPEC: RGB = mix(LIGHT, hex(c.glow), 0.12);
 
-  const put = (x: number, y: number, col: RGB): void => {
+  const put = (x: number, y: number, col: RGB, a = alpha): void => {
     if (x < 0 || x >= CELL || y < 0 || y >= CELL) return;
     const i = (y * CELL + x) * 4;
-    out[i] = col[0]; out[i + 1] = col[1]; out[i + 2] = col[2]; out[i + 3] = alpha;
+    out[i] = col[0]; out[i + 1] = col[1]; out[i + 2] = col[2]; out[i + 3] = a;
   };
 
   // 윤곽선 — 이웃 재질에서 색을 가져온다. 전부 같은 검정으로 두르면
   // 오려 붙인 스티커처럼 보인다. 빛 쪽 외곽은 조금 덜 어둡게 둔다.
+  //
+  // 안티에일리어싱: 대각선 모서리는 실루엣에 닿는 이웃이 위/아래/좌/우
+  // 넷 중 딱 하나뿐이다(직선 구간은 둘 이상 닿는다). 그 한 칸을
+  // 불투명으로 꽉 채우면 계단이 그대로 보이므로 반투명으로 낮춰
+  // 뒤가 살짝 비치게 한다 — 록맨류처럼 매끄러운 곡선으로 읽힌다.
+  // 얼굴 세부(눈·눈썹)는 이미 1~2px라 이 정도로도 뭉개지지 않는다 —
+  // 이 칸은 실루엣 '바깥' 배경 칸이라 원래 그리던 내용을 안 건드린다.
   for (let y = 0; y < CELL; y++) {
     for (let x = 0; x < CELL; x++) {
       if (m[y * CELL + x]) continue;
-      const n = at(m, x, y + 1) || at(m, x + 1, y) || at(m, x, y - 1) || at(m, x - 1, y);
+      const nD = at(m, x, y + 1), nR = at(m, x + 1, y), nU = at(m, x, y - 1), nL = at(m, x - 1, y);
+      const n = nD || nR || nU || nL;
       if (!n) continue;
       const r = R[n as M];
       if (!r) continue;
-      const lit = !at(m, x, y - 1) && !at(m, x - 1, y);
-      put(x, y, lit ? r.edgeLit : r.edgeDark);
+      const lit = !nU && !nL;
+      const touching = (nD ? 1 : 0) + (nR ? 1 : 0) + (nU ? 1 : 0) + (nL ? 1 : 0);
+      const a = touching === 1 ? Math.round(alpha * 0.62) : alpha;
+      put(x, y, lit ? r.edgeLit : r.edgeDark, a);
     }
   }
 
@@ -361,12 +470,15 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
       if (!mat) continue;
       const r = R[mat];
       if (!r) continue;
-      // 발광체와 얼굴은 자동 음영을 안 먹인다 — 위 M 주석 참고
+      // 발광체·이목구비는 자동 음영을 안 먹인다 — 위 M 주석 참고.
+      // 살(M.skin) 자체는 뺐다 — 이마·볼처럼 넓은 면이라 형태광을
+      // 태워도 안 뭉개지는데, 계속 납작한 색으로 두면 팔다리는
+      // 갑옷판으로 입체가 살아나는 옆에서 얼굴만 스티커처럼 붕 뜬다.
       if (mat === M.glow) { put(x, y, r.t[5]); continue; }
+      if (mat === M.spec) { put(x, y, SPEC); continue; }
       if (mat === M.eye) { put(x, y, EYE); continue; }
       if (mat === M.white) { put(x, y, EYE_LIT); continue; }
       if (mat === M.iris) { put(x, y, iris); continue; }
-      if (mat === M.skin) { put(x, y, sk[1]); continue; }
       if (mat === M.skinS) { put(x, y, sk[0]); continue; }
       if (mat === M.skinH) { put(x, y, sk[2]); continue; }
 
@@ -378,6 +490,27 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
       // 위로는 두 단까지만 — 제일 밝은 칸은 발광체 몫으로 남겨 둔다.
       const d = Math.max(-3, Math.min(2, form + partTone(m, x, y)));
       put(x, y, r.t[Math.max(0, Math.min(6, 3 + d))]);
+    }
+  }
+
+  // 이음매 선 — 그룹이 다른 부품이 맞닿는 자리(아래·오른쪽 이웃)를
+  // 한 번 더 죽인다. 위·왼쪽은 그대로 둬서 선이 한쪽에만 생기게 한다 —
+  // 양쪽 다 죽이면 2px 짜리 두꺼운 선이 되어 이 해상도에서는 뭉갠다.
+  const seamDarken = (x: number, y: number): void => {
+    const i = (y * CELL + x) * 4;
+    if (!out[i + 3]) return;
+    const d = mix([out[i], out[i + 1], out[i + 2]], COOL, 0.4);
+    out[i] = d[0]; out[i + 1] = d[1]; out[i + 2] = d[2];
+  };
+  for (let y = 0; y < CELL; y++) {
+    for (let x = 0; x < CELL; x++) {
+      const mat = m[y * CELL + x] as M;
+      const fam = FAMILY[mat];
+      if (!fam) continue;
+      const famR = FAMILY[at(m, x + 1, y) as M];
+      if (famR && famR !== fam) seamDarken(x + 1, y);
+      const famD = FAMILY[at(m, x, y + 1) as M];
+      if (famD && famD !== fam) seamDarken(x, y + 1);
     }
   }
   return out;

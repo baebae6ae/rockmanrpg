@@ -11,13 +11,19 @@ import { writeFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { CELL, F, paint, type RGB } from './lib/crewart.js';
 import { CREW, drawCrew, type Pose } from './lib/crew.js';
+import { crewTags } from './lib/crewanim.js';
 
 const SCALE = Number(process.env.SC ?? 6);
 const COLS = Number(process.env.CO ?? 3);
 
+// idle 은 crewanim.ts 의 실제 첫 프레임을 그대로 쓴다. 여기 따로
+// {} 를 박아 뒀다가 실제 자세(체중 이동 lean)를 안 보여준 채 계속
+// 차렷 자세로 확인한 적이 있다 — 프리뷰가 실제와 갈리면 이 도구가
+// 무의미해진다.
+const idlePose = crewTags().find((t) => t.name === 'idle')!.poses[0];
 /** 확인용 포즈 — 서 있는 자세가 기본이다 */
 const POSES: Record<string, Pose> = {
-  idle: {},
+  idle: idlePose,
   run: { hipY: 15, lean: 1, footF: [7, 3], footB: [-7, 0], armWeapon: 'down', armFree: 'forward' },
   jump: { hipY: 19, footF: [5, 4], footB: [-6, 2], armWeapon: 'guard', armFree: 'up' },
   attack: { hipY: 16, lean: 2, armWeapon: 'aim', armFree: 'back' },

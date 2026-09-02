@@ -102,20 +102,23 @@ export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, 
   const kx = Math.round((hipX + fx) / 2);
   const ky = Math.round((hipY + fy) / 2) + 1;
 
-  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 — 위가 굵다
-  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 — 발목이 가늘다
-  f.blob(kx, ky, 2 + s, 2, M.cloth);                     // 무릎 — 각지면 관절이 아니라 꺾인 막대다
+  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 갑옷판 — 위가 굵다
+  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 갑옷판 — 발목이 가늘다
+  // 무릎 — 관절 구체. 각지면 꺾인 막대고, 천 크레이즈 하나로는 부품이
+  // 아니라 얼룩이다. 록맨류는 이 자리가 늘 은색 공이다.
+  f.blob(kx, ky, 2 + s, 2, M.joint);
+  f.set(kx - 1, ky + 1, M.spec);                         // 무릎 하이라이트
   // 다리 앞면에 빛 한 줄. 이게 없으면 굵기를 아무리 바꿔도 납작한
   // 색 기둥으로 보인다
   f.line(hipX - 2, hipY - 1, kx - 2, ky + 1, 1, M.clothH);
-  f.rect(kx - 1, ky - 1, 3, 1, M.clothS);                // 무릎 접힘 주름
 
-  // 부츠 — 둥근 앞코. 네모난 신발은 발이 아니라 상자다
-  f.blob(fx, fy + 2, 3 + s, 3, M.clothS);
-  f.blob(fx + 1, fy + 1, 3 + s, 2, M.clothS);            // 둥근 앞코
+  // 부츠 — 둥근 앞코. 발등은 갑옷판, 앞코·굽만 금속
+  f.blob(fx, fy + 2, 3 + s, 3, M.joint);
+  f.blob(fx + 1, fy + 1, 3 + s, 2, M.cloth);             // 발등 갑옷판
   f.rect(fx - 2 - s, fy + 3, 3, 1, M.clothH);            // 발등 윗면
-  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.metal);         // 밑창
+  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.trim);          // 밑창
   f.rect(fx - 2 - s, fy + 4, 5 + 2 * s, 1, M.accent);    // 발등 띠
+  f.set(fx + 1, fy + 2, M.spec);                          // 앞코 하이라이트
 }
 
 /**
@@ -126,15 +129,19 @@ export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void 
   const ex = Math.round((sx + hx) / 2);
   const ey = Math.round((sy + hy) / 2);
   const dir = sx < 0 ? -1 : 1;                    // 몸 어느 쪽에 붙은 팔인가
-  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔
-  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 — 소매
-  // 팔과 몸통이 같은 천이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
+  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔 갑옷판
+  // 팔꿈치 — 무릎과 같은 관절 구체. 천 주름 하나로는 부품이 아니다
+  f.blob(ex, ey, 2, 2, M.joint);
+  f.set(ex - dir, ey + 1, M.spec);
+  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 갑옷판
+  // 팔과 몸통이 같은 판이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
   // 안쪽 모서리에 그늘 한 줄을 넣어야 팔이 몸에서 떨어져 보인다.
   f.line(sx - dir * 2, sy, ex - dir * 2, ey, 1, M.clothS);
-  f.rect(ex - 1, ey, 3, 1, M.clothS);             // 팔꿈치 주름
-  f.blob(hx, hy, 2, 2, M.skin);                   // 맨손 — 장갑을 씌우면 또 장비가 된다
-  f.set(hx - dir, hy - 1, M.skinS);               // 손가락 쪽 그늘
-  f.blob(hx, hy + 2, 2, 1, M.clothS);             // 소맷단
+  // 손 — 맨살이 아니라 건틀릿. 얼굴은 사람이어도 팔다리는 갑옷이다
+  f.blob(hx, hy, 2, 2, M.joint);
+  f.set(hx - dir, hy - 1, M.jointB);              // 손등 쪽 그늘
+  f.set(hx + dir, hy + 1, M.spec);                // 손등 하이라이트
+  f.blob(hx, hy + 2, 2, 1, M.accent);             // 손목 밴드
 }
 
 // ---------------------------------------------------------------- 몸통
@@ -164,10 +171,13 @@ export function torso(f: F, s: number): void {
   // --- 어깨. 몸에서 흘러내리는 둥근 것. 오른쪽을 한 칸 낮춰 힘을 뺀다
   f.blob(-7 - s, 25, 3 + s, 3, M.cloth);
   f.blob(7 + s, 24, 3 + s, 3, M.cloth);
-  f.blob(-7 - s, 26, 3 + s, 1, M.clothH);         // 윗면은 빛을 정면으로 받는다
-  f.blob(7 + s, 25, 3 + s, 1, M.clothH);
   f.set(-7 - s, 23, M.clothS);                    // 겨드랑이 접힘
   f.set(7 + s, 22, M.clothS);
+  // 견갑 — 어깨 위에 얹힌 금속판. 몸통과 같은 색 천만으로는 팔이
+  // 어디서 시작하는지 안 보인다. 록맨류는 이 자리가 늘 딱딱하다
+  f.blob(-7 - s, 26, 3 + s, 2, M.joint);
+  f.blob(7 + s, 25, 3 + s, 2, M.joint);
+  f.set(-8 - s, 27, M.spec);                      // 빛 쪽 견갑 하이라이트
 
   // --- 옷깃 → 앞섶 → 허리띠.
   //
@@ -195,9 +205,13 @@ export function torso(f: F, s: number): void {
   // --- 가슴에 붙은 단단한 것 하나. 이게 있어야 나머지가 천으로 읽힌다.
   //     가운데에 큰 판을 붙이면 그게 곧 로봇 흉갑이라, 한쪽으로 치우친
   //     작은 패널로 줄였다. 좌우가 어긋나 있는 게 사람이다.
-  f.soft(-6 - s, 19, 5 + s, 4, 1, M.metal);
+  f.soft(-6 - s, 19, 5 + s, 4, 1, M.joint);
   f.rect(-6 - s, 22, 5 + s, 1, M.accent);
-  f.rect(-5 - s, 20, 2, 1, M.glow);               // 코어
+  f.set(-6 - s, 22, M.spec);                      // 가슴판 모서리 하이라이트
+  // 코어 보석 — 사각 점 하나가 아니라 둥근 보석. 구석에 밝은 점을
+  // 하나 곁들이면 그냥 빛나는 게 아니라 반짝이는 것으로 보인다
+  f.blob(-5 - s, 20, 1, 1, M.glow);
+  f.set(-5 - s, 21, M.spec);
 
   // 목 — 두 줄은 보여야 한다. 목이 안 보이면 머리가 어깨에 얹힌
   // 것으로 읽히고, 그게 인형처럼 보이는 큰 원인이었다
@@ -218,100 +232,160 @@ export function torso(f: F, s: number): void {
  * 세로 예산을 먼저 정하고 그 안에서만 그린다. 이걸 안 정해 두면
  * 머리카락이 눈까지 내려와 얼굴이 눌린다(실제로 한 번 그랬다).
  *
- *   y41    헤어라인 — 머리카락은 여기 위로만
- *   y39-40 이마 — 두 줄은 비워 둔다. 여기가 0이면 눈썹이 앞머리에
- *          먹혀서 표정이 통째로 사라진다(실제로 그랬다)
- *   y38    눈썹 — 굵은 눈썹만 y37 까지 내려온다
- *   y37    눈썹과 눈 사이 한 줄
- *   y36-33 눈 넉 줄
- *   y32    입
- *   y30-31 턱
+ *   y39    헤어라인 — 머리카락은 여기 위로만
+ *   y37-38 이마
+ *   y37    눈썹
+ *   y35-36 눈썹과 눈 사이 한 줄 여유
+ *   y33-35 눈 석 줄
+ *   y30-31 턱·입
+ *
+ * 예전엔 머리가 몸통·다리를 합친 것만큼 컸다(2.5등신) — 거기에 얼굴
+ * 4×4 눈을 흰자 위주로 그려 넣었더니 부릅뜬 눈에 프랑켄슈타인 비례가
+ * 겹쳐 무섭다는 소리를 들었다. 머리를 30% 줄이고(3등신에 가깝게),
+ * 눈도 그만큼 줄여 홍채가 눈 대부분을 채우는 쪽으로 바꿨다 — 흰자가
+ * 넓으면 순해 보일 거라 생각했는데, 이 크기에서는 흰자 테두리 쪽이
+ * 오히려 흰자위를 드러내고 노려보는 인상을 만든다.
  */
-export const HAIRLINE = 41;
+export const HAIRLINE = 39;
 
 export function face(f: F, brow: BrowShape = 'calm'): void {
-  // 둥근 달걀형 머리. 아래로 갈수록 좁아진다
-  f.blob(0, 40, 7, 9, M.skin);
-  f.taper(0, 29, 33, 7, 13, M.skin);
-  f.set(-5, 30, M.skinS); f.set(5, 30, M.skinS);   // 턱선
+  // 둥근 달걀형 머리 — 예전보다 한 단 작다. 아래로 갈수록 좁아진다
+  f.blob(0, 37, 5, 6, M.skin);
+  f.taper(0, 29, 31, 4, 9, M.skin);
+  f.set(-4, 30, M.skinS); f.set(4, 30, M.skinS);   // 턱선
+  // 볼의 입체는 이제 formTone 자동 음영이 낸다. 예전엔 여기에 각진
+  // 사각 블록으로 그늘·하이라이트를 얹었는데, 그러데이션 위에 각진
+  // 블록이 얹히니 음영이 아니라 얼룩처럼 보였다 — 자동 음영과 손으로
+  // 얹는 블록은 같이 쓰면 안 된다.
+  // 이마 하이라이트 — 팔다리가 갑옷판으로 반짝이는 옆에서 얼굴만
+  // 납작하면 붕 뜬다. 광원 쪽에 한 점.
+  f.set(-2, 38, M.spec);
 
-  // 볼 — 광원 반대쪽만 죽여 얼굴에 앞뒤를 준다
-  f.rect(6, 33, 2, 5, M.skinS);
-  f.rect(-7, 34, 1, 5, M.skinH);
-
-  // --- 눈. 왼쪽 x -5..-2, 오른쪽 x 2..5, 세로 y33..36
+  // --- 눈. 왼쪽 x -4..-2, 오른쪽 x 2..4, 세로 y33..35
   //
-  // 눈 하나가 4×4다. 이만한 자리를 어두운 색으로 두르면 얼굴에서
-  // 제일 먼저 보이는 게 검은 사각형 두 개가 된다 — 실제로 그랬다.
-  // 그래서 어두운 건 딱 두 군데로 못박았다.
-  //
-  //   - 윗속눈썹 한 줄
-  //   - 바깥 눈꼬리 한 점
-  //
-  // 나머지는 홍채와 흰자다. 홍채가 크면 순해 보이고, 그 둘레에
-  // 흰자가 남아 있어야 눈알이 든 눈으로 보인다.
-  for (const ex of [-5, 2] as const) {
-    const tail = ex < 0 ? ex : ex + 3;             // 바깥쪽 눈꼬리
-    f.rect(ex, 33, 4, 4, M.white);                 // 흰자 4×4
-    f.set(ex, 33, M.skin); f.set(ex + 3, 33, M.skin);   // 네 모서리를 깎아 둥글게
-    f.set(ex, 36, M.skin); f.set(ex + 3, 36, M.skin);
-    f.rect(ex + 1, 36, 2, 1, M.eye);               // 윗속눈썹
-    f.set(tail, 35, M.eye);                        // 눈꼬리
-    f.rect(ex + 1, 33, 2, 3, M.iris);              // 홍채 — 속눈썹 아래를 꽉 채운다
-    f.set(ex + 1, 35, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
+  // 예전엔 눈 하나가 4×4 흰자 상자였다. 머리가 작아진 지금 그 비율을
+  // 그대로 쓰면 흰자가 얼굴의 절반을 차지해 더 심하게 부릅뜬다.
+  // 그래서 흰자 상자를 없애고 홍채색 덩이 하나 + 눈빛 한 점으로
+  // 바꿨다 — 어두운 건 윗속눈썹 한 줄과 눈꼬리 한 점뿐이다.
+  for (const ex of [-4, 2] as const) {
+    const tail = ex < 0 ? ex : ex + 2;             // 바깥쪽 눈꼬리
+    f.rect(ex, 33, 3, 3, M.iris);                  // 홍채가 눈 전체를 채운다
+    f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);   // 아래 모서리를 깎아 둥글게
+    f.rect(ex, 35, 3, 1, M.eye);                   // 윗속눈썹
+    f.set(tail, 34, M.eye);                        // 눈꼬리
+    f.set(ex + 1, 34, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
   }
 
   drawBrow(f, brow);
 
-  // 볼 홍조 — 두 칸씩 딱 두 군데다. 이게 있고 없고로 차가운 얼굴과
-  // 정이 가는 얼굴이 갈린다. 자리를 세 번 옮겼다. 눈 옆에 바짝 붙이면
-  // 눈 테두리로 먹히고, 얼굴 제일 바깥에 두면 실루엣 그늘에 눌려
-  // 멍처럼 보인다. 눈 바로 밑이 맞다.
-  f.rect(-4, 32, 2, 1, M.blush);
-  f.rect(3, 32, 2, 1, M.blush);
+  // 볼 홍조 — 눈보다 한 단 바깥, 한 단 아래. 눈에 붙이면 눈 테두리로
+  // 먹히고, 머리가 작아진 만큼 자리도 좁아져 한 칸짜리로 줄였다.
+  f.set(-5, 32, M.blush);
+  f.set(4, 32, M.blush);
 
-  // 입 — 세 점짜리 웃음. 가운데가 아래, 양 끝이 위다.
-  //
-  // 코는 안 찍는다. 눈이 이만큼 크면 코가 들어갈 자리는 입 바로 위
-  // 한 칸뿐인데, 거기 점을 하나 찍는 순간 입과 붙어 마름모 얼룩이
-  // 되거나 콧수염이 된다 — 둘 다 해 봤다. 없는 편이 낫다.
-  f.set(0, 31, M.mouth);
-  f.set(-1, 32, M.mouth);
-  f.set(1, 32, M.mouth);
+  // 입 — 세 점짜리 웃음. 코는 안 찍는다 — 이 좁은 턱에 코까지 넣으면
+  // 입과 붙어 얼룩이 된다.
+  f.set(0, 30, M.mouth);
+  f.set(-1, 31, M.mouth);
+  f.set(1, 31, M.mouth);
+}
+
+/**
+ * 얼굴 — 고개를 돌린 버전. 시험 삼아 못 하나에만 쓴다.
+ *
+ * 1차: 기존 정면 얼굴을 그대로 두고 눈 하나만 가늘게 접었다 — 대칭
+ * 그림 위에 비대칭을 얹은 꼴이라 눈이 찌그러지거나 감긴 것처럼
+ * 보였다("망쳐놨다").
+ *
+ * 2차: 두개골은 새로 그렸지만 먼 쪽 눈을 '더 작은 눈'으로 다시
+ * 그렸다 — 3×3 눈을 2×2로 줄이면 홍채·눈꺼풀이 뭉쳐 여전히 이상한
+ * 눈으로 읽혔다.
+ *
+ * 3차: 먼 쪽 눈을 아예 안 그렸다 — 그런데 이게 더 나쁜 결과였다.
+ * 맨살 위에 눈이 하나만 있으면 '고개를 돌렸다'가 아니라 '눈이
+ * 하나 없는 얼굴'로 읽힌다("징그럽다"는 말을 들었다). 문제는 눈을
+ * 어떻게 그리느냐가 아니라, 먼 쪽 자리를 맨살로 남겨 뒀다는 것
+ * 자체였다 — 맨살이 보이면 거기 눈이 있어야 한다는 기대가 생긴다.
+ *
+ * 4차: 그 기대 자체를 없앤다. 두개골 실루엣부터 가까운 쪽(+x)으로
+ * 확 밀어붙이고, 먼 쪽은 맨살이 아니라 옆으로 넘긴 앞머리로
+ * 덮는다 — 캐릭터가 고개를 돌려서 그쪽 머리카락이 앞으로 흘러내린
+ * 것이다. 그러면 '왜 눈이 없지'라는 질문 자체가 안 생긴다. 눈은
+ * 가까운 쪽 하나만, 정면 얼굴의 검증된 그림 그대로 쓴다.
+ */
+export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
+  const cx = 2;                                     // 두개골 중심 — 가까운 쪽(+x)으로 두 칸
+  f.blob(cx, 37, 4, 6, M.skin);
+  f.taper(cx, 29, 31, 4, 8, M.skin);
+  f.set(-1, 30, M.skinS); f.set(5, 30, M.skinS);     // 턱선 — 양쪽 폭이 다르다
+  f.set(6, 33, M.skin);                              // 코 능선 — 가까운 쪽 옆얼굴이 한 칸 튀어나온다
+  f.set(6, 32, M.skinS);                             // 콧대 그늘
+
+  // --- 눈. 가까운 쪽(오른쪽) 하나만 — 정면 얼굴과 완전히 같은 눈이다.
+  // 검증된 걸 또 건드릴 이유가 없다.
+  {
+    const ex = 2;
+    f.rect(ex, 33, 3, 3, M.iris);
+    f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);
+    f.rect(ex, 35, 3, 1, M.eye);
+    f.set(ex + 2, 34, M.eye);
+    f.set(ex + 1, 34, M.white);
+  }
+  browMark(f, 2, 1, brow);                            // 눈썹도 가까운 쪽만
+
+  // --- 먼 쪽(왼쪽)을 덮는 옆머리. 맨살을 남겨 두지 않는다 — 이마
+  // 위쪽(넓게)에서 볼 쪽(좁게)으로 흘러내리는 삼각 갈래.
+  f.taper(-1, 32, 39, 2, 6, M.hair);
+  f.set(-2, 38, M.hairS);                            // 갈래 안쪽 그늘 — 밋밋하면 판때기로 보인다
+  f.set(0, 34, M.hairS);
+  f.set(-1, 39, M.spec);                             // 정수리 쪽 하이라이트 한 점
+
+  f.set(5, 32, M.blush);                              // 먼 쪽은 머리에 덮여 홍조 자리가 없다
+
+  // 입 — 코 능선과 같은 쪽으로 한 칸 밀고, 먼 쪽은 짧게 접는다
+  f.set(3, 30, M.mouth);
+  f.set(2, 31, M.mouth);
+  f.set(4, 31, M.mouth);
 }
 
 /** 눈썹 모양 — 성격을 한 획으로 정한다 */
 export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
 
+/**
+ * 눈썹 한 짝. drawBrow() 가 좌우 두 번 부르고, faceTurned() 는 가까운
+ * 쪽 한 번만 부른다 — 먼 쪽은 눈 자체를 안 그리므로 눈썹만 남으면
+ * 흉터처럼 뜬다.
+ */
+function browMark(f: F, ex: number, dir: 1 | -1, shape: BrowShape): void {
+  // 기준선은 y37 이다. 눈(y33~35)과 두 줄 띄워 뒀다 — 붙이면 헤드밴드·
+  // 고글 같은 이마 장식이 내려올 때 눈썹과 뭉개진다(실제로 그랬다).
+  const inner = dir > 0 ? ex : ex + 2;
+  const outer = dir > 0 ? ex + 2 : ex;
+  switch (shape) {
+    case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
+      f.rect(ex, 37, 3, 1, M.brow);
+      f.set(outer, 36, M.brow);
+      break;
+    case 'bold':      // 굵고 눈에 가깝다 — 우직함
+      f.rect(ex, 36, 3, 2, M.brow);
+      break;
+    case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
+      f.rect(ex, 37, 3, 1, M.brow);
+      f.set(inner, 36, M.brow);
+      break;
+    case 'sly':       // 한쪽만 치켜올린다 — 장난기
+      f.rect(ex, 37, 3, 1, M.brow);
+      if (dir > 0) f.set(ex + 1, 36, M.brow);
+      break;
+    default:          // calm
+      f.rect(ex, 37, 3, 1, M.brow);
+      break;
+  }
+}
+
 function drawBrow(f: F, shape: BrowShape): void {
-  // 기준선은 y38 이다. 변형은 전부 아래(눈 쪽)로만 자란다 — 위로 자라면
-  // 앞머리에 먹혀서 어떤 모양을 그리든 똑같아 보인다.
-  const put = (ex: number, dir: 1 | -1): void => {
-    const inner = dir > 0 ? ex : ex + 3;
-    const outer = dir > 0 ? ex + 3 : ex;
-    switch (shape) {
-      case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
-        f.rect(ex, 38, 4, 1, M.brow);
-        f.set(outer, 37, M.brow);
-        break;
-      case 'bold':      // 굵고 눈에 가깝다 — 우직함
-        f.rect(ex, 37, 4, 2, M.brow);
-        break;
-      case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
-        f.rect(ex, 38, 4, 1, M.brow);
-        f.set(inner, 37, M.brow);
-        break;
-      case 'sly':       // 한쪽만 치켜올린다 — 장난기
-        f.rect(ex, 38, 4, 1, M.brow);
-        if (dir > 0) f.rect(ex + 1, 37, 3, 1, M.brow);
-        break;
-      default:          // calm
-        f.rect(ex, 38, 4, 1, M.brow);
-        break;
-    }
-  };
-  put(-5, -1);
-  put(2, 1);
+  browMark(f, -4, -1, shape);
+  browMark(f, 2, 1, shape);
 }
 
 /**
@@ -348,6 +422,9 @@ function hairCap(f: F, puff = 0, sideLen = 5): void {
   f.rect(6 + puff, HAIRLINE - sideLen, 2, sideLen + 2, M.hair);
   f.set(-8 - puff, HAIRLINE - sideLen - 1, M.hairS);
   f.set(7 + puff, HAIRLINE - sideLen - 1, M.hairS);
+  // 머리 윗면에 또렷한 결 하이라이트 한 점 — 애니메 머리카락 특유의
+  // 그 반짝임이다. 부드러운 그러데이션만으로는 절대 안 나온다.
+  f.set(-2, HAIRLINE + 7, M.spec);
 }
 
 /** 이마로 내려온 앞머리 — 헤어라인 아래로 한 칸만. 더 내리면 눈을 덮는다 */
