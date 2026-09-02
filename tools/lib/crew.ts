@@ -462,7 +462,7 @@ export const HEADS: Record<string, Head> = {
 
   // 종 — 제일 시끄러운 무기를 든다. 귀를 덮는 폭신한 것
   '종': (f) => {
-    face(f, 'calm');
+    faceTurned(f, 'calm');
     hairCap(f, 0, 3);
     bangs(f, -3, 1);
     for (const x of [-9, 8] as const) {             // 이어머프 — 둥글고 두껍게
@@ -476,7 +476,7 @@ export const HEADS: Record<string, Head> = {
 
   // 불씨 — 불을 다룬다. 헝클어진 머리, 고글은 목에 걸쳐 둔다
   '불씨': (f) => {
-    face(f, 'sly');
+    faceTurned(f, 'sly');
     hairCap(f, 1, 4);
     bangs(f, -5, -3, 0, 2, 4);
     f.set(-8, HAIRLINE + 5, M.hair);                // 삐친 머리
@@ -491,7 +491,7 @@ export const HEADS: Record<string, Head> = {
 
   // 거울 — 단정하다. 턱선까지 오는 단발에 챙 짧은 캡
   '거울': (f) => {
-    face(f, 'calm');
+    faceTurned(f, 'calm');
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     f.rect(-8, 32, 2, 9, M.hair);                   // 턱선까지 내려오는 옆머리
     f.rect(6, 32, 2, 9, M.hair);
@@ -505,7 +505,7 @@ export const HEADS: Record<string, Head> = {
 
   // 바늘 — 저격수. 후드를 젖혀 목에 걸치고 앞머리 한 갈래가 길다
   '바늘': (f) => {
-    face(f, 'worried');
+    faceTurned(f, 'worried');
     hairCap(f, 0, 5);
     bangs(f, -4, -2, 2);
     f.rect(5, 34, 1, 6, M.hair);                    // 길게 내린 한 갈래
@@ -519,7 +519,7 @@ export const HEADS: Record<string, Head> = {
 
   // 반딧불 — 부스스한 곱슬에 더듬이 핀 두 개
   '반딧불': (f) => {
-    face(f, 'soft');
+    faceTurned(f, 'soft');
     hairCap(f, 1, 4);
     bangs(f, -5, -3, 0, 3);
     for (const x of [-8, 7] as const) {             // 곱슬 — 옆으로 부푼다
@@ -535,7 +535,7 @@ export const HEADS: Record<string, Head> = {
 
   // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
   '도끼': (f) => {
-    face(f, 'bold');
+    faceTurned(f, 'bold');
     f.blob(0, HAIRLINE + 5, 8, 6, M.hair);          // 크게 부푼 머리
     f.rect(-10, HAIRLINE - 4, 2, 7, M.hair);
     f.rect(8, HAIRLINE - 4, 2, 7, M.hair);
@@ -550,7 +550,7 @@ export const HEADS: Record<string, Head> = {
 
   // 작살 — 물에서 일한다. 젖어서 넘긴 머리, 물안경은 목에
   '작살': (f) => {
-    face(f, 'calm');
+    faceTurned(f, 'calm');
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     f.blob(1, HAIRLINE + 5, 6, 3, M.hairS);         // 뒤로 넘긴 결
     f.rect(-8, HAIRLINE - 3, 2, 5, M.hair);
@@ -564,7 +564,7 @@ export const HEADS: Record<string, Head> = {
 
   // 사슬 — 긴 머리를 하나로 묶고 목도리를 둘렀다
   '사슬': (f) => {
-    face(f, 'sly');
+    faceTurned(f, 'sly');
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     bangs(f, -4, -2, 1, 3);
     f.rect(-9, 33, 2, 8, M.hair);
