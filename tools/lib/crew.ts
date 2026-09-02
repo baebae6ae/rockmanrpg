@@ -106,14 +106,14 @@ export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, 
   f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 갑옷판 — 발목이 가늘다
   // 무릎 — 관절 구체. 각지면 꺾인 막대고, 천 크레이즈 하나로는 부품이
   // 아니라 얼룩이다. 록맨류는 이 자리가 늘 은색 공이다.
-  f.blob(kx, ky, 2 + s, 2, M.metal);
+  f.blob(kx, ky, 2 + s, 2, M.joint);
   f.set(kx - 1, ky + 1, M.spec);                         // 무릎 하이라이트
   // 다리 앞면에 빛 한 줄. 이게 없으면 굵기를 아무리 바꿔도 납작한
   // 색 기둥으로 보인다
   f.line(hipX - 2, hipY - 1, kx - 2, ky + 1, 1, M.clothH);
 
   // 부츠 — 둥근 앞코. 발등은 갑옷판, 앞코·굽만 금속
-  f.blob(fx, fy + 2, 3 + s, 3, M.metal);
+  f.blob(fx, fy + 2, 3 + s, 3, M.joint);
   f.blob(fx + 1, fy + 1, 3 + s, 2, M.cloth);             // 발등 갑옷판
   f.rect(fx - 2 - s, fy + 3, 3, 1, M.clothH);            // 발등 윗면
   f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.trim);          // 밑창
@@ -131,15 +131,15 @@ export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void 
   const dir = sx < 0 ? -1 : 1;                    // 몸 어느 쪽에 붙은 팔인가
   f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔 갑옷판
   // 팔꿈치 — 무릎과 같은 관절 구체. 천 주름 하나로는 부품이 아니다
-  f.blob(ex, ey, 2, 2, M.metal);
+  f.blob(ex, ey, 2, 2, M.joint);
   f.set(ex - dir, ey + 1, M.spec);
   f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 갑옷판
   // 팔과 몸통이 같은 판이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
   // 안쪽 모서리에 그늘 한 줄을 넣어야 팔이 몸에서 떨어져 보인다.
   f.line(sx - dir * 2, sy, ex - dir * 2, ey, 1, M.clothS);
   // 손 — 맨살이 아니라 건틀릿. 얼굴은 사람이어도 팔다리는 갑옷이다
-  f.blob(hx, hy, 2, 2, M.metal);
-  f.set(hx - dir, hy - 1, M.metalB);              // 손등 쪽 그늘
+  f.blob(hx, hy, 2, 2, M.joint);
+  f.set(hx - dir, hy - 1, M.jointB);              // 손등 쪽 그늘
   f.set(hx + dir, hy + 1, M.spec);                // 손등 하이라이트
   f.blob(hx, hy + 2, 2, 1, M.accent);             // 손목 밴드
 }
@@ -175,8 +175,8 @@ export function torso(f: F, s: number): void {
   f.set(7 + s, 22, M.clothS);
   // 견갑 — 어깨 위에 얹힌 금속판. 몸통과 같은 색 천만으로는 팔이
   // 어디서 시작하는지 안 보인다. 록맨류는 이 자리가 늘 딱딱하다
-  f.blob(-7 - s, 26, 3 + s, 2, M.metal);
-  f.blob(7 + s, 25, 3 + s, 2, M.metal);
+  f.blob(-7 - s, 26, 3 + s, 2, M.joint);
+  f.blob(7 + s, 25, 3 + s, 2, M.joint);
   f.set(-8 - s, 27, M.spec);                      // 빛 쪽 견갑 하이라이트
 
   // --- 옷깃 → 앞섶 → 허리띠.
@@ -205,7 +205,7 @@ export function torso(f: F, s: number): void {
   // --- 가슴에 붙은 단단한 것 하나. 이게 있어야 나머지가 천으로 읽힌다.
   //     가운데에 큰 판을 붙이면 그게 곧 로봇 흉갑이라, 한쪽으로 치우친
   //     작은 패널로 줄였다. 좌우가 어긋나 있는 게 사람이다.
-  f.soft(-6 - s, 19, 5 + s, 4, 1, M.metal);
+  f.soft(-6 - s, 19, 5 + s, 4, 1, M.joint);
   f.rect(-6 - s, 22, 5 + s, 1, M.accent);
   f.set(-6 - s, 22, M.spec);                      // 가슴판 모서리 하이라이트
   // 코어 보석 — 사각 점 하나가 아니라 둥근 보석. 구석에 밝은 점을
@@ -293,20 +293,22 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
 /**
  * 얼굴 — 고개를 돌린 버전. 시험 삼아 못 하나에만 쓴다.
  *
- * 지난 시도는 기존 정면 얼굴을 그대로 두고 눈 하나만 가늘게 접었다
- * — 그러니 애초에 대칭으로 설계된 그림 위에 비대칭을 얹은 꼴이라
- * 눈이 찌그러지거나 감긴 것처럼만 보였다("망쳐놨다"는 말을 들었다).
- * 이번엔 재활용하지 않고 두개골부터 다시 그린다.
+ * 1차 시도는 기존 정면 얼굴을 그대로 두고 눈 하나만 가늘게 접었다 —
+ * 대칭으로 설계된 그림 위에 비대칭을 얹은 꼴이라 눈이 찌그러지거나
+ * 감긴 것처럼 보였다("망쳐놨다"는 말을 들었다).
  *
- * 몸이 lean 으로 기우는 쪽(오른쪽, +x)이 가까운 쪽이다. 3/4 얼굴의
- * 원리를 이 해상도가 감당할 만큼만 옮긴다:
- *   - 두개골 중심을 가까운 쪽으로 밀어서, 먼 쪽 볼은 좁게 깎이고
- *     가까운 쪽 볼은 그대로 남는다 — 얼굴 윤곽 자체가 비대칭이다.
- *   - 가까운 쪽 눈은 그대로 온전한 눈. 먼 쪽 눈은 위치만 옮기는 게
- *     아니라 실제로 더 작은 눈을 새로 그린다 — 감은 게 아니라
- *     '옆으로 돌아가서 작게 보이는' 눈이어야 한다.
- *   - 코 능선 한 점을 가까운 쪽 옆얼굴에 붙인다 — 이게 있어야
- *     '뭉툭한 두개골'이 아니라 '돌아간 얼굴'로 읽힌다.
+ * 2차 시도는 두개골은 새로 그렸지만 먼 쪽 눈을 '더 작은 눈'으로
+ * 다시 그렸다 — 이게 여전히 문제였다. 이 해상도에서 눈은 원래
+ * 3×3인데 그걸 2×2로 줄이면 홍채·눈꺼풀·눈빛이 들어갈 자리가
+ * 없어서 뭉치고, 뭉친 덩어리는 결국 '둘 중 하나가 이상한 눈'으로
+ * 읽힌다. 작게 그리는 방식 자체가 이 해상도에서는 성립하지 않는다.
+ *
+ * 3차: 먼 쪽 눈을 아예 그리지 않는다. 사람이 고개를 돌리면 먼 쪽
+ * 눈은 코에 가려 실제로 거의 안 보인다 — 저해상도 초상화들이 3/4
+ * 각도에서 흔히 쓰는 생략이다. 가까운 쪽 눈은 정면 얼굴의 검증된
+ * 눈을 그대로 쓰고(재활용이 아니라 '안 바꿔도 되는 걸 안 바꾼 것'),
+ * 먼 쪽은 눈 대신 눈두덩 그늘 한 칸만 남긴다 — 이러면 '작은 눈'과
+ * '감은 눈'을 구분해야 하는 문제 자체가 사라진다.
  */
 export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
   const cx = 1;                                     // 두개골 중심 — 가까운 쪽(+x)으로 한 칸
@@ -317,9 +319,8 @@ export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
   f.set(5, 32, M.skinS);                             // 콧대 그늘
   f.set(-2, 38, M.spec);
 
-  // --- 눈. 가까운 쪽(오른쪽, ex=2)은 정면 얼굴과 같은 눈을 그대로.
-  // 먼 쪽(왼쪽)은 자리를 옮기는 게 아니라 폭 2·높이 2 짜리 더 작은
-  // 눈을 새로 그린다 — 감은 눈이 아니라 옆으로 돌아가 좁아 보이는 눈.
+  // --- 눈. 가까운 쪽(오른쪽, ex=2)만 그린다 — 정면 얼굴과 완전히
+  // 같은 눈이다. 검증된 걸 또 건드릴 이유가 없다.
   {
     const ex = 2;
     f.rect(ex, 33, 3, 3, M.iris);
@@ -328,14 +329,12 @@ export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
     f.set(ex + 2, 34, M.eye);
     f.set(ex + 1, 34, M.white);
   }
-  {
-    const ex = -2;
-    f.rect(ex, 33, 2, 2, M.iris);                    // 작지만 여전히 홍채가 있는 눈
-    f.rect(ex, 34, 2, 1, M.eye);                      // 윗속눈썹 한 줄
-    f.set(ex, 33, M.white);                           // 눈빛 — 작아도 살아 있다
-  }
+  // 먼 쪽(왼쪽)엔 눈을 아예 안 찍는다 — 자동 형태광이 두개골 왼쪽을
+  // 이미 그늘로 계산해 준다. 여기 손으로 그늘 점 하나를 더 얹었더니
+  // 넓은 살빛 한복판에 뜬 얼룩이 됐다(실제로 그랬다) — 진짜 경계에
+  // 붙지 않은 skinS 점은 그늘이 아니라 때로 보인다는 걸 다시 확인했다.
 
-  drawBrowTurned(f, brow);
+  browMark(f, 2, 1, brow);                            // 눈썹도 가까운 쪽만
 
   f.set(4, 32, M.blush);                              // 먼 쪽 볼은 좁아서 홍조 자리가 없다
 
@@ -345,53 +344,44 @@ export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
   f.set(3, 31, M.mouth);
 }
 
-function drawBrowTurned(f: F, shape: BrowShape): void {
-  const put = (ex: number, w: number, dir: 1 | -1): void => {
-    const outer = dir > 0 ? ex + w - 1 : ex;
-    switch (shape) {
-      case 'soft': f.rect(ex, 37, w, 1, M.brow); f.set(outer, 36, M.brow); break;
-      case 'bold': f.rect(ex, 36, w, 2, M.brow); break;
-      case 'worried': f.rect(ex, 37, w, 1, M.brow); break;
-      case 'sly': f.rect(ex, 37, w, 1, M.brow); if (dir > 0 && w > 2) f.set(ex + 1, 36, M.brow); break;
-      default: f.rect(ex, 37, w, 1, M.brow); break;
-    }
-  };
-  put(2, 3, 1);    // 가까운 쪽 — 온전한 눈썹
-  put(-2, 2, -1);  // 먼 쪽 — 짧은 눈썹
-}
-
 /** 눈썹 모양 — 성격을 한 획으로 정한다 */
 export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
 
-function drawBrow(f: F, shape: BrowShape): void {
+/**
+ * 눈썹 한 짝. drawBrow() 가 좌우 두 번 부르고, faceTurned() 는 가까운
+ * 쪽 한 번만 부른다 — 먼 쪽은 눈 자체를 안 그리므로 눈썹만 남으면
+ * 흉터처럼 뜬다.
+ */
+function browMark(f: F, ex: number, dir: 1 | -1, shape: BrowShape): void {
   // 기준선은 y37 이다. 눈(y33~35)과 두 줄 띄워 뒀다 — 붙이면 헤드밴드·
   // 고글 같은 이마 장식이 내려올 때 눈썹과 뭉개진다(실제로 그랬다).
-  const put = (ex: number, dir: 1 | -1): void => {
-    const inner = dir > 0 ? ex : ex + 2;
-    const outer = dir > 0 ? ex + 2 : ex;
-    switch (shape) {
-      case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
-        f.rect(ex, 37, 3, 1, M.brow);
-        f.set(outer, 36, M.brow);
-        break;
-      case 'bold':      // 굵고 눈에 가깝다 — 우직함
-        f.rect(ex, 36, 3, 2, M.brow);
-        break;
-      case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
-        f.rect(ex, 37, 3, 1, M.brow);
-        f.set(inner, 36, M.brow);
-        break;
-      case 'sly':       // 한쪽만 치켜올린다 — 장난기
-        f.rect(ex, 37, 3, 1, M.brow);
-        if (dir > 0) f.set(ex + 1, 36, M.brow);
-        break;
-      default:          // calm
-        f.rect(ex, 37, 3, 1, M.brow);
-        break;
-    }
-  };
-  put(-4, -1);
-  put(2, 1);
+  const inner = dir > 0 ? ex : ex + 2;
+  const outer = dir > 0 ? ex + 2 : ex;
+  switch (shape) {
+    case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
+      f.rect(ex, 37, 3, 1, M.brow);
+      f.set(outer, 36, M.brow);
+      break;
+    case 'bold':      // 굵고 눈에 가깝다 — 우직함
+      f.rect(ex, 36, 3, 2, M.brow);
+      break;
+    case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
+      f.rect(ex, 37, 3, 1, M.brow);
+      f.set(inner, 36, M.brow);
+      break;
+    case 'sly':       // 한쪽만 치켜올린다 — 장난기
+      f.rect(ex, 37, 3, 1, M.brow);
+      if (dir > 0) f.set(ex + 1, 36, M.brow);
+      break;
+    default:          // calm
+      f.rect(ex, 37, 3, 1, M.brow);
+      break;
+  }
+}
+
+function drawBrow(f: F, shape: BrowShape): void {
+  browMark(f, -4, -1, shape);
+  browMark(f, 2, 1, shape);
 }
 
 /**
@@ -541,7 +531,7 @@ export const HEADS: Record<string, Head> = {
 
   // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
   '도끼': (f) => {
-    faceTurned(f, 'bold');
+    face(f, 'bold');
     f.blob(0, HAIRLINE + 5, 8, 6, M.hair);          // 크게 부푼 머리
     f.rect(-10, HAIRLINE - 4, 2, 7, M.hair);
     f.rect(8, HAIRLINE - 4, 2, 7, M.hair);

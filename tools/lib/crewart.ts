@@ -58,6 +58,16 @@ export const enum M {
    * 자동 음영을 끄고 고정 밝기로 찍는다.
    */
   spec = 24,
+  /**
+   * 관절용 강철 — 무릎·팔꿈치·손·견갑처럼 몸에 붙은 금속 전용. 대원마다
+   * 다른 c.metal 은 그 대원의 무기(종의 놋쇠 종, 거울의 은색 손잡이 같은)
+   * 색으로 남겨 두고, 몸에 박힌 관절만 옷과 확실히 다른 중성 강철색을
+   * 쓴다 — 예전엔 관절이 옷을 그대로 밝힌 색이라 '같은 페인트의 밝은
+   * 칸'으로만 보였다. 록맨류가 갑옷과 관절이 다른 재질로 읽히는 건
+   * 색상 자체가 다르기 때문이지, 명암만 다르기 때문이 아니다.
+   */
+  joint = 25,
+  jointB = 26,
 }
 
 /** 앞쪽 재질 → 반대편(뒤쪽) 재질 */
@@ -65,6 +75,7 @@ const BACK_OF: Partial<Record<M, M>> = {
   [M.suit]: M.suitB, [M.trim]: M.trimB,
   [M.metal]: M.metalB, [M.accent]: M.trimB,
   [M.cloth]: M.clothB, [M.clothS]: M.clothB, [M.clothH]: M.clothB,
+  [M.joint]: M.jointB,
 };
 
 /**
@@ -83,6 +94,7 @@ const FAMILY: Partial<Record<M, Fam>> = {
   [M.suit]: Fam.plate, [M.trim]: Fam.plate, [M.suitB]: Fam.plate, [M.trimB]: Fam.plate,
   [M.cloth]: Fam.plate, [M.clothS]: Fam.plate, [M.clothB]: Fam.plate, [M.clothH]: Fam.plate,
   [M.metal]: Fam.metal, [M.metalB]: Fam.metal,
+  [M.joint]: Fam.metal, [M.jointB]: Fam.metal,
   [M.accent]: Fam.accent,
   [M.glow]: Fam.glow,
 };
@@ -381,10 +393,16 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   const sk = skinTones(c.skin ?? '#e0a882').map((t) => saturate(t, 0.1)) as [RGB, RGB, RGB];
   const iris = saturate(hex(c.iris ?? c.glow), 0.2);
   const trim = mix(suit, COOL, 0.42);
+  // 관절 강철 — 대원 옷 색과 무관한 고정 중성색. 아주 살짝만 그 대원의
+  // 발광색을 머금여 아홉 명이 전부 똑같은 회색 관절을 달지 않게 한다.
+  const STEEL: RGB = [150, 156, 166];
+  const joint = mix(STEEL, hex(c.glow), 0.12);
   const R: Partial<Record<M, Ramp>> = {
     [M.suit]: ramp(suit),
     [M.trim]: ramp(trim),
     [M.metal]: ramp(saturate(hex(c.metal), 0.16)),
+    [M.joint]: ramp(joint),
+    [M.jointB]: ramp(mix(joint, COOL, 0.24)),
     [M.accent]: ramp(c.glow),
     [M.glow]: ramp(c.glow),
     [M.skin]: skinRamp(sk[1]),
