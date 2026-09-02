@@ -46,13 +46,17 @@ export const enum M {
   brow = 20,
   /** 볼 홍조 */
   blush = 21,
+  /** 입 — 살결 그늘로 그리면 얼룩으로 보인다 */
+  mouth = 22,
+  /** 천의 밝은 면 — 어깨 윗면·옷깃처럼 빛을 정면으로 받는 자리 */
+  clothH = 23,
 }
 
 /** 앞쪽 재질 → 반대편(뒤쪽) 재질 */
 const BACK_OF: Partial<Record<M, M>> = {
   [M.suit]: M.suitB, [M.trim]: M.trimB,
   [M.metal]: M.metalB, [M.accent]: M.trimB,
-  [M.cloth]: M.clothB, [M.clothS]: M.clothB,
+  [M.cloth]: M.clothB, [M.clothS]: M.clothB, [M.clothH]: M.clothB,
 };
 
 // ---------------------------------------------------------------- 색
@@ -326,7 +330,9 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.clothB]: softRamp(mix(suit, COOL, 0.24)),
     [M.hairS]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.34)),
     [M.brow]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.2)),
-    [M.blush]: softRamp(mix(sk[1], [232, 118, 116], 0.5)),
+    [M.blush]: softRamp(mix(sk[1], [232, 118, 116], 0.44)),
+    [M.mouth]: softRamp(mix(sk[0], [122, 60, 62], 0.5)),
+    [M.clothH]: softRamp(mix(suit, [255, 238, 214], 0.3)),
   };
 
   const put = (x: number, y: number, col: RGB): void => {

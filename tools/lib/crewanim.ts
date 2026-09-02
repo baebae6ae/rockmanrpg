@@ -43,9 +43,12 @@ function runCycle(): Pose[] {
 export function crewTags(): Tag[] {
   return [
     {
+      // 숨쉬기. 골반이 먼저 내려가고 머리가 한 프레임 늦게 따라온다.
+      // 둘이 같이 움직이면 몸 전체가 위아래로 튀는 기계가 된다.
       name: 'idle', duration: 160, loop: true,
       poses: [
-        { hipY: 16 }, { hipY: 15 }, { hipY: 16 }, { hipY: 15, headY: -1 },
+        { hipY: 16 }, { hipY: 16, headY: -1 },
+        { hipY: 15, headY: -1 }, { hipY: 16, headY: -1 },
       ],
     },
     { name: 'run', duration: 60, loop: true, poses: runCycle() },
