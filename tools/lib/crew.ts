@@ -218,99 +218,92 @@ export function torso(f: F, s: number): void {
  * 세로 예산을 먼저 정하고 그 안에서만 그린다. 이걸 안 정해 두면
  * 머리카락이 눈까지 내려와 얼굴이 눌린다(실제로 한 번 그랬다).
  *
- *   y41    헤어라인 — 머리카락은 여기 위로만
- *   y39-40 이마 — 두 줄은 비워 둔다. 여기가 0이면 눈썹이 앞머리에
- *          먹혀서 표정이 통째로 사라진다(실제로 그랬다)
- *   y38    눈썹 — 굵은 눈썹만 y37 까지 내려온다
- *   y37    눈썹과 눈 사이 한 줄
- *   y36-33 눈 넉 줄
- *   y32    입
- *   y30-31 턱
+ *   y39    헤어라인 — 머리카락은 여기 위로만
+ *   y37-38 이마
+ *   y37    눈썹
+ *   y35-36 눈썹과 눈 사이 한 줄 여유
+ *   y33-35 눈 석 줄
+ *   y30-31 턱·입
+ *
+ * 예전엔 머리가 몸통·다리를 합친 것만큼 컸다(2.5등신) — 거기에 얼굴
+ * 4×4 눈을 흰자 위주로 그려 넣었더니 부릅뜬 눈에 프랑켄슈타인 비례가
+ * 겹쳐 무섭다는 소리를 들었다. 머리를 30% 줄이고(3등신에 가깝게),
+ * 눈도 그만큼 줄여 홍채가 눈 대부분을 채우는 쪽으로 바꿨다 — 흰자가
+ * 넓으면 순해 보일 거라 생각했는데, 이 크기에서는 흰자 테두리 쪽이
+ * 오히려 흰자위를 드러내고 노려보는 인상을 만든다.
  */
-export const HAIRLINE = 41;
+export const HAIRLINE = 39;
 
 export function face(f: F, brow: BrowShape = 'calm'): void {
-  // 둥근 달걀형 머리. 아래로 갈수록 좁아진다
-  f.blob(0, 40, 7, 9, M.skin);
-  f.taper(0, 29, 33, 7, 13, M.skin);
-  f.set(-5, 30, M.skinS); f.set(5, 30, M.skinS);   // 턱선
+  // 둥근 달걀형 머리 — 예전보다 한 단 작다. 아래로 갈수록 좁아진다
+  f.blob(0, 37, 5, 6, M.skin);
+  f.taper(0, 29, 31, 4, 9, M.skin);
+  f.set(-4, 30, M.skinS); f.set(4, 30, M.skinS);   // 턱선
 
   // 볼 — 광원 반대쪽만 죽여 얼굴에 앞뒤를 준다
-  f.rect(6, 33, 2, 5, M.skinS);
-  f.rect(-7, 34, 1, 5, M.skinH);
+  f.rect(4, 32, 2, 4, M.skinS);
+  f.rect(-5, 33, 1, 4, M.skinH);
 
-  // --- 눈. 왼쪽 x -5..-2, 오른쪽 x 2..5, 세로 y33..36
+  // --- 눈. 왼쪽 x -4..-2, 오른쪽 x 2..4, 세로 y33..35
   //
-  // 눈 하나가 4×4다. 이만한 자리를 어두운 색으로 두르면 얼굴에서
-  // 제일 먼저 보이는 게 검은 사각형 두 개가 된다 — 실제로 그랬다.
-  // 그래서 어두운 건 딱 두 군데로 못박았다.
-  //
-  //   - 윗속눈썹 한 줄
-  //   - 바깥 눈꼬리 한 점
-  //
-  // 나머지는 홍채와 흰자다. 홍채가 크면 순해 보이고, 그 둘레에
-  // 흰자가 남아 있어야 눈알이 든 눈으로 보인다.
-  for (const ex of [-5, 2] as const) {
-    const tail = ex < 0 ? ex : ex + 3;             // 바깥쪽 눈꼬리
-    f.rect(ex, 33, 4, 4, M.white);                 // 흰자 4×4
-    f.set(ex, 33, M.skin); f.set(ex + 3, 33, M.skin);   // 네 모서리를 깎아 둥글게
-    f.set(ex, 36, M.skin); f.set(ex + 3, 36, M.skin);
-    f.rect(ex + 1, 36, 2, 1, M.eye);               // 윗속눈썹
-    f.set(tail, 35, M.eye);                        // 눈꼬리
-    f.rect(ex + 1, 33, 2, 3, M.iris);              // 홍채 — 속눈썹 아래를 꽉 채운다
-    f.set(ex + 1, 35, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
+  // 예전엔 눈 하나가 4×4 흰자 상자였다. 머리가 작아진 지금 그 비율을
+  // 그대로 쓰면 흰자가 얼굴의 절반을 차지해 더 심하게 부릅뜬다.
+  // 그래서 흰자 상자를 없애고 홍채색 덩이 하나 + 눈빛 한 점으로
+  // 바꿨다 — 어두운 건 윗속눈썹 한 줄과 눈꼬리 한 점뿐이다.
+  for (const ex of [-4, 2] as const) {
+    const tail = ex < 0 ? ex : ex + 2;             // 바깥쪽 눈꼬리
+    f.rect(ex, 33, 3, 3, M.iris);                  // 홍채가 눈 전체를 채운다
+    f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);   // 아래 모서리를 깎아 둥글게
+    f.rect(ex, 35, 3, 1, M.eye);                   // 윗속눈썹
+    f.set(tail, 34, M.eye);                        // 눈꼬리
+    f.set(ex + 1, 34, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
   }
 
   drawBrow(f, brow);
 
-  // 볼 홍조 — 두 칸씩 딱 두 군데다. 이게 있고 없고로 차가운 얼굴과
-  // 정이 가는 얼굴이 갈린다. 자리를 세 번 옮겼다. 눈 옆에 바짝 붙이면
-  // 눈 테두리로 먹히고, 얼굴 제일 바깥에 두면 실루엣 그늘에 눌려
-  // 멍처럼 보인다. 눈 바로 밑이 맞다.
-  f.rect(-4, 32, 2, 1, M.blush);
-  f.rect(3, 32, 2, 1, M.blush);
+  // 볼 홍조 — 눈보다 한 단 바깥, 한 단 아래. 눈에 붙이면 눈 테두리로
+  // 먹히고, 머리가 작아진 만큼 자리도 좁아져 한 칸짜리로 줄였다.
+  f.set(-5, 32, M.blush);
+  f.set(4, 32, M.blush);
 
-  // 입 — 세 점짜리 웃음. 가운데가 아래, 양 끝이 위다.
-  //
-  // 코는 안 찍는다. 눈이 이만큼 크면 코가 들어갈 자리는 입 바로 위
-  // 한 칸뿐인데, 거기 점을 하나 찍는 순간 입과 붙어 마름모 얼룩이
-  // 되거나 콧수염이 된다 — 둘 다 해 봤다. 없는 편이 낫다.
-  f.set(0, 31, M.mouth);
-  f.set(-1, 32, M.mouth);
-  f.set(1, 32, M.mouth);
+  // 입 — 세 점짜리 웃음. 코는 안 찍는다 — 이 좁은 턱에 코까지 넣으면
+  // 입과 붙어 얼룩이 된다.
+  f.set(0, 30, M.mouth);
+  f.set(-1, 31, M.mouth);
+  f.set(1, 31, M.mouth);
 }
 
 /** 눈썹 모양 — 성격을 한 획으로 정한다 */
 export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
 
 function drawBrow(f: F, shape: BrowShape): void {
-  // 기준선은 y38 이다. 변형은 전부 아래(눈 쪽)로만 자란다 — 위로 자라면
-  // 앞머리에 먹혀서 어떤 모양을 그리든 똑같아 보인다.
+  // 기준선은 y37 이다. 눈(y33~35)과 두 줄 띄워 뒀다 — 붙이면 헤드밴드·
+  // 고글 같은 이마 장식이 내려올 때 눈썹과 뭉개진다(실제로 그랬다).
   const put = (ex: number, dir: 1 | -1): void => {
-    const inner = dir > 0 ? ex : ex + 3;
-    const outer = dir > 0 ? ex + 3 : ex;
+    const inner = dir > 0 ? ex : ex + 2;
+    const outer = dir > 0 ? ex + 2 : ex;
     switch (shape) {
       case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
-        f.rect(ex, 38, 4, 1, M.brow);
-        f.set(outer, 37, M.brow);
+        f.rect(ex, 37, 3, 1, M.brow);
+        f.set(outer, 36, M.brow);
         break;
       case 'bold':      // 굵고 눈에 가깝다 — 우직함
-        f.rect(ex, 37, 4, 2, M.brow);
+        f.rect(ex, 36, 3, 2, M.brow);
         break;
       case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
-        f.rect(ex, 38, 4, 1, M.brow);
-        f.set(inner, 37, M.brow);
+        f.rect(ex, 37, 3, 1, M.brow);
+        f.set(inner, 36, M.brow);
         break;
       case 'sly':       // 한쪽만 치켜올린다 — 장난기
-        f.rect(ex, 38, 4, 1, M.brow);
-        if (dir > 0) f.rect(ex + 1, 37, 3, 1, M.brow);
+        f.rect(ex, 37, 3, 1, M.brow);
+        if (dir > 0) f.set(ex + 1, 36, M.brow);
         break;
       default:          // calm
-        f.rect(ex, 38, 4, 1, M.brow);
+        f.rect(ex, 37, 3, 1, M.brow);
         break;
     }
   };
-  put(-5, -1);
+  put(-4, -1);
   put(2, 1);
 }
 
