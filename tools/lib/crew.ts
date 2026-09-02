@@ -50,12 +50,6 @@ export interface Pose {
   armFree?: ArmPose;
   /** 머리 상하 미세 조정 */
   headY?: number;
-  /**
-   * 머리를 몸통 기울기와 별도로 더 틀어 준다. 몸은 정면을 보고
-   * 머리만 살짝 돌아가 있어야 '누군가를 보고 있는' 살아 있는 자세가
-   * 된다 — 몸통 기울기 하나로는 1~2px 라 화면에서 안 보인다.
-   */
-  headX?: number;
   /** 무기를 그릴지. 사망·피격에서는 뺀다 */
   weapon?: boolean;
   /** 차지 이펙트 세기 0~1 — 무기 손 주위에 고리로 뜬다 */
@@ -724,7 +718,7 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
 
   f.origin(r.lean, hipY - HIP0);
   torso(f, s);
-  f.origin(r.lean + (pose.headX ?? 0), hipY - HIP0 + r.headY);
+  f.origin(r.lean, hipY - HIP0 + r.headY);
   HEADS[c.name](f);
   f.origin(0, 0);
 
