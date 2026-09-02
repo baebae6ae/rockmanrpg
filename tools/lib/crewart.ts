@@ -434,23 +434,33 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   // 하이라이트 점 — 살짝 따뜻하게, 완전한 흰색은 색이 빠져 보인다
   const SPEC: RGB = mix(LIGHT, hex(c.glow), 0.12);
 
-  const put = (x: number, y: number, col: RGB): void => {
+  const put = (x: number, y: number, col: RGB, a = alpha): void => {
     if (x < 0 || x >= CELL || y < 0 || y >= CELL) return;
     const i = (y * CELL + x) * 4;
-    out[i] = col[0]; out[i + 1] = col[1]; out[i + 2] = col[2]; out[i + 3] = alpha;
+    out[i] = col[0]; out[i + 1] = col[1]; out[i + 2] = col[2]; out[i + 3] = a;
   };
 
   // 윤곽선 — 이웃 재질에서 색을 가져온다. 전부 같은 검정으로 두르면
   // 오려 붙인 스티커처럼 보인다. 빛 쪽 외곽은 조금 덜 어둡게 둔다.
+  //
+  // 안티에일리어싱: 대각선 모서리는 실루엣에 닿는 이웃이 위/아래/좌/우
+  // 넷 중 딱 하나뿐이다(직선 구간은 둘 이상 닿는다). 그 한 칸을
+  // 불투명으로 꽉 채우면 계단이 그대로 보이므로 반투명으로 낮춰
+  // 뒤가 살짝 비치게 한다 — 록맨류처럼 매끄러운 곡선으로 읽힌다.
+  // 얼굴 세부(눈·눈썹)는 이미 1~2px라 이 정도로도 뭉개지지 않는다 —
+  // 이 칸은 실루엣 '바깥' 배경 칸이라 원래 그리던 내용을 안 건드린다.
   for (let y = 0; y < CELL; y++) {
     for (let x = 0; x < CELL; x++) {
       if (m[y * CELL + x]) continue;
-      const n = at(m, x, y + 1) || at(m, x + 1, y) || at(m, x, y - 1) || at(m, x - 1, y);
+      const nD = at(m, x, y + 1), nR = at(m, x + 1, y), nU = at(m, x, y - 1), nL = at(m, x - 1, y);
+      const n = nD || nR || nU || nL;
       if (!n) continue;
       const r = R[n as M];
       if (!r) continue;
-      const lit = !at(m, x, y - 1) && !at(m, x - 1, y);
-      put(x, y, lit ? r.edgeLit : r.edgeDark);
+      const lit = !nU && !nL;
+      const touching = (nD ? 1 : 0) + (nR ? 1 : 0) + (nU ? 1 : 0) + (nL ? 1 : 0);
+      const a = touching === 1 ? Math.round(alpha * 0.62) : alpha;
+      put(x, y, lit ? r.edgeLit : r.edgeDark, a);
     }
   }
 
