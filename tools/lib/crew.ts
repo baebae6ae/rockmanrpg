@@ -257,6 +257,9 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
   // 볼 — 광원 반대쪽만 죽여 얼굴에 앞뒤를 준다
   f.rect(4, 32, 2, 4, M.skinS);
   f.rect(-5, 33, 1, 4, M.skinH);
+  // 이마 하이라이트 — 팔다리가 갑옷판으로 반짝이는 옆에서 얼굴만
+  // 납작하면 붕 뜬다. 광원 쪽에 한 점.
+  f.set(-2, 38, M.spec);
 
   // --- 눈. 왼쪽 x -4..-2, 오른쪽 x 2..4, 세로 y33..35
   //

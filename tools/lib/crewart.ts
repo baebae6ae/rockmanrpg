@@ -357,7 +357,7 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   // 두고 채도만 밀어 올린다.
   const suit = saturate(hex(c.suit), 0.28);
   const hair = saturate(hex(c.hair ?? c.suit), 0.2);
-  const sk = skinTones(c.skin ?? '#e0a882');
+  const sk = skinTones(c.skin ?? '#e0a882').map((t) => saturate(t, 0.1)) as [RGB, RGB, RGB];
   const iris = saturate(hex(c.iris ?? c.glow), 0.2);
   const trim = mix(suit, COOL, 0.42);
   const R: Partial<Record<M, Ramp>> = {
@@ -372,7 +372,9 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.eye]: ramp(EYE),
     [M.iris]: ramp(iris),
     [M.white]: ramp(EYE_LIT),
-    [M.hair]: softRamp(hair),
+    // 머리카락도 이제 또렷한 램프로 — 애니메 머리 특유의 반짝임은
+    // 무른 램프로는 안 나온다.
+    [M.hair]: ramp(hair),
     // 반대편 팔다리 — 색을 따로 주는 게 아니라 같은 색을 한 단 죽인다.
     // 다른 색을 쓰면 다른 재질로 보이고, 안 죽이면 앞뒤가 안 갈린다.
     [M.suitB]: ramp(mix(suit, COOL, 0.24)),
@@ -383,7 +385,7 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.cloth]: ramp(suit),
     [M.clothS]: ramp(trim),
     [M.clothB]: ramp(mix(suit, COOL, 0.24)),
-    [M.hairS]: softRamp(mix(hair, COOL, 0.34)),
+    [M.hairS]: ramp(mix(hair, COOL, 0.34)),
     [M.brow]: softRamp(mix(hair, COOL, 0.2)),
     [M.blush]: softRamp(mix(sk[1], [232, 118, 116], 0.44)),
     [M.mouth]: softRamp(mix(sk[0], [122, 60, 62], 0.5)),
@@ -419,13 +421,15 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
       if (!mat) continue;
       const r = R[mat];
       if (!r) continue;
-      // 발광체와 얼굴은 자동 음영을 안 먹인다 — 위 M 주석 참고
+      // 발광체·이목구비는 자동 음영을 안 먹인다 — 위 M 주석 참고.
+      // 살(M.skin) 자체는 뺐다 — 이마·볼처럼 넓은 면이라 형태광을
+      // 태워도 안 뭉개지는데, 계속 납작한 색으로 두면 팔다리는
+      // 갑옷판으로 입체가 살아나는 옆에서 얼굴만 스티커처럼 붕 뜬다.
       if (mat === M.glow) { put(x, y, r.t[5]); continue; }
       if (mat === M.spec) { put(x, y, SPEC); continue; }
       if (mat === M.eye) { put(x, y, EYE); continue; }
       if (mat === M.white) { put(x, y, EYE_LIT); continue; }
       if (mat === M.iris) { put(x, y, iris); continue; }
-      if (mat === M.skin) { put(x, y, sk[1]); continue; }
       if (mat === M.skinS) { put(x, y, sk[0]); continue; }
       if (mat === M.skinH) { put(x, y, sk[2]); continue; }
 
