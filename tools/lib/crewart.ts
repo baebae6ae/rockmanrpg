@@ -37,12 +37,22 @@ export const enum M {
   skin = 6, skinS = 7, skinH = 8,
   eye = 9, iris = 10, white = 11, hair = 12,
   suitB = 13, trimB = 14, metalB = 15,
+  // 천 계열 — 금속과 같은 램프를 쓰면 옷이 번들거려서 갑옷으로 보인다.
+  // 명암 폭이 좁고 하이라이트가 약한 별도 램프를 쓴다.
+  cloth = 16, clothS = 17, clothB = 18,
+  /** 머리카락 그늘 */
+  hairS = 19,
+  /** 눈썹 — 표정의 8할이 여기서 나온다 */
+  brow = 20,
+  /** 볼 홍조 */
+  blush = 21,
 }
 
 /** 앞쪽 재질 → 반대편(뒤쪽) 재질 */
 const BACK_OF: Partial<Record<M, M>> = {
   [M.suit]: M.suitB, [M.trim]: M.trimB,
   [M.metal]: M.metalB, [M.accent]: M.trimB,
+  [M.cloth]: M.clothB, [M.clothS]: M.clothB,
 };
 
 // ---------------------------------------------------------------- 색
@@ -81,6 +91,25 @@ function skinTones(base: string): [RGB, RGB, RGB] {
  * 하는데, 5단이면 둘 중 하나만 세게 먹여도 곧바로 끝에 붙어 계단이 진다.
  */
 interface Ramp { t: RGB[]; edgeLit: RGB; edgeDark: RGB; bounce: RGB }
+
+/**
+ * 천·살결처럼 무른 것을 위한 램프. 금속 램프를 그대로 쓰면 옷 주름마다
+ * 하이라이트가 번쩍여서 결국 갑옷으로 보인다. 폭을 절반으로 좁히고
+ * 제일 밝은 칸도 확 낮춰서, 빛을 '반사'하는 게 아니라 '머금는' 느낌으로 만든다.
+ */
+function softRamp(base: string | RGB): Ramp {
+  const b = typeof base === 'string' ? hex(base) : base;
+  return {
+    t: [
+      mix(b, COOL, 0.42), mix(b, COOL, 0.30), mix(b, COOL, 0.15), b,
+      mix(b, LIGHT, 0.09), mix(b, LIGHT, 0.19), mix(b, LIGHT, 0.30),
+    ],
+    edgeLit: mix(b, COOL, 0.62),
+    edgeDark: mix(b, COOL, 0.84),
+    bounce: mix(mix(b, COOL, 0.34), BOUNCE, 0.30),
+  };
+}
+
 function ramp(base: string | RGB): Ramp {
   const b = typeof base === 'string' ? hex(base) : base;
   return {
@@ -136,6 +165,62 @@ export class F {
       }
     }
   }
+  /**
+   * 타원 — 둥근 것 전부의 바탕이다.
+   *
+   * 이 게임의 대원들이 로봇처럼 보였던 제일 큰 이유가 몸이 전부 rect()
+   * 였기 때문이다. 사각형만 쌓으면 아무리 색을 잘 칠해도 조립품으로
+   * 읽힌다. 머리·어깨·몸통·손발을 전부 이걸로 잡는다.
+   */
+  blob(cx: number, cy: number, rx: number, ry: number, mat: M): void {
+    for (let y = -ry; y <= ry; y++) {
+      for (let x = -rx; x <= rx; x++) {
+        const nx = x / (rx + 0.5);
+        const ny = y / (ry + 0.5);
+        if (nx * nx + ny * ny <= 1) this.set(cx + x, cy + y, mat);
+      }
+    }
+  }
+
+  /** 끝이 둥근 굵은 선 — 팔다리용. line() 은 끝이 각져서 관절이 뭉툭해진다 */
+  capsule(x0: number, y0: number, x1: number, y1: number, r: number, mat: M): void {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1) * 2;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      this.blob(Math.round(x0 + (x1 - x0) * t), Math.round(y0 + (y1 - y0) * t), r, r, mat);
+    }
+  }
+
+  /**
+   * 모서리를 깎은 사각형. cut 만큼 네 귀퉁이를 대각선으로 잘라낸다.
+   * 완전한 원이 어울리지 않는 자리(가슴판·가방)를 부드럽게 만든다.
+   */
+  soft(x: number, y: number, w: number, h: number, cut: number, mat: M): void {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const ex = Math.min(dx, w - 1 - dx);
+        const ey = Math.min(dy, h - 1 - dy);
+        if (ex + ey < cut) continue;
+        this.set(x + dx, y + dy, mat);
+      }
+    }
+  }
+
+  /**
+   * 위아래 폭이 다른 기둥 — 허리가 잘록한 몸통, 아래로 갈수록 가늘어지는
+   * 다리처럼 '변하는 굵기'를 만든다. 같은 폭 사각형은 통나무로 보인다.
+   */
+  taper(cx: number, y0: number, y1: number, w0: number, w1: number, mat: M): void {
+    const h = y1 - y0;
+    for (let i = 0; i <= h; i++) {
+      const t = h === 0 ? 0 : i / h;
+      const half = (w0 + (w1 - w0) * t) / 2;
+      const l = Math.round(cx - half);
+      const r = Math.round(cx + half);
+      for (let x = l; x <= r; x++) this.set(x, y0 + i, mat);
+    }
+  }
+
   line(x0: number, y0: number, x1: number, y1: number, w: number, mat: M): void {
     const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
     const h = Math.floor(w / 2);
@@ -229,12 +314,19 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.eye]: ramp(EYE),
     [M.iris]: ramp(iris),
     [M.white]: ramp(EYE_LIT),
-    [M.hair]: ramp(c.hair ?? c.suit),
+    [M.hair]: softRamp(c.hair ?? c.suit),
     // 반대편 팔다리 — 색을 따로 주는 게 아니라 같은 색을 한 단 죽인다.
     // 다른 색을 쓰면 다른 재질로 보이고, 안 죽이면 앞뒤가 안 갈린다.
     [M.suitB]: ramp(mix(suit, COOL, 0.24)),
     [M.trimB]: ramp(mix(trim, COOL, 0.24)),
     [M.metalB]: ramp(mix(hex(c.metal), COOL, 0.24)),
+    // 천 계열은 부드러운 램프로 — 같은 색이라도 금속처럼 안 번쩍인다
+    [M.cloth]: softRamp(suit),
+    [M.clothS]: softRamp(trim),
+    [M.clothB]: softRamp(mix(suit, COOL, 0.24)),
+    [M.hairS]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.34)),
+    [M.brow]: softRamp(mix(hex(c.hair ?? c.suit), COOL, 0.2)),
+    [M.blush]: softRamp(mix(sk[1], [232, 118, 116], 0.5)),
   };
 
   const put = (x: number, y: number, col: RGB): void => {

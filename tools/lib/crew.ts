@@ -8,7 +8,7 @@
  * 머리와 몸통만 절대 좌표(서 있는 자세 기준)로 짜고, 자세가 바뀌면
  * 원점을 옮겨서 그린다. 팔다리는 관절 좌표를 직접 받는다.
  */
-import { F, M, bevel, type CrewPal } from './crewart.js';
+import { F, M, type CrewPal } from './crewart.js';
 
 /** 서 있는 자세의 골반 높이. 머리·몸통 절대 좌표가 전부 이 값 기준이다 */
 export const HIP0 = 16;
@@ -87,34 +87,42 @@ export function rigOf(pose: Pose, s: number, weaponHand: 'F' | 'B' = 'F'): Rig {
 
 // ---------------------------------------------------------------- 팔다리
 /**
- * 다리 — 부츠가 커야 록맨 계열 실루엣이 선다. 밑창은 밖으로 벌린다.
- * 직육면체는 부츠로 안 읽힌다.
+ * 다리 — 굵기가 변하는 부드러운 기둥.
+ *
+ * 예전엔 굵기가 일정한 line() 두 개였다. 그러면 아무리 색을 잘 칠해도
+ * 통나무 두 개를 붙여 놓은 것으로 보인다. 허벅지는 굵고 발목으로
+ * 갈수록 가늘어져야 다리로 읽힌다.
  */
 export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, number]): void {
   const [fx, fy] = foot;
-  const kx = (hipX + fx) / 2;
-  const ky = (hipY + fy) / 2 + 1;
-  // line() 은 반폭을 내림해서 쓴다 — 4 와 5 가 같은 굵기가 되므로
-  // 체격은 2씩 벌려야 실제로 굵어진다
-  f.line(hipX, hipY, kx, ky, 4 + 2 * s, M.suit);  // 허벅지
-  f.line(kx, ky, fx, fy + 4, 4 + 2 * s, M.suit);  // 정강이
-  f.rect(kx - 2 - s, ky - 1, 5 + s, 3, M.metal);  // 무릎 판
-  bevel(f, kx - 2 - s, ky - 1, 5 + s, 3);
-  f.rect(fx - 3 - s, fy, 6 + 2 * s, 5, M.trim);       // 부츠
-  f.rect(fx - 3 - s, fy + 4, 6 + 2 * s, 1, M.accent);
-  f.rect(fx - 3 - s, fy + 1, 6 + 2 * s, 1, M.metal); // 발목 링
-  f.rect(fx - 4 - s, fy, 1, 2, M.trim);              // 벌어진 밑창
-  f.rect(fx + 3 + s, fy, 1, 2, M.trim);
+  const kx = Math.round((hipX + fx) / 2);
+  const ky = Math.round((hipY + fy) / 2) + 1;
+
+  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 — 위가 굵다
+  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 — 발목이 가늘다
+  f.blob(kx, ky, 2 + s, 2, M.cloth);                     // 무릎 — 각지면 관절이 아니라 꺾인 막대다
+  f.rect(kx - 1, ky - 1, 3, 1, M.clothS);                // 무릎 접힘 주름
+
+  // 부츠 — 둥근 앞코. 네모난 신발은 발이 아니라 상자다
+  f.blob(fx, fy + 2, 3 + s, 3, M.clothS);
+  f.blob(fx + 1, fy + 1, 3 + s, 2, M.clothS);            // 둥근 앞코
+  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.metal);         // 밑창
+  f.rect(fx - 2 - s, fy + 4, 5 + 2 * s, 1, M.accent);    // 발등 띠
 }
 
+/**
+ * 팔 — 어깨에서 손목으로 갈수록 가늘어지고, 끝은 둥근 손.
+ * 관절마다 각지면 마네킹이 된다.
+ */
 export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void {
-  const ex = (sx + hx) / 2;
-  const ey = (sy + hy) / 2;
-  f.line(sx, sy, ex, ey, 4, M.suit);
-  f.line(ex, ey, hx, hy, 4, M.suit);
-  f.rect(ex - 2, ey, 4, 1, M.trim);               // 팔꿈치
-  f.rect(hx - 2, hy - 2, 5, 4, M.trim);           // 장갑
-  f.rect(hx - 2, hy, 1, 2, M.suit);               // 엄지
+  const ex = Math.round((sx + hx) / 2);
+  const ey = Math.round((sy + hy) / 2);
+  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔
+  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 — 소매
+  f.rect(ex - 1, ey, 3, 1, M.clothS);             // 팔꿈치 주름
+  f.blob(hx, hy, 2, 2, M.skin);                   // 맨손 — 장갑을 씌우면 또 장비가 된다
+  f.set(hx - 2, hy, M.skinS);
+  f.blob(hx, hy + 2, 2, 1, M.clothS);             // 소맷단
 }
 
 // ---------------------------------------------------------------- 몸통
@@ -122,226 +130,327 @@ export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void 
  * 몸통. 아홉이 공유한다 — 여기가 갈리면 한 팀으로 안 보인다.
  * 개성은 전부 머리와 장비가 낸다.
  *
- * 판을 나누는 선이 있어야 한 덩어리가 아니라 조립된 장구로 읽힌다.
- * 다만 가로선만 늘어놓으면 40px 에서는 갑옷이 아니라 줄무늬 옷이 된다 —
- * 세로 솔기를 섞어야 판이 판으로 읽힌다.
+ * 전면 재설계의 핵심이 여기다. 예전 몸통은 사각형 위에 사각형을 얹고
+ * 가로선을 그은 갑옷판 덩어리였다. 그래서 아홉 다 로봇으로 보였다.
  *
- * s 는 체격이다(-1 마른 / 0 보통 / +1 두꺼운). 아홉이 전부 같은 굵기면
- * 색만 다른 같은 사람이 아홉 있는 것이지 팀이 아니다. 다만 골격 자체는
- * 안 건드린다 — 관절 위치가 갈리면 애니메이션을 아홉 벌 만들어야 한다.
+ *   - 허리를 잘록하게. 위아래 폭이 같으면 사람이 아니라 상자다
+ *   - 어깨를 둥글게 깎아 몸에서 흘러내리게. 네모 블록을 옆에 붙이면
+ *     견장이 아니라 짐칸이 된다
+ *   - 몸의 대부분을 천(M.cloth)으로. 금속은 가슴판 하나로 줄인다 —
+ *     단단한 게 하나 있어야 나머지가 무르게 보인다
+ *   - 좌우를 1px 어긋나게. 완벽한 대칭은 살아 있는 것으로 안 보인다
+ *
+ * s 는 체격이다(-1 마른 / 0 보통 / +1 두꺼운). 골격 자체는 안 건드린다 —
+ * 관절 위치가 갈리면 애니메이션을 아홉 벌 만들어야 한다.
  */
 export function torso(f: F, s: number): void {
-  f.rect(-4 - s, 15, 8 + 2 * s, 4, M.suit);   // 허리
-  f.rect(-5 - s, 13, 10 + 2 * s, 2, M.trim);  // 벨트
-  f.rect(-1, 13, 2, 2, M.accent);             // 버클
+  // --- 실루엣: 골반 → 잘록한 허리 → 넓은 가슴. 위아래 폭이 같으면 통이다
+  f.taper(0, 12, 17, 11 + 2 * s, 9 + s, M.cloth);
+  f.taper(0, 17, 25, 9 + s, 12 + 2 * s, M.cloth);
+  f.blob(0, 25, 6 + s, 2, M.cloth);
 
-  f.rect(-6 - s, 18, 12 + 2 * s, 8, M.suit);  // 가슴
-  f.rect(-5 - s, 18, 10 + 2 * s, 1, M.trim);  // 복부 구분선
-  f.rect(-4 - s, 20, 8 + 2 * s, 4, M.metal);  // 가슴판
-  f.rect(-4 - s, 20, 1, 4, M.trim);           // 가슴판 옆선
-  f.rect(3 + s, 20, 1, 4, M.trim);
-  f.rect(-4 - s, 23, 8 + 2 * s, 1, M.accent);
-  f.rect(-2, 21, 4, 2, M.glow);               // 코어
+  // --- 어깨. 몸에서 흘러내리는 둥근 것. 오른쪽을 한 칸 낮춰 힘을 뺀다
+  f.blob(-7 - s, 25, 3 + s, 3, M.cloth);
+  f.blob(7 + s, 24, 3 + s, 3, M.cloth);
+  f.blob(-7 - s, 26, 3 + s, 1, M.clothS);
+  f.blob(7 + s, 25, 3 + s, 1, M.clothS);
 
-  f.rect(-10 - s, 23, 6 + s, 5, M.metal);     // 어깨 패드
-  f.rect(4, 23, 6 + s, 5, M.metal);
-  f.rect(-10 - s, 27, 6 + s, 1, M.accent);
-  f.rect(4, 27, 6 + s, 1, M.accent);
-  f.rect(-9 - s, 24, 1, 1, M.accent);         // 리벳
-  f.rect(8 + s, 24, 1, 1, M.accent);
-  f.set(-10 - s, 27, M.none); f.set(9 + s, 27, M.none);
+  // --- 옷. 갑옷판을 늘어놓는 대신 '입은 것'으로 보이게 하는 것들이다.
+  // 옷깃·어깨끈·주머니처럼 천이 접히고 매달리는 자리가 있어야 무르게 읽힌다.
+  f.blob(0, 26, 4, 2, M.clothS);                  // 목을 감싸는 옷깃
+  f.rect(-4, 25, 9, 1, M.clothS);
+  f.set(-3, 24, M.clothS); f.set(3, 24, M.clothS); // 벌어진 앞섶
 
-  f.rect(-2, 26, 4, 2, M.trim);               // 목
+  f.line(-5 - s, 24, 4 + s, 18, 2, M.clothS);     // 어깨에서 허리로 지나는 끈
+  f.blob(-1, 21, 1, 1, M.metal);                  // 끈을 고정한 버클
+
+  f.rect(-5 - s, 16, 11 + 2 * s, 2, M.clothS);    // 허리띠
+  f.rect(-1, 16, 3, 2, M.accent);
+  f.soft(3 + s, 12, 4, 4, 1, M.clothS);           // 허리에 매단 주머니
+  f.set(4 + s, 15, M.accent);
+
+  // 가슴에 붙은 단단한 것 하나. 이게 있어야 나머지가 천으로 읽힌다
+  f.soft(-4 - s, 19, 7 + 2 * s, 5, 2, M.metal);
+  f.rect(-4 - s, 19, 7 + 2 * s, 1, M.accent);
+  f.rect(-1, 21, 3, 2, M.glow);                   // 코어
+
+  f.rect(-2, 26, 4, 3, M.skin);                   // 목
+  f.rect(-2, 28, 4, 1, M.skinS);                  // 턱 밑 그늘
+  // 머리는 대원마다 다르다 — HEADS 가 따로 그린다
 }
 
 // ---------------------------------------------------------------- 얼굴
 /**
- * 얼굴 — 록맨류의 핵심은 "헬멧이 얼굴을 감싸되 가리지 않는다"는 것이다.
- * 바이저로 덮어버리면 로봇이 되고, 눈이 보이면 사람이 된다.
+ * 얼굴 — 정이 붙느냐 마느냐가 거의 전부 여기서 갈린다.
  *
- * 눈을 두 점 찍는 걸로는 얼굴이 안 된다. 이목구비가 얼굴로 읽히려면
- * 아래 다섯 개가 다 있어야 한다 — 하나만 빠져도 가면처럼 보인다.
+ * 예전 얼굴은 헬멧 사이에 낀 7×5 짜리 살색 조각이었다. 눈이 3×2 라
+ * 표정을 지을 여지 자체가 없었고, 그래서 아홉 다 "헬멧 쓴 무언가"로
+ * 보였다. 사람으로 보이려면 얼굴이 크고, 그 안에서 눈이 크고, 눈
+ * 안에서 흰자가 커야 한다.
  *
- *   1. 턱으로 좁아지는 윤곽   네모난 살덩이는 사람 머리가 아니다
- *   2. 눈썹뼈 그늘            표정은 눈이 아니라 눈 '위'에서 나온다
- *   3. 속눈썹(윗선)           없으면 눈이 아니라 뚫린 구멍이다
- *   4. 흰자 + 홍채            검은 점 하나로는 시선이 안 생긴다
- *   5. 콧대 + 입              얼굴 가운데가 비면 눈만 붙인 판이 된다
+ * 세로 예산을 먼저 정하고 그 안에서만 그린다. 이걸 안 정해 두면
+ * 머리카락이 눈까지 내려와 얼굴이 눌린다(실제로 한 번 그랬다).
  *
- * 좌표: 얼굴은 x -4..4, y 28..34 를 쓴다. 헬멧은 이 상자를 안 넘는다.
+ *   y39    헤어라인 — 머리카락은 여기 위로만
+ *   y37-38 눈썹
+ *   y36-33 눈 넉 줄
+ *   y32    코
+ *   y31    입
+ *   y30    턱
  */
-export function face(f: F): void {
-  // 1. 윤곽 — 위는 넓고 턱으로 갈수록 좁아진다
-  f.rect(-4, 30, 9, 5, M.skin);
-  f.rect(-3, 29, 7, 1, M.skin);
-  f.rect(-2, 28, 5, 1, M.skin);
+export const HAIRLINE = 39;
 
-  // 2. 눈썹뼈 — 눈 위에 그늘이 앉아야 눈이 안으로 들어간다.
-  //    검게 칠하면 눈썹이 되어 늘 화난 얼굴이 되므로 살 그늘로 둔다
-  f.rect(-4, 33, 3, 1, M.skinS);
-  f.rect(2, 33, 3, 1, M.skinS);
+export function face(f: F, brow: BrowShape = 'calm'): void {
+  // 둥근 달걀형 머리. 아래로 갈수록 좁아진다
+  f.blob(0, 38, 7, 9, M.skin);
+  f.taper(0, 29, 33, 7, 13, M.skin);
+  f.set(-5, 30, M.skinS); f.set(5, 30, M.skinS);   // 턱선
 
-  // 3. 속눈썹 — 눈의 윗선
-  f.rect(-4, 32, 3, 1, M.eye);
-  f.rect(2, 32, 3, 1, M.eye);
+  // 볼 — 광원 반대쪽만 죽여 얼굴에 앞뒤를 준다
+  f.rect(6, 33, 2, 5, M.skinS);
+  f.rect(-7, 34, 1, 5, M.skinH);
 
-  // 4. 눈 — 흰자 / 홍채 / 바깥 눈꼬리.
-  //    흰자는 양쪽 다 광원 쪽(왼쪽)에 둔다. 좌우 대칭으로 찍으면
-  //    두 눈이 서로 다른 데를 보는 사시가 된다
-  f.set(-4, 31, M.white); f.set(-3, 31, M.iris); f.set(-2, 31, M.eye);
-  f.set(2, 31, M.white); f.set(3, 31, M.iris); f.set(4, 31, M.eye);
+  // --- 눈. 왼쪽 x -5..-2, 오른쪽 x 2..5
+  //
+  // 눈의 대부분이 흰자여야 눈이 커 보이고 순해 보인다. 홍채로 꽉
+  // 채우면 아무리 크게 그려도 노려보는 눈이 된다 — 실제로 한 번 그랬다.
+  for (const ex of [-5, 2] as const) {
+    f.rect(ex, 34, 4, 2, M.white);      // 흰자 — 가운데 두 줄은 꽉
+    f.rect(ex + 1, 33, 2, 4, M.white);  // 위아래는 가운데만 → 둥글어진다
+    f.rect(ex + 1, 36, 2, 1, M.eye);    // 윗속눈썹
+    f.set(ex, 35, M.eye);               // 눈꼬리 — 둥근 테두리를 만든다
+    f.set(ex + 3, 35, M.eye);
+    f.rect(ex + 1, 34, 2, 2, M.iris);   // 홍채
+    f.set(ex + 1, 35, M.white);         // 눈빛 — 이 한 점이 생기를 만든다
+  }
 
-  // 5. 콧대 — 능선은 1px 이어야 한다. 두 칸을 밝히면 코가 아니라
-  //    얼굴 한가운데를 지나는 흰 줄이 된다
-  f.rect(-1, 30, 1, 3, M.skinH);
-  f.set(0, 30, M.skinS);           // 콧방울 그늘
+  drawBrow(f, brow);
 
-  f.set(-4, 30, M.skinS); f.set(4, 30, M.skinS);  // 볼 그늘
+  // 볼 홍조 — 딱 두 점이다. 이게 있고 없고로 '차가운 얼굴'과
+  // '정이 가는 얼굴'이 갈린다. 눈 밑 바깥쪽에 놓아야 웃는 볼로 읽힌다.
+  f.set(-5, 33, M.blush);
+  f.set(5, 33, M.blush);
 
-  // 입 — 다문 선 두 칸. 세 칸을 넘기면 벌린 입이 된다
-  f.rect(-1, 29, 2, 1, M.skinS);
+  f.set(1, 32, M.skinS);                // 코 — 그늘 한 점이면 족하다
 
-  // 턱은 밝게 남긴다. 여기까지 그늘로 덮으면 아래턱이 시커메져서
-  // 수염이나 마스크처럼 읽힌다 — 어두운 건 밑에 붙은 목이면 충분하다
-  f.rect(-1, 28, 2, 1, M.skinH);
+  // 입 — 끝이 살짝 올라가야 정이 간다. 일자로 다물면 눈이 커도 차갑다
+  f.rect(-1, 31, 3, 1, M.skinS);
+  f.set(-2, 32, M.skinS);
+  f.set(2, 32, M.skinS);
+}
+
+/** 눈썹 모양 — 성격을 한 획으로 정한다 */
+export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
+
+function drawBrow(f: F, shape: BrowShape): void {
+  const put = (ex: number, dir: 1 | -1): void => {
+    const inner = dir > 0 ? ex : ex + 3;
+    const outer = dir > 0 ? ex + 3 : ex;
+    switch (shape) {
+      case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
+        f.rect(ex, 37, 4, 1, M.brow);
+        f.set(outer, 36, M.brow);
+        break;
+      case 'bold':      // 굵고 곧다 — 우직함
+        f.rect(ex, 37, 4, 2, M.brow);
+        break;
+      case 'worried':   // 안쪽이 올라간다 — 걱정이 많다
+        f.rect(ex, 37, 4, 1, M.brow);
+        f.set(inner, 38, M.brow);
+        break;
+      case 'sly':       // 한쪽만 치켜올린다 — 장난기
+        f.rect(ex, 37, 4, 1, M.brow);
+        if (dir > 0) f.rect(ex + 1, 38, 3, 1, M.brow);
+        break;
+      default:          // calm
+        f.rect(ex, 37, 4, 1, M.brow);
+        break;
+    }
+  };
+  put(-5, -1);
+  put(2, 1);
 }
 
 /**
  * 머리 — 아홉을 가르는 제일 중요한 파츠.
  *
- * 각자 하는 일에서 머리 모양이 나오게 잡았다. 불을 지르는 놈은 방독면을
- * 쓰고, 제일 시끄러운 무기를 든 놈은 귀를 막고, 저격수는 한쪽 눈을
- * 조준경으로 덮는다 — 설정이 생김새를 설명해야 기억에 남는다.
+ * 예전엔 전원이 얼굴을 반쯤 덮는 통짜 헬멧을 썼다. 그게 아홉을 다
+ * "장비를 쓴 무언가"로 만든 제일 큰 원인이었다 — 사람은 얼굴로
+ * 기억되는데 그 얼굴이 절반이 가려져 있었으니 정이 붙을 데가 없다.
+ *
+ * 이번엔 규칙을 뒤집었다.
+ *   - 얼굴을 가리는 장비는 전부 목으로 내린다(고글·마스크·후드).
+ *     쓰고 있으면 직업은 설명되는데 사람은 안 보인다. 목에 걸쳐 두면
+ *     둘 다 된다.
+ *   - 머리는 딱딱한 판이 아니라 머리카락이 기본이다. 결이 흐르고
+ *     끝이 삐치는 게 부드러움을 만든다.
+ *   - 각자 눈썹 모양이 다르다. 성격은 눈이 아니라 눈썹에서 읽힌다.
  */
 export type Head = (f: F) => void;
 
+/**
+ * 머리카락 한 덩이 — 둥근 두개골을 덮고 옆으로 흘러내린다.
+ * 사각형으로 얹으면 가발이 되고, 두개골 곡선을 따라야 머리가 된다.
+ */
+function hairCap(f: F, puff = 0, sideLen = 5): void {
+  // 두 덩이 다 밑면이 정확히 헤어라인이다. 한 칸이라도 더 내려오면
+  // 눈썹을 덮어 표정이 사라진다 — 실제로 한 번 그랬다.
+  // 머리 덩이가 두개골보다 크면 얼굴이 눌린 것처럼 보인다. 머리통
+  // 위쪽을 덮는 '모자' 정도로만 얹는다.
+  f.blob(0, HAIRLINE + 4, 7 + puff, 4, M.hair);          // 정수리
+  f.blob(0, HAIRLINE + 5, 6 + puff, 3, M.hair);
+  f.blob(0, HAIRLINE + 6, 5, 2, M.hairS);                // 결 그늘
+  // 옆머리는 얼굴 바깥으로만 흐른다 — 볼을 덮으면 얼굴이 좁아진다
+  f.rect(-8 - puff, HAIRLINE - sideLen, 2, sideLen + 2, M.hair);
+  f.rect(6 + puff, HAIRLINE - sideLen, 2, sideLen + 2, M.hair);
+  f.set(-8 - puff, HAIRLINE - sideLen - 1, M.hairS);
+  f.set(7 + puff, HAIRLINE - sideLen - 1, M.hairS);
+}
+
+/** 이마로 내려온 앞머리 — 헤어라인 아래로 한 칸만. 더 내리면 눈을 덮는다 */
+function bangs(f: F, ...cols: number[]): void {
+  for (const x of cols) {
+    f.rect(x, HAIRLINE, 1, 2, M.hair);
+    f.set(x, HAIRLINE - 1, M.hairS);   // 이마에 드리운 끝 한 칸
+  }
+}
+
+/** 목에 걸친 물건 — 고글·마스크·후드가 다 이 자리로 내려온다 */
+function collar(f: F, mat: M, lit: M): void {
+  f.blob(0, 28, 6, 2, mat);
+  f.rect(-5, 29, 11, 1, lit);
+}
+
 export const HEADS: Record<string, Head> = {
-  // 못 — 정면으로 얻어맞는 자리다. 두꺼운 통짜 헬멧에 볼가리개와 턱끈까지
+  // 못 — 맏이. 짧게 친 머리에 작업 밴드 하나. 눈썹이 굵고 곧다
   '못': (f) => {
-    face(f);
-    f.rect(-6, 35, 13, 5, M.suit);
-    f.rect(-6, 39, 13, 1, M.metal);
-    f.rect(-2, 40, 5, 2, M.metal);   // 볏
-    f.rect(-6, 35, 13, 1, M.accent); // 이마 띠
-    bevel(f, -6, 35, 13, 5);
-    f.rect(-7, 30, 3, 5, M.metal);   // 볼가리개
-    f.rect(5, 30, 3, 5, M.metal);
-    f.rect(-7, 32, 3, 1, M.accent);
-    f.rect(5, 32, 3, 1, M.accent);
-    f.rect(-7, 28, 2, 2, M.trim);    // 턱끈
-    f.rect(6, 28, 2, 2, M.trim);
+    face(f, 'bold');
+    hairCap(f, 0, 4);
+    bangs(f, -4, -1, 3);
+    f.rect(-8, HAIRLINE + 1, 17, 2, M.accent);      // 이마 밴드
+    f.rect(-8, HAIRLINE + 1, 17, 1, M.metal);
+    f.blob(-9, HAIRLINE + 2, 1, 2, M.accent);       // 옆으로 삐져나온 매듭
+    collar(f, M.cloth, M.clothS);
   },
-  // 종 — 자기 무기가 제일 시끄럽다. 귀를 크게 덮는다
+
+  // 종 — 제일 시끄러운 무기를 든다. 귀를 덮는 폭신한 것
   '종': (f) => {
-    face(f);
-    f.rect(-5, 35, 11, 4, M.suit);
-    f.rect(-5, 38, 11, 1, M.metal);
-    f.rect(-5, 35, 11, 1, M.accent);
-    bevel(f, -5, 35, 11, 4);
-    f.rect(-9, 29, 4, 7, M.metal);   // 귀덮개
-    f.rect(6, 29, 4, 7, M.metal);
-    f.rect(-9, 32, 4, 1, M.accent);
-    f.rect(6, 32, 4, 1, M.accent);
-    f.rect(-8, 30, 2, 1, M.glow);    // 통신 램프
+    face(f, 'calm');
+    hairCap(f, 0, 3);
+    bangs(f, -3, 1);
+    for (const x of [-9, 8] as const) {             // 이어머프 — 둥글고 두껍게
+      f.blob(x, 36, 3, 4, M.cloth);
+      f.blob(x, 36, 2, 3, M.clothS);
+      f.set(x, 37, M.accent);
+    }
+    f.rect(-9, HAIRLINE + 5, 18, 1, M.cloth);       // 머리 위를 지나는 띠
+    collar(f, M.cloth, M.clothS);
   },
-  // 불씨 — 불을 지르는 놈이라 방독면. 입은 가리고 눈은 내놓는다
+
+  // 불씨 — 불을 다룬다. 헝클어진 머리, 고글은 목에 걸쳐 둔다
   '불씨': (f) => {
-    face(f);
-    // 어깨 폭까지 넓히면 마스크가 아니라 목깃으로 읽힌다. 얼굴보다 한 칸씩만
-    // 넓게 두고, 대신 광대 위로 끈을 올려 '묶어 쓴 것'으로 만든다.
-    f.rect(-5, 28, 11, 3, M.metal);
-    f.rect(-5, 30, 11, 1, M.trim);   // 마스크 윗단이 눈 밑에 드리운 그늘
-    f.rect(-5, 28, 11, 1, M.accent);
-    f.rect(-2, 29, 5, 1, M.trim);    // 배기 그릴
-    f.set(-1, 29, M.metal); f.set(1, 29, M.metal);
-    f.rect(-6, 30, 1, 5, M.trim);    // 광대를 타고 올라간 끈
-    f.rect(5, 30, 1, 5, M.trim);
-    f.rect(6, 28, 3, 4, M.metal);    // 옆으로 나온 필터통
-    f.rect(6, 30, 3, 1, M.accent);
-    f.rect(-5, 35, 11, 4, M.suit);
-    f.rect(-5, 38, 11, 1, M.metal);
-    f.rect(-5, 35, 11, 1, M.accent);
-    bevel(f, -5, 35, 11, 4);
+    face(f, 'sly');
+    hairCap(f, 1, 4);
+    bangs(f, -5, -3, 0, 2, 4);
+    f.set(-8, HAIRLINE + 5, M.hair);                // 삐친 머리
+    f.set(8, HAIRLINE + 6, M.hair);
+    f.set(9, HAIRLINE + 4, M.hair);
+    // 목에 걸친 고글 — 얼굴을 안 가리면서 직업은 그대로 읽힌다
+    collar(f, M.clothS, M.metal);
+    f.blob(-3, 28, 2, 2, M.glow);
+    f.blob(3, 28, 2, 2, M.glow);
+    f.rect(-1, 28, 3, 1, M.metal);
   },
-  // 거울 — 제 빛에 눈이 상한다. 챙을 길게 빼서 그늘을 만든다
+
+  // 거울 — 단정하다. 턱선까지 오는 단발에 챙 짧은 캡
   '거울': (f) => {
-    face(f);
-    f.rect(-5, 35, 11, 3, M.suit);
-    f.rect(-8, 37, 16, 2, M.metal);  // 긴 챙
-    f.rect(-8, 37, 16, 1, M.accent);
-    f.rect(-4, 34, 9, 1, M.skinS);   // 챙이 이마에 드리운 그늘
-    f.rect(-5, 34, 2, 1, M.hair);    // 챙 밑으로 빠져나온 앞머리
-    f.rect(4, 34, 2, 1, M.hair);
-    f.rect(-7, 30, 2, 5, M.metal);
-    f.rect(5, 30, 2, 5, M.metal);
+    face(f, 'calm');
+    f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
+    f.rect(-8, 32, 2, 9, M.hair);                   // 턱선까지 내려오는 옆머리
+    f.rect(6, 32, 2, 9, M.hair);
+    f.set(-8, 31, M.hairS); f.set(7, 31, M.hairS);
+    bangs(f, -4, -1, 2);
+    f.blob(0, HAIRLINE + 5, 7, 3, M.cloth);         // 캡
+    f.rect(-9, HAIRLINE + 2, 19, 1, M.metal);       // 짧은 챙
+    f.rect(-9, HAIRLINE + 3, 19, 1, M.accent);
+    collar(f, M.cloth, M.clothS);
   },
-  // 바늘 — 후드. 조준경이 한쪽 눈을 덮는다
+
+  // 바늘 — 저격수. 후드를 젖혀 목에 걸치고 앞머리 한 갈래가 길다
   '바늘': (f) => {
-    face(f);
-    // 후드는 위로 뻗는 뿔이 아니라 뒤로 흘러내리는 천이다 — 정수리를
-    // 덮고 어깨 뒤로 늘어뜨린다. 위로 세우면 새 부리처럼 보인다.
-    f.rect(-6, 35, 13, 5, M.suit);
-    f.rect(-7, 36, 1, 3, M.trim);
-    f.rect(-10, 30, 3, 8, M.suit);   // 어깨 뒤로 흘러내린 자락
-    f.rect(-10, 30, 3, 1, M.trim);
-    f.rect(-7, 31, 2, 4, M.suit);    // 볼을 감싸는 천
-    f.rect(5, 31, 2, 4, M.suit);
-    f.rect(-6, 34, 13, 1, M.trim);   // 후드가 이마에 드리운 그늘
-    f.rect(1, 30, 5, 4, M.metal);    // 조준경 — 오른눈만 덮는다
-    f.rect(2, 31, 3, 2, M.glow);
+    face(f, 'worried');
+    hairCap(f, 0, 5);
+    bangs(f, -4, -2, 2);
+    f.rect(5, 34, 1, 6, M.hair);                    // 길게 내린 한 갈래
+    f.set(5, 33, M.hairS);
+    // 뒤로 젖힌 후드가 어깨에 얹혀 있다
+    f.blob(-5, 29, 5, 3, M.cloth);
+    f.blob(5, 29, 5, 3, M.cloth);
+    f.rect(-9, 29, 19, 1, M.clothS);
+    f.blob(-8, 26, 3, 3, M.cloth);                  // 등 뒤로 늘어진 자락
   },
-  // 반딧불 — 유도탄을 부리려면 안테나가 있어야 한다
+
+  // 반딧불 — 부스스한 곱슬에 더듬이 핀 두 개
   '반딧불': (f) => {
-    face(f);
-    f.rect(-5, 35, 11, 4, M.suit);
-    f.rect(-5, 38, 11, 1, M.metal);
-    f.rect(-5, 35, 11, 1, M.accent);
-    bevel(f, -5, 35, 11, 4);
-    f.rect(-3, 39, 1, 4, M.metal);   // 안테나
-    f.rect(3, 39, 1, 4, M.metal);
-    f.rect(-3, 43, 1, 1, M.glow);
-    f.rect(3, 43, 1, 1, M.glow);
-    f.rect(-5, 34, 2, 1, M.hair);    // 헬멧 밖으로 삐져나온 앞머리
-    f.rect(4, 34, 2, 1, M.hair);
-    f.rect(-7, 30, 2, 5, M.metal);
-    f.rect(5, 30, 2, 5, M.metal);
+    face(f, 'soft');
+    hairCap(f, 1, 4);
+    bangs(f, -5, -3, 0, 3);
+    for (const x of [-8, 7] as const) {             // 곱슬 — 옆으로 부푼다
+      f.blob(x, HAIRLINE + 3, 2, 3, M.hair);
+      f.set(x + (x < 0 ? -1 : 1), HAIRLINE + 4, M.hair);
+    }
+    for (const x of [-3, 3] as const) {             // 더듬이
+      f.rect(x, HAIRLINE + 8, 1, 3, M.metal);
+      f.blob(x, HAIRLINE + 12, 1, 1, M.glow);
+    }
+    collar(f, M.cloth, M.clothS);
   },
-  // 도끼 — 혼자 헬멧을 안 쓴다. 맨머리에 머리띠 하나
+
+  // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
   '도끼': (f) => {
-    face(f);
-    f.rect(-5, 36, 11, 3, M.hair);   // 정수리
-    f.rect(-6, 31, 1, 6, M.hair);    // 옆머리
-    f.rect(5, 31, 1, 6, M.hair);
-    f.rect(-5, 35, 11, 1, M.accent); // 머리띠
-    f.rect(-8, 35, 3, 2, M.accent);  // 뒤로 흐르는 자락
-    f.rect(-4, 34, 2, 1, M.hair);    // 띠 밑으로 내려온 앞머리
-    f.rect(3, 34, 2, 1, M.hair);
+    face(f, 'bold');
+    f.blob(0, HAIRLINE + 5, 8, 6, M.hair);          // 크게 부푼 머리
+    f.rect(-10, HAIRLINE - 4, 2, 7, M.hair);
+    f.rect(8, HAIRLINE - 4, 2, 7, M.hair);
+    f.blob(0, HAIRLINE + 8, 6, 2, M.hairS);
+    bangs(f, -5, -3, 0, 2, 4);
+    f.set(-9, HAIRLINE + 6, M.hair); f.set(9, HAIRLINE + 5, M.hair);
+    f.rect(-9, HAIRLINE + 1, 19, 2, M.accent);      // 머리띠
+    f.rect(-9, HAIRLINE + 1, 19, 1, M.clothS);
+    f.rect(-12, HAIRLINE, 3, 2, M.accent);          // 뒤로 흐르는 자락
+    f.rect(-13, HAIRLINE - 1, 2, 1, M.clothS);
   },
-  // 작살 — 위로 솟은 얇은 볏 + 볼가리개
+
+  // 작살 — 물에서 일한다. 젖어서 넘긴 머리, 물안경은 목에
   '작살': (f) => {
-    face(f);
-    f.rect(-5, 35, 11, 3, M.suit);
-    f.rect(-5, 37, 11, 1, M.metal);
-    bevel(f, -5, 35, 11, 3);
-    f.rect(-1, 38, 2, 5, M.metal);   // 볏
-    f.rect(-1, 43, 2, 1, M.glow);
-    f.rect(-5, 35, 11, 1, M.accent);
-    f.rect(-7, 29, 2, 6, M.metal);
-    f.rect(5, 29, 2, 6, M.metal);
-    f.rect(-7, 33, 2, 1, M.glow);    // 귀 옆 산소 램프
-    f.rect(5, 33, 2, 1, M.glow);
+    face(f, 'calm');
+    f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
+    f.blob(1, HAIRLINE + 5, 6, 3, M.hairS);         // 뒤로 넘긴 결
+    f.rect(-8, HAIRLINE - 3, 2, 5, M.hair);
+    f.rect(6, HAIRLINE - 3, 2, 5, M.hair);
+    f.rect(-3, HAIRLINE, 7, 1, M.hairS);            // 이마가 드러난다
+    f.set(-6, HAIRLINE + 5, M.hairS); f.set(5, HAIRLINE + 6, M.hairS);
+    collar(f, M.clothS, M.metal);                   // 목에 건 물안경
+    f.blob(-3, 28, 2, 2, M.glow);
+    f.blob(3, 28, 2, 2, M.glow);
   },
-  // 사슬 — 아래 얼굴을 천으로 가리고 눈만 내놓는다
+
+  // 사슬 — 긴 머리를 하나로 묶고 목도리를 둘렀다
   '사슬': (f) => {
-    face(f);
-    f.rect(-5, 28, 11, 3, M.trim);   // 입을 가린 천
-    f.rect(-5, 30, 11, 1, M.suit);   // 천의 윗단
-    f.rect(-6, 35, 12, 3, M.suit);
-    bevel(f, -6, 35, 12, 3);
-    f.line(-5, 36, -12, 32, 3, M.suit);
-    f.rect(-6, 34, 12, 1, M.trim);   // 이마에 드리운 그늘
-    f.rect(-7, 31, 2, 4, M.suit);
-    f.rect(5, 31, 2, 4, M.suit);
+    face(f, 'sly');
+    f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
+    bangs(f, -4, -2, 1, 3);
+    f.rect(-9, 33, 2, 8, M.hair);
+    f.rect(7, 33, 2, 8, M.hair);
+    // 뒤로 묶어 늘어뜨린 머리 — 흔들릴 것 같은 게 있어야 살아 보인다
+    f.blob(-9, HAIRLINE + 1, 2, 2, M.accent);       // 묶은 자리
+    f.taper(-11, 30, HAIRLINE, 4, 2, M.hair);
+    f.blob(-12, 29, 2, 2, M.hairS);
+    // 목도리 — 한쪽 끝이 길게 날린다
+    f.blob(0, 28, 7, 2, M.cloth);
+    f.rect(-6, 29, 13, 1, M.clothS);
+    f.taper(10, 21, 28, 3, 4, M.cloth);
+    f.rect(9, 21, 3, 1, M.clothS);
   },
 };
 
@@ -365,7 +474,7 @@ export interface Crew extends CrewPal {
 export const CREW: Crew[] = [
   {
     id: 'nail', name: '못',
-    suit: '#3f4756', metal: '#aab4c2', glow: '#ff9a4c', skin: '#e0a882',
+    suit: '#525d70', metal: '#aab4c2', glow: '#ff9a4c', skin: '#e0a882',
     iris: '#c9743c', hair: '#2e2a30', bulk: 1,
     hand: 'F',
     build: (f, r) => {
@@ -421,7 +530,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'mirror', name: '거울',
-    suit: '#49505e', metal: '#b6c2d2', glow: '#eaf6ff', skin: '#e8b48c',
+    suit: '#5c6474', metal: '#b6c2d2', glow: '#eaf6ff', skin: '#e8b48c',
     iris: '#9fd8ff', hair: '#6e7280', bulk: 0,
     hand: 'B',
     build: (f, r) => {
@@ -435,7 +544,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'needle', name: '바늘',
-    suit: '#25514e', metal: '#8fa8a4', glow: '#5ce0d0', skin: '#a8734c',
+    suit: '#2f6360', metal: '#8fa8a4', glow: '#5ce0d0', skin: '#a8734c',
     iris: '#5ce0d0', hair: '#1e3a36', bulk: -1,
     hand: 'F',
     build: (f, r) => {
@@ -481,22 +590,25 @@ export const CREW: Crew[] = [
   },
   {
     id: 'harpoon', name: '작살',
-    suit: '#2f3f6b', metal: '#93a6c8', glow: '#7cc4ff', skin: '#e0a882',
+    suit: '#3b4f83', metal: '#93a6c8', glow: '#7cc4ff', skin: '#e0a882',
     iris: '#7cc4ff', hair: '#22385c', bulk: 0,
     hand: 'F',
     build: (f, r) => {
-      const [hx, hy] = r.handW;                        // 손을 지나가는 자루
-      f.rect(hx - 1, hy - 13, 3, 42, M.metal);
-      f.rect(hx - 1, hy + 4, 3, 2, M.accent);
-      f.rect(hx - 2, hy + 29, 5, 5, M.metal);
-      f.rect(hx - 4, hy + 26, 2, 5, M.metal);          // 미늘
-      f.rect(hx + 3, hy + 26, 2, 5, M.metal);
-      f.rect(hx - 1, hy + 31, 3, 3, M.glow);
+      // 자루를 손 바로 위에 세우면 머리를 관통한다. 바깥으로 두 칸 밀고
+      // 위쪽을 줄여 머리 옆을 지나가게 한다.
+      const [hx, hy] = r.handW;
+      const sx = hx + 3;
+      f.rect(sx - 1, hy - 13, 3, 40, M.metal);
+      f.rect(sx - 1, hy + 4, 3, 2, M.accent);
+      f.rect(sx - 2, hy + 27, 5, 5, M.metal);
+      f.rect(sx - 4, hy + 24, 2, 5, M.metal);          // 미늘
+      f.rect(sx + 3, hy + 24, 2, 5, M.metal);
+      f.rect(sx - 1, hy + 29, 3, 3, M.glow);
     },
   },
   {
     id: 'chain', name: '사슬',
-    suit: '#3a3446', metal: '#b3a6ce', glow: '#c79bee', skin: '#a8734c',
+    suit: '#4d465f', metal: '#b3a6ce', glow: '#c79bee', skin: '#a8734c',
     iris: '#c79bee', hair: '#2a2438', bulk: -1,
     hand: 'F',
     build: (f, r) => {
@@ -524,13 +636,15 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   const hipY = r.hipY;
   // 두 다리 사이에 x -1..0 두 칸을 비워 둔다. 여기가 붙으면 다리 둘이
   // 아니라 통짜 기둥 하나로 보인다.
-  const footF = pose.footF ?? [4, 0];
-  const footB = pose.footB ?? [-4, 0];
+  // 발을 더 벌린다. 붙여 놓으면 부츠 두 짝이 한 덩어리로 뭉쳐
+  // 다리가 아니라 치마처럼 보인다.
+  const footF = pose.footF ?? [5, 0];
+  const footB = pose.footB ?? [-5, 0];
 
   // 고관절은 몸 중앙이 아니라 좌우로 벌어져 있다. 가운데 한 점에서
   // 두 다리를 뻗으면 서 있는 자세에서 허벅지가 안쪽으로 모여 붙는다.
   f.backside(true);
-  leg(f, s, r.lean - 4 - s, hipY, footB);
+  leg(f, s, r.lean - 5 - s, hipY, footB);
   arm(f, r.shB[0], r.shB[1], r.handB[0], r.handB[1]);
   f.backside(false);
 
@@ -540,7 +654,7 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   HEADS[c.name](f);
   f.origin(0, 0);
 
-  leg(f, s, r.lean + 3 + s, hipY, footF);
+  leg(f, s, r.lean + 4 + s, hipY, footF);
   arm(f, r.shF[0], r.shF[1], r.handF[0], r.handF[1]);
 
   if (pose.weapon !== false) c.build(f, r);
