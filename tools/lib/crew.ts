@@ -290,6 +290,76 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
   f.set(1, 31, M.mouth);
 }
 
+/**
+ * 얼굴 — 고개를 돌린 버전. 시험 삼아 못 하나에만 쓴다.
+ *
+ * 지난 시도는 기존 정면 얼굴을 그대로 두고 눈 하나만 가늘게 접었다
+ * — 그러니 애초에 대칭으로 설계된 그림 위에 비대칭을 얹은 꼴이라
+ * 눈이 찌그러지거나 감긴 것처럼만 보였다("망쳐놨다"는 말을 들었다).
+ * 이번엔 재활용하지 않고 두개골부터 다시 그린다.
+ *
+ * 몸이 lean 으로 기우는 쪽(오른쪽, +x)이 가까운 쪽이다. 3/4 얼굴의
+ * 원리를 이 해상도가 감당할 만큼만 옮긴다:
+ *   - 두개골 중심을 가까운 쪽으로 밀어서, 먼 쪽 볼은 좁게 깎이고
+ *     가까운 쪽 볼은 그대로 남는다 — 얼굴 윤곽 자체가 비대칭이다.
+ *   - 가까운 쪽 눈은 그대로 온전한 눈. 먼 쪽 눈은 위치만 옮기는 게
+ *     아니라 실제로 더 작은 눈을 새로 그린다 — 감은 게 아니라
+ *     '옆으로 돌아가서 작게 보이는' 눈이어야 한다.
+ *   - 코 능선 한 점을 가까운 쪽 옆얼굴에 붙인다 — 이게 있어야
+ *     '뭉툭한 두개골'이 아니라 '돌아간 얼굴'로 읽힌다.
+ */
+export function faceTurned(f: F, brow: BrowShape = 'calm'): void {
+  const cx = 1;                                     // 두개골 중심 — 가까운 쪽(+x)으로 한 칸
+  f.blob(cx, 37, 4, 6, M.skin);
+  f.taper(cx, 29, 31, 4, 8, M.skin);
+  f.set(-2, 30, M.skinS); f.set(4, 30, M.skinS);     // 턱선 — 양쪽 폭이 다르다
+  f.set(5, 33, M.skin);                              // 코 능선 — 가까운 쪽 옆얼굴이 한 칸 튀어나온다
+  f.set(5, 32, M.skinS);                             // 콧대 그늘
+  f.set(-2, 38, M.spec);
+
+  // --- 눈. 가까운 쪽(오른쪽, ex=2)은 정면 얼굴과 같은 눈을 그대로.
+  // 먼 쪽(왼쪽)은 자리를 옮기는 게 아니라 폭 2·높이 2 짜리 더 작은
+  // 눈을 새로 그린다 — 감은 눈이 아니라 옆으로 돌아가 좁아 보이는 눈.
+  {
+    const ex = 2;
+    f.rect(ex, 33, 3, 3, M.iris);
+    f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);
+    f.rect(ex, 35, 3, 1, M.eye);
+    f.set(ex + 2, 34, M.eye);
+    f.set(ex + 1, 34, M.white);
+  }
+  {
+    const ex = -2;
+    f.rect(ex, 33, 2, 2, M.iris);                    // 작지만 여전히 홍채가 있는 눈
+    f.rect(ex, 34, 2, 1, M.eye);                      // 윗속눈썹 한 줄
+    f.set(ex, 33, M.white);                           // 눈빛 — 작아도 살아 있다
+  }
+
+  drawBrowTurned(f, brow);
+
+  f.set(4, 32, M.blush);                              // 먼 쪽 볼은 좁아서 홍조 자리가 없다
+
+  // 입 — 코 능선과 같은 쪽으로 한 칸 밀고, 먼 쪽은 짧게 접는다
+  f.set(2, 30, M.mouth);
+  f.set(1, 31, M.mouth);
+  f.set(3, 31, M.mouth);
+}
+
+function drawBrowTurned(f: F, shape: BrowShape): void {
+  const put = (ex: number, w: number, dir: 1 | -1): void => {
+    const outer = dir > 0 ? ex + w - 1 : ex;
+    switch (shape) {
+      case 'soft': f.rect(ex, 37, w, 1, M.brow); f.set(outer, 36, M.brow); break;
+      case 'bold': f.rect(ex, 36, w, 2, M.brow); break;
+      case 'worried': f.rect(ex, 37, w, 1, M.brow); break;
+      case 'sly': f.rect(ex, 37, w, 1, M.brow); if (dir > 0 && w > 2) f.set(ex + 1, 36, M.brow); break;
+      default: f.rect(ex, 37, w, 1, M.brow); break;
+    }
+  };
+  put(2, 3, 1);    // 가까운 쪽 — 온전한 눈썹
+  put(-2, 2, -1);  // 먼 쪽 — 짧은 눈썹
+}
+
 /** 눈썹 모양 — 성격을 한 획으로 정한다 */
 export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
 
@@ -387,7 +457,7 @@ function collar(f: F, mat: M, lit: M): void {
 export const HEADS: Record<string, Head> = {
   // 못 — 맏이. 짧게 친 머리에 작업 밴드 하나. 눈썹이 굵고 곧다
   '못': (f) => {
-    face(f, 'bold');
+    faceTurned(f, 'bold');
     hairCap(f, 0, 4);
     bangs(f, -4, -1, 3);
     f.rect(-8, HAIRLINE + 1, 17, 2, M.accent);      // 이마 밴드
@@ -471,7 +541,7 @@ export const HEADS: Record<string, Head> = {
 
   // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
   '도끼': (f) => {
-    face(f, 'bold');
+    faceTurned(f, 'bold');
     f.blob(0, HAIRLINE + 5, 8, 6, M.hair);          // 크게 부푼 머리
     f.rect(-10, HAIRLINE - 4, 2, 7, M.hair);
     f.rect(8, HAIRLINE - 4, 2, 7, M.hair);
