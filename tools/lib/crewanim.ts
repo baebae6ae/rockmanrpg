@@ -45,10 +45,18 @@ export function crewTags(): Tag[] {
     {
       // 숨쉬기. 골반이 먼저 내려가고 머리가 한 프레임 늦게 따라온다.
       // 둘이 같이 움직이면 몸 전체가 위아래로 튀는 기계가 된다.
-      name: 'idle', duration: 160, loop: true,
+      //
+      // lean 이 한 번도 0 으로 안 돌아온다 — 몸무게를 한쪽 다리에
+      // 실어 두고 그 위에서 숨만 쉰다. 정면을 보고 좌우가 완벽히
+      // 대칭인 채로 위아래로만 까딱이면 사람이 아니라 레고가 서 있는
+      // 것으로 보인다(실제로 그런 소리를 들었다) — 서 있는 방식
+      // 자체가 이미 비대칭이어야 '버티고 서 있는' 느낌이 난다.
+      name: 'idle', duration: 170, loop: true,
       poses: [
-        { hipY: 16 }, { hipY: 16, headY: -1 },
-        { hipY: 15, headY: -1 }, { hipY: 16, headY: -1 },
+        { hipY: 16, lean: 1, footF: [6, 0], footB: [-4, 0] },
+        { hipY: 16, lean: 1, headY: -1, footF: [6, 0], footB: [-4, 0] },
+        { hipY: 15, lean: 2, headY: -1, footF: [6, 0], footB: [-4, 0] },
+        { hipY: 16, lean: 1, headY: -1, footF: [6, 0], footB: [-4, 0] },
       ],
     },
     { name: 'run', duration: 60, loop: true, poses: runCycle() },
