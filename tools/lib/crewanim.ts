@@ -46,17 +46,21 @@ export function crewTags(): Tag[] {
       // 숨쉬기. 골반이 먼저 내려가고 머리가 한 프레임 늦게 따라온다.
       // 둘이 같이 움직이면 몸 전체가 위아래로 튀는 기계가 된다.
       //
-      // lean 이 한 번도 0 으로 안 돌아온다 — 몸무게를 한쪽 다리에
-      // 실어 두고 그 위에서 숨만 쉰다. 정면을 보고 좌우가 완벽히
-      // 대칭인 채로 위아래로만 까딱이면 사람이 아니라 레고가 서 있는
-      // 것으로 보인다(실제로 그런 소리를 들었다) — 서 있는 방식
-      // 자체가 이미 비대칭이어야 '버티고 서 있는' 느낌이 난다.
+      // 이전에 lean 1~2 를 넣었는데 화면에서는 1~2px 라 안 보였다 —
+      // "고쳐진 게 없다"는 소리를 들었다. 눈에 보이게 고친다.
+      //   - 몸은 lean 3(대시·공격과 같은 폭)으로 확실히 기울이고
+      //   - 머리는 headX 로 몸과 반대 방향까지 살짝 튼다 — 몸은
+      //     비스듬히 버티고 서 있는데 얼굴은 정면(플레이어)을 본다.
+      //     몸통만 기울면 그냥 '넘어지기 직전'이고, 머리가 되받아
+      //     쳐야 '자세를 잡고 서 있는' 것으로 읽힌다
+      //   - 빈 팔은 축 늘어뜨리지 않고 guard(허리 쪽으로 당긴 자세)로
+      //     — 늘어진 팔 두 짝은 그 자체로 인형이다
       name: 'idle', duration: 170, loop: true,
       poses: [
-        { hipY: 16, lean: 1, footF: [6, 0], footB: [-4, 0] },
-        { hipY: 16, lean: 1, headY: -1, footF: [6, 0], footB: [-4, 0] },
-        { hipY: 15, lean: 2, headY: -1, footF: [6, 0], footB: [-4, 0] },
-        { hipY: 16, lean: 1, headY: -1, footF: [6, 0], footB: [-4, 0] },
+        { hipY: 16, lean: 3, headX: -2, footF: [7, 0], footB: [-3, 0], armFree: 'guard' },
+        { hipY: 16, lean: 3, headX: -2, headY: -1, footF: [7, 0], footB: [-3, 0], armFree: 'guard' },
+        { hipY: 15, lean: 4, headX: -2, headY: -1, footF: [7, 0], footB: [-3, 0], armFree: 'guard' },
+        { hipY: 16, lean: 3, headX: -2, headY: -1, footF: [7, 0], footB: [-3, 0], armFree: 'guard' },
       ],
     },
     { name: 'run', duration: 60, loop: true, poses: runCycle() },

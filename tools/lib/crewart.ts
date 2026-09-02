@@ -162,6 +162,27 @@ function softRamp(base: string | RGB): Ramp {
 }
 
 /**
+ * 살을 위한 램프 — formTone 자동 음영을 얼굴에 켜면서 놓친 게 있었다.
+ * 그늘을 아무 생각 없이 ramp() 에 넣었더니 COOL(남색)로 68% 까지
+ * 죽는 금속용 어두운 끝이 그대로 얼굴에 들어갔다. 위 skinTones() 주석에
+ * 이미 적어 뒀던 원칙 — "살 그늘은 남색이 아니라 붉게 죽는다. 차갑게
+ * 내리면 얼굴만 시체색이 된다" — 을 램프에서는 안 지킨 것이다. 그 결과가
+ * "얼룩 같다"는 소리였다. 그늘을 SKIN_SHADE(붉은 갈색) 쪽으로, 폭도
+ * 얼굴 크기에 맞게 훨씬 좁게 잡는다.
+ */
+function skinRamp(base: RGB): Ramp {
+  return {
+    t: [
+      mix(base, SKIN_SHADE, 0.5), mix(base, SKIN_SHADE, 0.34), mix(base, SKIN_SHADE, 0.16), base,
+      mix(base, LIGHT, 0.10), mix(base, LIGHT, 0.20), mix(base, LIGHT, 0.32),
+    ],
+    edgeLit: mix(base, SKIN_SHADE, 0.22),
+    edgeDark: mix(base, SKIN_SHADE, 0.58),
+    bounce: mix(base, BOUNCE, 0.14),
+  };
+}
+
+/**
  * 금속·홍채처럼 단단한 것을 위한 램프. 대비를 한 단 더 올렸다 —
  * 어중간한 명암은 부드러워 보이는 게 아니라 색이 탁해 보인다.
  */
@@ -366,7 +387,7 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.metal]: ramp(saturate(hex(c.metal), 0.16)),
     [M.accent]: ramp(c.glow),
     [M.glow]: ramp(c.glow),
-    [M.skin]: ramp(sk[1]),
+    [M.skin]: skinRamp(sk[1]),
     [M.skinS]: ramp(sk[0]),
     [M.skinH]: ramp(sk[2]),
     [M.eye]: ramp(EYE),
