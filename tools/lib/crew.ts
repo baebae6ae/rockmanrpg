@@ -102,20 +102,23 @@ export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, 
   const kx = Math.round((hipX + fx) / 2);
   const ky = Math.round((hipY + fy) / 2) + 1;
 
-  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 — 위가 굵다
-  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 — 발목이 가늘다
-  f.blob(kx, ky, 2 + s, 2, M.cloth);                     // 무릎 — 각지면 관절이 아니라 꺾인 막대다
+  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 갑옷판 — 위가 굵다
+  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 갑옷판 — 발목이 가늘다
+  // 무릎 — 관절 구체. 각지면 꺾인 막대고, 천 크레이즈 하나로는 부품이
+  // 아니라 얼룩이다. 록맨류는 이 자리가 늘 은색 공이다.
+  f.blob(kx, ky, 2 + s, 2, M.metal);
+  f.set(kx - 1, ky + 1, M.spec);                         // 무릎 하이라이트
   // 다리 앞면에 빛 한 줄. 이게 없으면 굵기를 아무리 바꿔도 납작한
   // 색 기둥으로 보인다
   f.line(hipX - 2, hipY - 1, kx - 2, ky + 1, 1, M.clothH);
-  f.rect(kx - 1, ky - 1, 3, 1, M.clothS);                // 무릎 접힘 주름
 
-  // 부츠 — 둥근 앞코. 네모난 신발은 발이 아니라 상자다
-  f.blob(fx, fy + 2, 3 + s, 3, M.clothS);
-  f.blob(fx + 1, fy + 1, 3 + s, 2, M.clothS);            // 둥근 앞코
+  // 부츠 — 둥근 앞코. 발등은 갑옷판, 앞코·굽만 금속
+  f.blob(fx, fy + 2, 3 + s, 3, M.metal);
+  f.blob(fx + 1, fy + 1, 3 + s, 2, M.cloth);             // 발등 갑옷판
   f.rect(fx - 2 - s, fy + 3, 3, 1, M.clothH);            // 발등 윗면
-  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.metal);         // 밑창
+  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.trim);          // 밑창
   f.rect(fx - 2 - s, fy + 4, 5 + 2 * s, 1, M.accent);    // 발등 띠
+  f.set(fx + 1, fy + 2, M.spec);                          // 앞코 하이라이트
 }
 
 /**
@@ -126,15 +129,19 @@ export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void 
   const ex = Math.round((sx + hx) / 2);
   const ey = Math.round((sy + hy) / 2);
   const dir = sx < 0 ? -1 : 1;                    // 몸 어느 쪽에 붙은 팔인가
-  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔
-  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 — 소매
-  // 팔과 몸통이 같은 천이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
+  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔 갑옷판
+  // 팔꿈치 — 무릎과 같은 관절 구체. 천 주름 하나로는 부품이 아니다
+  f.blob(ex, ey, 2, 2, M.metal);
+  f.set(ex - dir, ey + 1, M.spec);
+  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 갑옷판
+  // 팔과 몸통이 같은 판이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
   // 안쪽 모서리에 그늘 한 줄을 넣어야 팔이 몸에서 떨어져 보인다.
   f.line(sx - dir * 2, sy, ex - dir * 2, ey, 1, M.clothS);
-  f.rect(ex - 1, ey, 3, 1, M.clothS);             // 팔꿈치 주름
-  f.blob(hx, hy, 2, 2, M.skin);                   // 맨손 — 장갑을 씌우면 또 장비가 된다
-  f.set(hx - dir, hy - 1, M.skinS);               // 손가락 쪽 그늘
-  f.blob(hx, hy + 2, 2, 1, M.clothS);             // 소맷단
+  // 손 — 맨살이 아니라 건틀릿. 얼굴은 사람이어도 팔다리는 갑옷이다
+  f.blob(hx, hy, 2, 2, M.metal);
+  f.set(hx - dir, hy - 1, M.metalB);              // 손등 쪽 그늘
+  f.set(hx + dir, hy + 1, M.spec);                // 손등 하이라이트
+  f.blob(hx, hy + 2, 2, 1, M.accent);             // 손목 밴드
 }
 
 // ---------------------------------------------------------------- 몸통
@@ -164,10 +171,13 @@ export function torso(f: F, s: number): void {
   // --- 어깨. 몸에서 흘러내리는 둥근 것. 오른쪽을 한 칸 낮춰 힘을 뺀다
   f.blob(-7 - s, 25, 3 + s, 3, M.cloth);
   f.blob(7 + s, 24, 3 + s, 3, M.cloth);
-  f.blob(-7 - s, 26, 3 + s, 1, M.clothH);         // 윗면은 빛을 정면으로 받는다
-  f.blob(7 + s, 25, 3 + s, 1, M.clothH);
   f.set(-7 - s, 23, M.clothS);                    // 겨드랑이 접힘
   f.set(7 + s, 22, M.clothS);
+  // 견갑 — 어깨 위에 얹힌 금속판. 몸통과 같은 색 천만으로는 팔이
+  // 어디서 시작하는지 안 보인다. 록맨류는 이 자리가 늘 딱딱하다
+  f.blob(-7 - s, 26, 3 + s, 2, M.metal);
+  f.blob(7 + s, 25, 3 + s, 2, M.metal);
+  f.set(-8 - s, 27, M.spec);                      // 빛 쪽 견갑 하이라이트
 
   // --- 옷깃 → 앞섶 → 허리띠.
   //
@@ -197,7 +207,11 @@ export function torso(f: F, s: number): void {
   //     작은 패널로 줄였다. 좌우가 어긋나 있는 게 사람이다.
   f.soft(-6 - s, 19, 5 + s, 4, 1, M.metal);
   f.rect(-6 - s, 22, 5 + s, 1, M.accent);
-  f.rect(-5 - s, 20, 2, 1, M.glow);               // 코어
+  f.set(-6 - s, 22, M.spec);                      // 가슴판 모서리 하이라이트
+  // 코어 보석 — 사각 점 하나가 아니라 둥근 보석. 구석에 밝은 점을
+  // 하나 곁들이면 그냥 빛나는 게 아니라 반짝이는 것으로 보인다
+  f.blob(-5 - s, 20, 1, 1, M.glow);
+  f.set(-5 - s, 21, M.spec);
 
   // 목 — 두 줄은 보여야 한다. 목이 안 보이면 머리가 어깨에 얹힌
   // 것으로 읽히고, 그게 인형처럼 보이는 큰 원인이었다
@@ -341,6 +355,9 @@ function hairCap(f: F, puff = 0, sideLen = 5): void {
   f.rect(6 + puff, HAIRLINE - sideLen, 2, sideLen + 2, M.hair);
   f.set(-8 - puff, HAIRLINE - sideLen - 1, M.hairS);
   f.set(7 + puff, HAIRLINE - sideLen - 1, M.hairS);
+  // 머리 윗면에 또렷한 결 하이라이트 한 점 — 애니메 머리카락 특유의
+  // 그 반짝임이다. 부드러운 그러데이션만으로는 절대 안 나온다.
+  f.set(-2, HAIRLINE + 7, M.spec);
 }
 
 /** 이마로 내려온 앞머리 — 헤어라인 아래로 한 칸만. 더 내리면 눈을 덮는다 */
