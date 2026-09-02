@@ -248,7 +248,15 @@ export function torso(f: F, s: number): void {
  */
 export const HAIRLINE = 39;
 
-export function face(f: F, brow: BrowShape = 'calm'): void {
+/**
+ * turn — 고개를 살짝 돌린 쪽. 0 이면 정면, -1/1 이면 그쪽으로 돌아가
+ * 있다. 처음엔 머리 전체를 옆으로 밀어서 흉내 냈는데, 얼굴 자체가
+ * 좌우 대칭으로 그려져 있으니 목만 어긋나 보였다("기괴하다"는 말을
+ * 들었다). 진짜 돌아간 것처럼 보이려면 얼굴 그림 자체가 비대칭이어야
+ * 한다 — 먼 쪽 눈은 원근 때문에 좁아 보이는 게 실제 얼굴이 하는 일이다.
+ * 그래서 먼 쪽 눈만 한 칸 좁히고 중심 쪽으로 당겼다.
+ */
+export function face(f: F, brow: BrowShape = 'calm', turn: -1 | 0 | 1 = 0): void {
   // 둥근 달걀형 머리 — 예전보다 한 단 작다. 아래로 갈수록 좁아진다
   f.blob(0, 37, 5, 6, M.skin);
   f.taper(0, 29, 31, 4, 9, M.skin);
@@ -261,67 +269,92 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
   // 납작하면 붕 뜬다. 광원 쪽에 한 점.
   f.set(-2, 38, M.spec);
 
-  // --- 눈. 왼쪽 x -4..-2, 오른쪽 x 2..4, 세로 y33..35
+  // --- 눈. 기본은 왼쪽 x -4..-2, 오른쪽 x 2..4, 세로 y33..35
   //
   // 예전엔 눈 하나가 4×4 흰자 상자였다. 머리가 작아진 지금 그 비율을
   // 그대로 쓰면 흰자가 얼굴의 절반을 차지해 더 심하게 부릅뜬다.
   // 그래서 흰자 상자를 없애고 홍채색 덩이 하나 + 눈빛 한 점으로
   // 바꿨다 — 어두운 건 윗속눈썹 한 줄과 눈꼬리 한 점뿐이다.
-  for (const ex of [-4, 2] as const) {
-    const tail = ex < 0 ? ex : ex + 2;             // 바깥쪽 눈꼬리
-    f.rect(ex, 33, 3, 3, M.iris);                  // 홍채가 눈 전체를 채운다
-    f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);   // 아래 모서리를 깎아 둥글게
-    f.rect(ex, 35, 3, 1, M.eye);                   // 윗속눈썹
-    f.set(tail, 34, M.eye);                        // 눈꼬리
-    f.set(ex + 1, 34, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
+  //
+  // 먼저 먼 쪽 눈 폭만 3→2 로 줄이는 걸로 해 봤는데 1px 차이라
+  // 실제 게임 크기에서는 안 보였다("고쳐진 게 없다"는 말을 들었다
+  // — 맞았다). 그래서 먼 쪽 눈은 아예 실루엣 폭 하나(눈매 한 줄)로
+  // 확 접는다 — 고개를 돌리면 먼 쪽 눈이 옆에서 보여 가늘어지는 걸
+  // 극단으로 밀어붙인 것이다. 눈 하나는 완전히 뜬 눈, 하나는 거의
+  // 감긴 눈매 한 줄 — 이 정도 대비라야 조그만 얼굴에서도 '고개를
+  // 돌렸다'는 게 눈에 들어온다. 가까운 쪽 눈은 자리를 그대로 둔다 —
+  // 두개골이 이 높이에서 딱 x±4 까지밖에 없어서(그 밖은 실루엣
+  // 밖이다) 넓힐 자리도 없다.
+  if (turn === 0) {
+    for (const ex of [-4, 2] as const) {
+      const tail = ex < 0 ? ex : ex + 2;
+      f.rect(ex, 33, 3, 3, M.iris);
+      f.set(ex, 33, M.skin); f.set(ex + 2, 33, M.skin);
+      f.rect(ex, 35, 3, 1, M.eye);
+      f.set(tail, 34, M.eye);
+      f.set(ex + 1, 34, M.white);
+    }
+  } else {
+    const nearEx = turn > 0 ? 2 : -4;               // 그대로 두는 눈
+    const farEx = turn > 0 ? -2 : 3;                // 눈매 한 줄로 접는 눈
+    const tail = nearEx < 0 ? nearEx : nearEx + 2;
+    f.rect(nearEx, 33, 3, 3, M.iris);
+    f.set(nearEx, 33, M.skin); f.set(nearEx + 2, 33, M.skin);
+    f.rect(nearEx, 35, 3, 1, M.eye);
+    f.set(tail, 34, M.eye);
+    f.set(nearEx + 1, 34, M.white);
+    f.rect(farEx, 34, 1, 2, M.eye);                 // 가늘어진 먼 쪽 눈매
   }
 
-  drawBrow(f, brow);
+  drawBrow(f, brow, turn);
 
-  // 볼 홍조 — 눈보다 한 단 바깥, 한 단 아래. 눈에 붙이면 눈 테두리로
-  // 먹히고, 머리가 작아진 만큼 자리도 좁아져 한 칸짜리로 줄였다.
-  f.set(-5, 32, M.blush);
-  f.set(4, 32, M.blush);
+  // 볼 홍조 — 눈보다 한 단 바깥, 한 단 아래. turn 방향으로 살짝
+  // 따라간다 — 먼 쪽 볼은 좁아진 만큼 홍조도 안쪽으로.
+  f.set(-5 + Math.max(0, turn), 32, M.blush);
+  f.set(4 + Math.min(0, turn), 32, M.blush);
 
   // 입 — 세 점짜리 웃음. 코는 안 찍는다 — 이 좁은 턱에 코까지 넣으면
-  // 입과 붙어 얼룩이 된다.
-  f.set(0, 30, M.mouth);
-  f.set(-1, 31, M.mouth);
-  f.set(1, 31, M.mouth);
+  // 입과 붙어 얼룩이 된다. turn 방향으로 한 칸 따라가 중심선이
+  // 얼굴과 함께 돌아간 것처럼 보이게 한다.
+  f.set(0 + turn, 30, M.mouth);
+  f.set(-1 + turn, 31, M.mouth);
+  f.set(1 + turn, 31, M.mouth);
 }
 
 /** 눈썹 모양 — 성격을 한 획으로 정한다 */
 export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
 
-function drawBrow(f: F, shape: BrowShape): void {
+function drawBrow(f: F, shape: BrowShape, turn: -1 | 0 | 1 = 0): void {
   // 기준선은 y37 이다. 눈(y33~35)과 두 줄 띄워 뒀다 — 붙이면 헤드밴드·
   // 고글 같은 이마 장식이 내려올 때 눈썹과 뭉개진다(실제로 그랬다).
-  const put = (ex: number, dir: 1 | -1): void => {
-    const inner = dir > 0 ? ex : ex + 2;
-    const outer = dir > 0 ? ex + 2 : ex;
+  // 눈과 같은 규칙 — 먼 쪽 눈썹만 폭을 줄이고 중심 쪽으로 당긴다.
+  const put = (ex: number, w: number, dir: 1 | -1): void => {
+    const inner = dir > 0 ? ex : ex + w - 1;
+    const outer = dir > 0 ? ex + w - 1 : ex;
     switch (shape) {
       case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
-        f.rect(ex, 37, 3, 1, M.brow);
+        f.rect(ex, 37, w, 1, M.brow);
         f.set(outer, 36, M.brow);
         break;
       case 'bold':      // 굵고 눈에 가깝다 — 우직함
-        f.rect(ex, 36, 3, 2, M.brow);
+        f.rect(ex, 36, w, 2, M.brow);
         break;
       case 'worried':   // 안쪽이 처지고 바깥이 올라간다 — 걱정이 많다
-        f.rect(ex, 37, 3, 1, M.brow);
+        f.rect(ex, 37, w, 1, M.brow);
         f.set(inner, 36, M.brow);
         break;
       case 'sly':       // 한쪽만 치켜올린다 — 장난기
-        f.rect(ex, 37, 3, 1, M.brow);
+        f.rect(ex, 37, w, 1, M.brow);
         if (dir > 0) f.set(ex + 1, 36, M.brow);
         break;
       default:          // calm
-        f.rect(ex, 37, 3, 1, M.brow);
+        f.rect(ex, 37, w, 1, M.brow);
         break;
     }
   };
-  put(-4, -1);
-  put(2, 1);
+  if (turn === 0) { put(-4, 3, -1); put(2, 3, 1); }
+  else if (turn > 0) { put(2, 3, 1); f.set(-2, 37, M.brow); }   // 먼 쪽은 짧은 획 하나
+  else { put(-4, 3, -1); f.set(3, 37, M.brow); }
 }
 
 /**
@@ -387,7 +420,7 @@ function collar(f: F, mat: M, lit: M): void {
 export const HEADS: Record<string, Head> = {
   // 못 — 맏이. 짧게 친 머리에 작업 밴드 하나. 눈썹이 굵고 곧다
   '못': (f) => {
-    face(f, 'bold');
+    face(f, 'bold', 1);
     hairCap(f, 0, 4);
     bangs(f, -4, -1, 3);
     f.rect(-8, HAIRLINE + 1, 17, 2, M.accent);      // 이마 밴드
@@ -398,7 +431,7 @@ export const HEADS: Record<string, Head> = {
 
   // 종 — 제일 시끄러운 무기를 든다. 귀를 덮는 폭신한 것
   '종': (f) => {
-    face(f, 'calm');
+    face(f, 'calm', 1);
     hairCap(f, 0, 3);
     bangs(f, -3, 1);
     for (const x of [-9, 8] as const) {             // 이어머프 — 둥글고 두껍게
@@ -412,7 +445,7 @@ export const HEADS: Record<string, Head> = {
 
   // 불씨 — 불을 다룬다. 헝클어진 머리, 고글은 목에 걸쳐 둔다
   '불씨': (f) => {
-    face(f, 'sly');
+    face(f, 'sly', 1);
     hairCap(f, 1, 4);
     bangs(f, -5, -3, 0, 2, 4);
     f.set(-8, HAIRLINE + 5, M.hair);                // 삐친 머리
@@ -427,7 +460,7 @@ export const HEADS: Record<string, Head> = {
 
   // 거울 — 단정하다. 턱선까지 오는 단발에 챙 짧은 캡
   '거울': (f) => {
-    face(f, 'calm');
+    face(f, 'calm', -1);
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     f.rect(-8, 32, 2, 9, M.hair);                   // 턱선까지 내려오는 옆머리
     f.rect(6, 32, 2, 9, M.hair);
@@ -441,7 +474,7 @@ export const HEADS: Record<string, Head> = {
 
   // 바늘 — 저격수. 후드를 젖혀 목에 걸치고 앞머리 한 갈래가 길다
   '바늘': (f) => {
-    face(f, 'worried');
+    face(f, 'worried', 1);
     hairCap(f, 0, 5);
     bangs(f, -4, -2, 2);
     f.rect(5, 34, 1, 6, M.hair);                    // 길게 내린 한 갈래
@@ -455,7 +488,7 @@ export const HEADS: Record<string, Head> = {
 
   // 반딧불 — 부스스한 곱슬에 더듬이 핀 두 개
   '반딧불': (f) => {
-    face(f, 'soft');
+    face(f, 'soft', 1);
     hairCap(f, 1, 4);
     bangs(f, -5, -3, 0, 3);
     for (const x of [-8, 7] as const) {             // 곱슬 — 옆으로 부푼다
@@ -471,7 +504,7 @@ export const HEADS: Record<string, Head> = {
 
   // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
   '도끼': (f) => {
-    face(f, 'bold');
+    face(f, 'bold', -1);
     f.blob(0, HAIRLINE + 5, 8, 6, M.hair);          // 크게 부푼 머리
     f.rect(-10, HAIRLINE - 4, 2, 7, M.hair);
     f.rect(8, HAIRLINE - 4, 2, 7, M.hair);
@@ -486,7 +519,7 @@ export const HEADS: Record<string, Head> = {
 
   // 작살 — 물에서 일한다. 젖어서 넘긴 머리, 물안경은 목에
   '작살': (f) => {
-    face(f, 'calm');
+    face(f, 'calm', 1);
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     f.blob(1, HAIRLINE + 5, 6, 3, M.hairS);         // 뒤로 넘긴 결
     f.rect(-8, HAIRLINE - 3, 2, 5, M.hair);
@@ -500,7 +533,7 @@ export const HEADS: Record<string, Head> = {
 
   // 사슬 — 긴 머리를 하나로 묶고 목도리를 둘렀다
   '사슬': (f) => {
-    face(f, 'sly');
+    face(f, 'sly', 1);
     f.blob(0, HAIRLINE + 3, 7, 4, M.hair);
     bangs(f, -4, -2, 1, 3);
     f.rect(-9, 33, 2, 8, M.hair);
