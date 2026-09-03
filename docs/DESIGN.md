@@ -668,9 +668,14 @@ assets/sprites/enemies/<enemy_id>/
 
 ### 10.2 GitHub Pages
 
-- `.github/workflows/deploy.yml`이 푸시 시 자동 빌드·배포
-- 저장소 Settings → Pages → Source를 **GitHub Actions**로 설정해야 동작한다 (수동, 1회)
-- 설정 전까지 워크플로는 아무 일도 하지 않는다. 공개 시점은 나중에 정한다
+- 저장소 Settings → Pages → Source가 아직 **GitHub Actions**가 아니라 브랜치
+  방식이라, 실제 배포는 `main`에서 빌드한 `dist/`를 `gh-pages` 브랜치에
+  직접 커밋하는 것으로 한다
+- `.github/workflows/deploy.yml`은 `main` 푸시 시 빌드만 확인한다(배포 안 함) —
+  예전엔 `actions/deploy-pages`까지 있었는데, Source가 브랜치 방식인 동안은
+  그 단계가 매번 실패해서 실패 메일만 쌓였다
+- Source를 GitHub Actions로 바꾸면(수동, 1회) 이 워크플로에 배포 단계를
+  다시 붙여 자동화할 수 있다
 
 > Pages 사이트는 저장소를 비공개로 돌려도 **공개로 게시된다.** 또한 무료 플랜에서는 공개 저장소에서만 Pages를 쓸 수 있다. 공개 여부는 게임을 실제로 공개할 시점에 결정한다.
 
