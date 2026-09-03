@@ -108,10 +108,16 @@ export function crewTags(): Tag[] {
         { hipY: 25, lean: 7, footF: [11, 6], footB: [-8, 3], armWeapon: 'down', armFree: 'back' },
       ],
     },
+    /**
+     * idle 의 lean(+2)에서 첫 프레임이 곧장 lean -4 로 튀어서, 대기 상태에서
+     * 공격이 시작되는 순간 자체가 이어지지 않고 끊겨 보였다. 첫 프레임을
+     * 완만하게(-1) 낮추고 두 번째 프레임에서 깊은 백스윙(-6)에 도달하게
+     * 해서 준비 동작이 한 단계를 더 거치며 이어지게 한다.
+     */
     {
       name: 'attack_main', duration: 88, loop: false,
       poses: [
-        { hipY: 22, lean: -4, footF: [4, 0], footB: [-6, 0], armWeapon: 'back', armFree: 'back' },
+        { hipY: 22, lean: -1, footF: [4, 0], footB: [-6, 0], armWeapon: 'back', armFree: 'back' },
         { hipY: 20, lean: -6, headY: -1, footF: [3, 1], footB: [-7, 0], armWeapon: 'back', armFree: 'guard', charge: 0.18 },
         { hipY: 21, lean: 1, footF: [7, 0], footB: [-4, 0], armWeapon: 'aim', armFree: 'forward', slash: 'high', charge: 0.8 },
         { hipY: 21, lean: 3, footF: [8, 0], footB: [-3, 0], armWeapon: 'aim', armFree: 'forward' },

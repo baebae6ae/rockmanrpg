@@ -111,15 +111,31 @@ export function rigOf(pose: Pose, s: number, weaponHand: 'F' | 'B' = 'F'): Rig {
   const shF: [number, number] = [lean + 7 + s, shY];
   const shB: [number, number] = [lean - 7 - s, shY];
   const wF = weaponHand === 'F';
-  const pF = HAND[(wF ? pose.armWeapon ?? 'down' : pose.armFree ?? 'rest')];
-  const pB = HAND[(wF ? pose.armFree ?? 'rest' : pose.armWeapon ?? 'down')];
-  // 뒤쪽 팔은 좌우가 뒤집힌다 — 어깨 기준 앞으로 뻗는 방향이 반대다
-  const handF: [number, number] = [shF[0] + pF[0], shF[1] + pF[1]];
-  const handB: [number, number] = [shB[0] - pB[0], shB[1] + pB[1]];
+  const pWeapon = HAND[pose.armWeapon ?? 'down'];
+  const pFree = HAND[pose.armFree ?? 'rest'];
+
+  // 빈 손은 좌우가 뒤집힌다 — 자기 쪽 어깨를 기준으로 바깥으로 벌어지는
+  // 방향이라, 몸 반대편(뒤)에 있으면 앞손과 부호가 반대여야 자연스럽게
+  // 제자리(자기 옆구리)에 붙는다.
+  //
+  // 무기 손은 뒤집으면 안 된다. forward/back/aim 은 "무기를 앞으로
+  // 뻗는다/뒤로 젖힌다"는 절대 방향이라 — 무기가 뒷손(hand:'B')에 있는
+  // 캐릭터(도끼·거울)도 그대로 더해야 실제로 앞으로 휘두른다. 뒤집으면
+  // 무기 손은 몸 뒤로 더 파묻히고, 대신 앞의 빈손이 뻗어 나가서
+  // "반대손으로 공격하는" 그림이 나온다 — 실제로 이 버그였다.
+  const handWeapon: [number, number] = wF
+    ? [shF[0] + pWeapon[0], shF[1] + pWeapon[1]]
+    : [shB[0] + pWeapon[0], shB[1] + pWeapon[1]];
+  const handFree: [number, number] = wF
+    ? [shB[0] - pFree[0], shB[1] + pFree[1]]
+    : [shF[0] + pFree[0], shF[1] + pFree[1]];
+
+  const handF = wF ? handWeapon : handFree;
+  const handB = wF ? handFree : handWeapon;
   return {
     s, hipY, lean, headY: pose.headY ?? 0, shF, shB, handF, handB,
-    handW: wF ? handF : handB,
-    handO: wF ? handB : handF,
+    handW: handWeapon,
+    handO: handFree,
   };
 }
 
@@ -689,9 +705,14 @@ export const CREW: Crew[] = [
     hand: 'B',
     build: (f, r) => {
       const [hx, hy] = r.handW;
-      f.line(hx + 1, hy - 7, hx - 3, hy + 14, 3, M.trim);  // 손을 관통하는 자루
-      f.crescent(hx - 3, hy + 14, 9, 4, -1, M.metal);
-      f.crescent(hx - 3, hy + 14, 6, 4, -1, M.accent);
+      // 날은 손에서 위로 14칸이나 뻗어 있어서, 공격 중 손이 몸 중앙까지
+      // 따라오면 날이 얼굴 위에 그대로 겹친다. 자루의 손 쪽 끝은 실제
+      // 손 위치를 그대로 따라가되(안 그러면 자루가 손에서 떨어져 보인다),
+      // 날 끝만 얼굴 중심(r.lean) 너머로 넘어가지 않게 잡아둔다.
+      const tipX = Math.min(hx - 3, r.lean - 6);
+      f.line(hx + 1, hy - 7, tipX, hy + 14, 3, M.trim);  // 손을 관통하는 자루
+      f.crescent(tipX, hy + 14, 9, 4, -1, M.metal);
+      f.crescent(tipX, hy + 14, 6, 4, -1, M.accent);
     },
   },
   {
