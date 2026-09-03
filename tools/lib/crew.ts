@@ -759,8 +759,18 @@ export const CREW: Crew[] = [
 
 // ---------------------------------------------------------------- 한 프레임
 /**
- * 겹침 순서가 전부다. 뒤쪽 팔다리 → 몸통 → 머리 → 앞쪽 팔다리 → 무기.
- * 순서를 틀리면 팔이 가슴을 뚫고 나오거나 무기가 얼굴을 덮는다.
+ * 겹침 순서가 전부다. 뒤쪽 다리+빈 팔 → 몸통 → 머리 → 앞쪽 다리+무기 팔 →
+ * 무기. 순서를 틀리면 팔이 가슴을 뚫고 나오거나 무기가 얼굴을 덮는다.
+ *
+ * 팔은 다리와 달리 "몸 앞/뒤 어느 쪽 어깨냐"가 아니라 "무기를 쥔
+ * 팔이냐"로 앞/뒤 그리기 순서를 정한다. 예전엔 물리적으로 뒤쪽
+ * 어깨(shB)를 항상 뒤 레이어에 그렸는데, 무기가 뒷손인 캐릭터(도끼·
+ * 거울)는 그 팔이 몸통에 항상 가려져서 화면에 아예 안 보였다 —
+ * 그 위에 무기(도끼날 등)만 항상 맨 위에 그려지니, 보이는 건 무기를
+ * 쥔 적 없는 앞의 빈 팔이 뻗는 동작뿐이고 무기는 아무 팔에도 안 붙은
+ * 채 허공에서 움직이는 것처럼 보였다 — "반대손으로 공격한다"는 게
+ * 실은 이 레이어 문제였다. 무기 팔을 항상 몸통 위(보이는 레이어)에
+ * 그려서, 실제로 쥐고 휘두르는 팔이 눈에 보이게 한다.
  */
 export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   const s = c.bulk;
@@ -775,11 +785,15 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   const footF = pose.footF ?? [5, 0];
   const footB = pose.footB ?? [-6, 0];
 
+  const wF = c.hand === 'F';
+  const shWeapon = wF ? r.shF : r.shB;
+  const shFree = wF ? r.shB : r.shF;
+
   // 고관절은 몸 중앙이 아니라 좌우로 벌어져 있다. 가운데 한 점에서
   // 두 다리를 뻗으면 서 있는 자세에서 허벅지가 안쪽으로 모여 붙는다.
   f.backside(true);
   leg(f, s, r.lean - 4 - s, hipY, footB);
-  arm(f, r.shB[0], r.shB[1], r.handB[0], r.handB[1]);
+  arm(f, shFree[0], shFree[1], r.handO[0], r.handO[1]);
   f.backside(false);
 
   f.origin(r.lean, hipY - HIP0);
@@ -789,7 +803,7 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   f.origin(0, 0);
 
   leg(f, s, r.lean + 3 + s, hipY, footF);
-  arm(f, r.shF[0], r.shF[1], r.handF[0], r.handF[1]);
+  arm(f, shWeapon[0], shWeapon[1], r.handW[0], r.handW[1]);
 
   if (pose.weapon !== false) c.build(f, r);
 
