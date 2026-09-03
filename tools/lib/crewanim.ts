@@ -14,26 +14,30 @@ export interface Tag {
 /**
  * 달리기 — 자유팔이 다리와 반대로 흔들려야 뛰는 것으로 보인다.
  *
- * 예전 판은 'back'/'forward' 를 그대로 썼는데, 그 둘은 공격처럼 한 번
+ * 1차 시도는 'back'/'forward' 를 그대로 썼는데, 그 둘은 공격처럼 한 번
  * 크게 뻗는 동작용이라 좌우 폭이 15px 나 됐다(어깨 폭은 16~18px 뿐이라
- * 팔이 몸통만큼 휘둘렸다). 게다가 back,back,forward,forward 처럼
- * 극단을 2연속 붙였다 얼어붙였다 하니 '스치는' 게 아니라 '내던졌다
- * 멈추는' 동작으로 보였다.
+ * 팔이 몸통만큼 휘둘렸다).
  *
- * 이번엔 좁은 진폭(runF/runB)만 쓰고, 극단 사이에 guard(중립)를 끼워
- * 뒤→중립→앞→중립 이 두 걸음마다 한 번씩 매끄럽게 돈다 — 다리가 한
+ * 2차 시도는 진폭을 runF/runB 로 좁히고 그 사이에 guard 를 중립으로
+ * 끼웠는데, runF 를 실수로 guard 와 똑같은 값으로 적어서 뒤→중립→
+ * 중립→중립이 구워졌다 — 8프레임 중 1프레임만 튀고 나머지 3프레임이
+ * 완전히 같은 자세다. 52ms 짜리 빠른 루프에서 이건 '스치는' 게 아니라
+ * 주기적으로 한 번씩 튀는 경련으로 보였다.
+ *
+ * 이번엔 runB/runN/runF 세 칸을 전부 다른 값으로, 높이(-5)는 맞춰서
+ * 뒤→중립→앞→중립이 두 걸음마다 한 번씩 매끄럽게 돈다 — 다리가 한
  * 걸음 내딛을 때마다 반대팔이 한 번 스치는 실제 보행 리듬과 같다.
  */
 function runCycle(): Pose[] {
   return [
     { hipY: 22, lean: 1, footF: [8, 0], footB: [-5, 2], armWeapon: 'down', armFree: 'runB' },
-    { hipY: 20, lean: 3, headY: -1, footF: [10, 2], footB: [-4, 0], armWeapon: 'down', armFree: 'guard' },
+    { hipY: 20, lean: 3, headY: -1, footF: [10, 2], footB: [-4, 0], armWeapon: 'down', armFree: 'runN' },
     { hipY: 19, lean: 3, headY: -1, footF: [5, 5], footB: [-2, 3], armWeapon: 'down', armFree: 'runF' },
-    { hipY: 21, lean: 2, footF: [2, 5], footB: [-7, 0], armWeapon: 'down', armFree: 'guard' },
+    { hipY: 21, lean: 2, footF: [2, 5], footB: [-7, 0], armWeapon: 'down', armFree: 'runN' },
     { hipY: 22, lean: 1, footF: [-2, 2], footB: [8, 0], armWeapon: 'down', armFree: 'runB' },
-    { hipY: 20, lean: 3, headY: -1, footF: [-4, 0], footB: [10, 2], armWeapon: 'down', armFree: 'guard' },
+    { hipY: 20, lean: 3, headY: -1, footF: [-4, 0], footB: [10, 2], armWeapon: 'down', armFree: 'runN' },
     { hipY: 19, lean: 3, headY: -1, footF: [-2, 3], footB: [5, 5], armWeapon: 'down', armFree: 'runF' },
-    { hipY: 21, lean: 2, footF: [-7, 0], footB: [2, 5], armWeapon: 'down', armFree: 'guard' },
+    { hipY: 21, lean: 2, footF: [-7, 0], footB: [2, 5], armWeapon: 'down', armFree: 'runN' },
   ];
 }
 
