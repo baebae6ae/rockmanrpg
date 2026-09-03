@@ -1,3 +1,4 @@
+import './pwa-update';
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { GAME_H, GAME_W, computeScale } from './core/config';
 import { Input } from './input/input';
