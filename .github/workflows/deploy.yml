@@ -1,22 +1,14 @@
-name: Deploy to GitHub Pages
+name: Build Check
 
-# 기본 브랜치에 올라간 것만 배포한다. 저장소 Settings → Pages → Source 를
-# "GitHub Actions" 로 바꾸기 전까지는 배포 단계가 실패하므로, 그때까지는
-# 빌드 검증용으로만 돌아간다 (docs/DESIGN.md §10.2).
+# 실제 배포는 gh-pages 브랜치에 빌드 결과물을 직접 커밋하는 방식으로 한다.
+# 저장소 Settings → Pages → Source 를 "GitHub Actions" 로 바꾸기 전까지는
+# 이 워크플로가 배포까지 하도록 둬 봐야 매번 deploy 단계에서 실패해
+# 실패 메일만 쌓인다 (docs/DESIGN.md §10.2). 그래서 배포 단계는 빼고
+# main 에 올라간 게 빌드는 되는지만 확인한다.
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# 배포는 한 번에 하나만. 진행 중인 배포를 취소하지는 않는다.
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -31,20 +23,5 @@ jobs:
 
       - run: npm ci
 
-      # 임시 도트 생성 → 데이터 검증 → 번들. 검증이 실패하면 배포하지 않는다.
+      # 임시 도트 생성 → 데이터 검증 → 번들.
       - run: npm run build
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
