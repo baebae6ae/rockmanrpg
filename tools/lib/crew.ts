@@ -26,7 +26,7 @@ import { F, M, type CrewPal } from './crewart.js';
 export const HIP0 = 21;
 
 export type ArmPose =
-  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'runF' | 'runB';
+  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'runF' | 'runN' | 'runB';
 
 /** 어깨에서 손까지의 상대 위치 */
 const HAND: Record<ArmPose, [number, number]> = {
@@ -38,16 +38,25 @@ const HAND: Record<ArmPose, [number, number]> = {
   // forward/back 은 공격 동작처럼 팔을 크게 뻗는 '한 번짜리' 큰 동작
   // 전용이다. 달리기처럼 매 프레임 번갈아 스치는 반복 동작에 이 폭을
   // 쓰면 좌우 진폭이 15px 나 되어(어깨 폭이 16~18px 뿐인데) 팔이
-  // 몸통 폭만큼 휘두르는 것처럼 보인다 — 그래서 runF/runB 를 따로 뒀다.
+  // 몸통 폭만큼 휘두르는 것처럼 보인다 — 그래서 runF/runN/runB 를 따로 뒀다.
   forward: [9, -2],
   back: [-6, -6],
   up: [2, 8],
   guard: [5, -3],
   aim: [9, 1],
-  // 달리기 전용 반동 폭. 어깨 폭(16~18px)의 절반 이하로 좁혀서, 다리가
-  // 크게 나가는 동안 반대쪽 팔이 그만큼 튀지 않고 살짝만 스치게 한다.
-  runF: [5, -3],
-  runB: [-2, -6],
+  // 달리기 전용 반동 — 세 칸 다 높이(-5)를 맞춰서 손이 위아래로
+  // 출렁이지 않고 앞뒤로만 좁게 스치게 한다. 폭은 8px(runB~runF)로,
+  // 어깨 폭 16~18px 의 절반 이하다.
+  //
+  // 처음엔 runF 를 guard 와 똑같은 [5,-3] 으로 잘못 써서, 실제로는
+  // 뒤→중립→중립→중립(8프레임 중 1프레임만 튀고 나머지 3프레임이
+  // 완전히 같은 자세)이 구워졌다. 52ms 짜리 빠른 루프에서 이건 매끄러운
+  // 스침이 아니라 주기적으로 한 번씩 튀는 경련으로 보였다 — 진폭을
+  // 줄여도 '중간 자세가 없다'는 근본 문제는 그대로였던 것이다. 세
+  // 칸을 확실히 다른 값으로 채운다.
+  runB: [-2, -5],
+  runN: [2, -5],
+  runF: [6, -5],
 };
 
 /**
