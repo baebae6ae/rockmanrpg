@@ -278,29 +278,26 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
   // 사각 블록으로 그늘·하이라이트를 얹었는데, 그러데이션 위에 각진
   // 블록이 얹히니 음영이 아니라 얼룩처럼 보였다 — 자동 음영과 손으로
   // 얹는 블록은 같이 쓰면 안 된다.
-  // --- 눈. 왼쪽 x -4..-2, 오른쪽 x 1..3, 세로 y38~39 (두 줄)
+  // --- 눈.
   //
-  // 머리가 12px 로 줄면서 눈도 석 줄에서 두 줄이 됐다. 이게 오히려
-  // 맞다 — 예전엔 얼굴이 넓어서 그 넓은 살빛 면을 채울 디테일이
-  // 필요했는데, 이 해상도에 그만한 디테일이 없어서 뭘 그려 넣어도
-  // 얼룩처럼 보였다. 작은 얼굴은 홍채 덩이 + 눈빛 한 점이면 끝난다.
-  // 밝은 줄이 하나뿐이면 눈이 아니라 가늘게 뜬 '틈'으로 읽힌다. 두 줄을
-  // 통째로 홍채로 채우고, 어두운 건 눈꼬리 한 점만 남긴다 — 윗속눈썹
-  // 한 줄을 넣었더니 그 위 눈썹과 붙어 선글라스가 됐다.
+  // 여기서 계속 틀렸다. 실제 X4 스프라이트를 픽셀 단위로 뜯어보니
+  // X 도 제로도 눈은 **어두운 점 한두 개가 전부**다. 홍채색 덩이도,
+  // 흰자도, 눈썹도, 입도 없다. 그런데 우리는 3×2 홍채 덩이 + 눈빛
+  // 한 점 + 눈꼬리 + 눈썹 + 홍조 + 입까지 얹고 있었다 — 폭 11px 짜리
+  // 얼굴에 참조의 열 배쯤 되는 정보가 들어가니 얼굴이 아니라 곤충의
+  // 겹눈으로 보였다. "복잡하게 하니까 더 꼬인다"는 말 그대로다.
+  //
+  // 그래서 참조 수준으로 덜어낸다. 눈은 두 칸, 그중 안쪽 한 칸만
+  // 홍채색이다 — 대원마다 눈 색이 다르다는 설정은 그 한 점으로 족하다.
   for (const ex of [-4, 2] as const) {
-    const tail = ex < 0 ? ex : ex + 2;             // 바깥쪽 눈꼬리
-    f.rect(ex, 38, 3, 2, M.iris);
-    f.set(ex + 1, 39, M.white);                    // 눈빛 — 이 한 점이 생기를 만든다
-    f.set(tail, 38, M.eye);                        // 눈꼬리 한 점
+    f.rect(ex, 38, 2, 1, M.eye);
+    f.set(ex < 0 ? ex + 1 : ex, 38, M.iris);
   }
 
   drawBrow(f, brow);
 
-  // 볼 홍조 — 턱선 그늘(±3)을 덮지 않게 한 칸 더 바깥으로
-  f.set(-4, 37, M.blush);
-  f.set(4, 37, M.blush);
-
-  // 입 — 한 점. 이 크기에서 세 점을 찍으면 입이 아니라 얼룩이 된다
+  // 입 — 한 점. 이 크기에서는 이것도 있는 편이 낫다(턱이 비면 가면이
+  // 된다). 홍조는 뺐다 — 이 얼굴에 더 얹을 자리가 없다.
   f.set(0, 36, M.mouth);
 }
 
@@ -313,31 +310,18 @@ export type BrowShape = 'calm' | 'soft' | 'bold' | 'worried' | 'sly';
  * 흉터처럼 뜬다.
  */
 function browMark(f: F, ex: number, dir: 1 | -1, shape: BrowShape): void {
-  // 기준선은 y41 — 눈(y38~39) 바로 위 한 줄 띄운 자리다. 머리가 12px
-  // 로 줄면서 눈썹과 눈 사이 여유도 두 줄에서 한 줄로 줄었다. 더
-  // 띄우면 눈썹이 헤어라인을 넘어 머리카락에 먹힌다.
-  const inner = dir > 0 ? ex : ex + 2;
-  const outer = dir > 0 ? ex + 2 : ex;
-
-  // 눈썹은 무조건 한 줄이다. 예전 'bold' 는 두 줄이었는데, 그 바로
-  // 아래가 윗속눈썹(y39)이라 어두운 줄이 셋 연달아 붙어 눈이 아니라
-  // 선글라스로 보였다. 굵기는 세로가 아니라 가로로 표현한다.
-  f.rect(ex, 41, 3, 1, M.brow);
+  // 눈썹은 점 하나다. 예전엔 3~4px 짜리 막대였는데, 눈 바로 위에 그만한
+  // 어두운 덩이가 붙으면 눈썹이 아니라 눈의 일부로 뭉쳐 읽힌다. 성격
+  // 차이는 이 한 점을 어디에 찍느냐로만 낸다 — 눈이 두 칸뿐인 얼굴에
+  // 눈썹이 그보다 클 이유가 없다.
+  const inner = dir > 0 ? ex : ex + 1;
+  const outer = dir > 0 ? ex + 1 : ex;
   switch (shape) {
-    case 'soft':      // 바깥이 처진다 — 순하고 다정해 보인다
-      f.set(outer, 40, M.brow);
-      break;
-    case 'bold':      // 한 칸 더 길다 — 우직함
-      f.set(outer + dir, 41, M.brow);
-      break;
-    case 'worried':   // 안쪽이 처진다 — 걱정이 많다
-      f.set(inner, 40, M.brow);
-      break;
-    case 'sly':       // 한쪽 눈썹만 다르다 — 장난기
-      if (dir > 0) f.set(inner, 40, M.brow);
-      break;
-    default:          // calm — 곧은 한 줄
-      break;
+    case 'bold':    f.rect(ex, 40, 2, 1, M.brow); break;   // 둘 다 — 굵다
+    case 'soft':    f.set(outer, 40, M.brow); break;       // 바깥만 — 처진 눈썹
+    case 'worried': f.set(inner, 40, M.brow); break;       // 안쪽만 — 걱정
+    case 'sly':     if (dir > 0) f.rect(ex, 40, 2, 1, M.brow); break;  // 한쪽만
+    default:        f.set(inner, 40, M.brow); break;       // calm
   }
 }
 
