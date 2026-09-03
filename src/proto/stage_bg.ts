@@ -1,351 +1,81 @@
 /**
- * 스테이지 배경 — 록맨X 계열의 기계적 구조와 강한 색면을 기준으로 잡는다.
- *
- * 목표는 "예쁜 배경"이 아니라 전투가 올라가도 캐릭터와 탄이 묻히지 않는
- * 배경이다. 그래서 공통 규칙을 세 가지로 고정한다.
- *
- *  1. 바닥은 큰 패널 단위로 읽히고, 패널 사이의 어두운 선이 전투 공간을 만든다.
- *  2. 먼 배경은 낮은 대비, 바닥은 중간 대비, 애니메이션 층은 높은 대비로
- *     분리해 시차와 깊이를 만든다.
- *  3. 테마색은 전체를 칠하지 않고 "빛나는 설비"에 집중한다. 적과 플레이어의
- *     실루엣이 항상 가장 먼저 읽혀야 하기 때문이다.
+ * Horde combat stages — FAR / STRUCTURE / FLOOR / SIGNAL.
+ * 전투 캐릭터보다 먼저 튀지 않으면서, 단순 색 배경이 아니라 시설의 구조가
+ * 보이도록 기계 패널·타워·배관·신호선을 반복 배치한다.
  */
-
 import { Container, Graphics } from 'pixi.js';
 
-export interface ThemeCtx {
-  arenaW: number;
-  arenaH: number;
-  /** 결정적 난수 — 판을 새로 시작해도 같은 모양이 나온다 */
-  rnd: () => number;
-}
-
-export interface View {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
+export interface ThemeCtx { arenaW:number; arenaH:number; rnd:()=>number; }
+export interface View { x0:number;y0:number;x1:number;y1:number; }
 export interface StageTheme {
-  id: string;
-  name: string;
-  accent: number;
-  far: (g: Graphics, c: ThemeCtx) => void;
-  ground: (g: Graphics, c: ThemeCtx) => void;
-  anim?: (g: Graphics, c: ThemeCtx, t: number, v: View) => void;
+  id:string; name:string; accent:number;
+  far:(g:Graphics,c:ThemeCtx)=>void;
+  ground:(g:Graphics,c:ThemeCtx)=>void;
+  anim?:(g:Graphics,c:ThemeCtx,t:number,v:View)=>void;
 }
 
-function makeRnd(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 0x100000000);
-}
-
-/** 경계벽 — 플레이 공간을 한눈에 고정하는 공통 프레임 */
-function warningBorder(g: Graphics, c: ThemeCtx, stripe: number, base: number): void {
-  const { arenaW: W, arenaH: H } = c;
-  for (const [bx, by, bw, bh] of [
-    [0, 0, W, 8], [0, H - 8, W, 8], [0, 0, 8, H], [W - 8, 0, 8, H],
-  ]) {
-    g.rect(bx, by, bw, bh).fill({ color: base });
-    const along = bw > bh;
-    const n = Math.ceil((along ? bw : bh) / 14);
-    for (let i = 0; i < n; i += 2) {
-      if (along) g.rect(bx + i * 14, by + 1, 14, bh - 2).fill({ color: stripe });
-      else g.rect(bx + 1, by + i * 14, bw - 2, 14).fill({ color: stripe });
-    }
-  }
-  // 네 모서리에만 밝은 "조립 브라켓"을 넣는다. 화면 전체를 둘러 밝게 하면
-  // 전투 오브젝트와 경쟁하므로 프레임의 시작점만 표시한다.
-  const corners: [number, number][] = [[8, 8], [W - 8, 8], [8, H - 8], [W - 8, H - 8]];
-  for (const [x, y] of corners) {
-    g.rect(x - 3, y - 3, 6, 6).fill({ color: stripe });
-    g.rect(x - 1, y - 1, 2, 2).fill({ color: base });
+const DARK=0x07101d;
+function border(g:Graphics,c:ThemeCtx,a:number):void {
+  const {arenaW:W,arenaH:H}=c;
+  g.rect(0,0,W,H).stroke({color:0x101d30,width:8});
+  for(let x=16;x<W-16;x+=48){g.rect(x,3,22,2).fill({color:a,alpha:.55});g.rect(x+6,H-5,18,2).fill({color:a,alpha:.3});}
+  for(let y=32;y<H-32;y+=64){g.rect(3,y,2,24).fill({color:a,alpha:.3});g.rect(W-5,y+14,2,24).fill({color:a,alpha:.5});}
+  for(const [x,y] of [[12,12],[W-12,12],[12,H-12],[W-12,H-12]] as [number,number][]) {
+    g.rect(x-6,y-6,12,12).fill({color:0x0b1728});g.rect(x-4,y-4,8,8).stroke({color:a,width:2});
   }
 }
-
-interface PlateOpts {
-  tile: number;
-  plate: number;
-  lit: number;
-  dark: number;
-  line: number;
-  rivet: number;
-  holeChance: number;
-  grate: number;
-}
-
-/**
- * 공통 패널 바닥. 패널마다 얇은 인셋을 하나 더 넣어 "타일"이 아니라
- * 조립된 장갑판으로 읽히게 한다. 작은 도트 화면에서도 밝은 면/어두운
- * 면/구조선의 3단이 유지된다.
- */
-function platedFloor(g: Graphics, c: ThemeCtx, o: PlateOpts): void {
-  const cols = Math.ceil(c.arenaW / o.tile);
-  const rows = Math.ceil(c.arenaH / o.tile);
-  for (let r = 0; r < rows; r++) {
-    for (let col = 0; col < cols; col++) {
-      const x = col * o.tile;
-      const y = r * o.tile;
-      const roll = c.rnd();
-
-      if (roll < o.holeChance) {
-        g.rect(x, y, o.tile, o.tile).fill({ color: o.line });
-        for (let i = 4; i < o.tile - 2; i += 7) {
-          g.rect(x + i, y + 2, 3, o.tile - 4).fill({ color: o.grate, alpha: 0.82 });
-        }
-        g.rect(x + 1, y + 1, o.tile - 2, 2).fill({ color: o.dark });
-        g.rect(x + 1, y + o.tile - 3, o.tile - 2, 2).fill({ color: o.dark });
-        g.rect(x + 3, y + 5, o.tile - 6, 1).fill({ color: o.lit, alpha: 0.28 });
-        continue;
-      }
-
-      g.rect(x, y, o.tile, o.tile).fill({ color: o.line });
-      g.rect(x + 2, y + 2, o.tile - 4, o.tile - 4).fill({ color: o.plate });
-      g.rect(x + 2, y + 2, o.tile - 4, 3).fill({ color: o.lit });
-      g.rect(x + 2, y + 2, 3, o.tile - 4).fill({ color: o.lit });
-      g.rect(x + 2, y + o.tile - 6, o.tile - 4, 4).fill({ color: o.dark });
-      g.rect(x + o.tile - 6, y + 2, 4, o.tile - 4).fill({ color: o.dark });
-      // 내부 인셋 — 큰 면이 너무 평평하게 보이지 않으면서도 캐릭터 대비를 해치지 않는다.
-      g.rect(x + 7, y + 7, o.tile - 14, 1).fill({ color: o.lit, alpha: 0.28 });
-      g.rect(x + 7, y + o.tile - 8, o.tile - 14, 1).fill({ color: o.dark, alpha: 0.55 });
-      if (roll > 0.72) {
-        g.rect(x + 7, y + 7, 3, 3).fill({ color: o.rivet });
-        g.rect(x + o.tile - 10, y + o.tile - 10, 3, 3).fill({ color: o.rivet });
-      }
-    }
+function floor(g:Graphics,c:ThemeCtx,tile:number,plate:number,hi:number,lo:number,line:number,a:number):void {
+  const cols=Math.ceil(c.arenaW/tile), rows=Math.ceil(c.arenaH/tile);
+  for(let y=0;y<rows;y++) for(let x=0;x<cols;x++) {
+    const px=x*tile,py=y*tile,r=c.rnd();
+    g.rect(px,py,tile,tile).fill({color:line});
+    if(r<.12){g.rect(px+2,py+2,tile-4,tile-4).fill({color:DARK});g.rect(px+7,py+4,2,tile-8).fill({color:lo});continue;}
+    g.rect(px+2,py+2,tile-4,tile-4).fill({color:plate});
+    g.rect(px+2,py+2,tile-4,3).fill({color:hi});g.rect(px+2,py+2,3,tile-4).fill({color:hi});
+    g.rect(px+2,py+tile-5,tile-4,3).fill({color:lo});g.rect(px+tile-5,py+3,3,tile-5).fill({color:lo});
+    if(r>.8){g.rect(px+7,py+7,3,3).fill({color:a,alpha:.7});g.rect(px+tile-10,py+tile-10,3,3).fill({color:hi});}
   }
 }
-
-function flowX(v: View, period: number, offset: number, cb: (x: number) => void): void {
-  const start = Math.floor(v.x0 / period) * period - period;
-  for (let x = start; x < v.x1 + period; x += period) cb(x + offset);
+function tower(g:Graphics,x:number,y:number,w:number,h:number,body:number,edge:number,light:number):void {
+  g.rect(x,y,w,h).fill({color:body});g.rect(x+4,y+4,w-8,h-8).stroke({color:edge,width:2});
+  for(let yy=y+16;yy<y+h-10;yy+=20){g.rect(x+8,yy,w-16,3).fill({color:edge});g.rect(x+12,yy+1,Math.max(4,w-28),1).fill({color:light,alpha:.65});}
+  g.rect(x+w/2-2,y-8,4,8).fill({color:light});
+}
+function pipe(g:Graphics,x:number,y:number,len:number,a:number,vertical=false):void {
+  if(vertical){g.rect(x,y,5,len).fill({color:0x162941});g.rect(x+1,y,2,len).fill({color:a,alpha:.55});}
+  else {g.rect(x,y,len,5).fill({color:0x162941});g.rect(x,y+1,len,2).fill({color:a,alpha:.55});}
 }
 
-function flowY(v: View, period: number, offset: number, cb: (y: number) => void): void {
-  const start = Math.floor(v.y0 / period) * period - period;
-  for (let y = start; y < v.y1 + period; y += period) cb(y + offset);
-}
-
-// ---------------------------------------------------------------- 발전 구획
-const powerPlant: StageTheme = {
-  id: 'plant',
-  name: '발전 구획',
-  accent: 0x54dcff,
-
-  far: (g, c) => {
-    g.rect(0, 0, c.arenaW, c.arenaH).fill({ color: 0x050a16 });
-    for (let x = 20; x < c.arenaW; x += 96) {
-      g.rect(x, 0, 14, c.arenaH).fill({ color: 0x0c1930 });
-      g.rect(x + 2, 0, 3, c.arenaH).fill({ color: 0x17355a });
-    }
-    for (let y = 40; y < c.arenaH; y += 128) {
-      g.rect(0, y, c.arenaW, 10).fill({ color: 0x091426 });
-      g.rect(0, y + 2, c.arenaW, 2).fill({ color: 0x153052 });
-      for (let x = 30; x < c.arenaW; x += 64) {
-        g.rect(x, y + 3, 5, 5).fill({ color: c.rnd() > 0.5 ? 0x2e83d5 : 0x173b68 });
-      }
-    }
-    // 멀리 있는 냉각탑 실루엣. 세부를 넣지 않고 덩어리만 만들어 깊이를 준다.
-    for (let i = 0; i < 6; i++) {
-      const x = 90 + i * 240;
-      g.rect(x, 150, 70, 300).fill({ color: 0x081225 });
-      g.rect(x + 8, 170, 54, 2).fill({ color: 0x21476f });
-    }
-  },
-
-  ground: (g, c) => {
-    platedFloor(g, c, {
-      tile: 40, plate: 0x334f86, lit: 0x5e91d4, dark: 0x1b2d53,
-      line: 0x080f20, rivet: 0x86b7f0, holeChance: 0.1, grate: 0x15233d,
-    });
-    const rows = Math.ceil(c.arenaH / 40);
-    for (let r = 3; r < rows; r += 7) {
-      const y = r * 40 + 16;
-      g.rect(0, y - 2, c.arenaW, 12).fill({ color: 0x080f1e });
-      g.rect(0, y + 1, c.arenaW, 6).fill({ color: 0x1b4d73 });
-      for (let x = 24; x < c.arenaW; x += 80) g.rect(x, y - 4, 10, 16).fill({ color: 0x253d68 });
-    }
-    for (let i = 0; i < 5; i++) {
-      const gx = 120 + Math.floor(c.rnd() * (c.arenaW - 240));
-      const gy = 120 + Math.floor(c.rnd() * (c.arenaH - 240));
-      g.circle(gx, gy, 46).fill({ color: 0x0b1428 });
-      g.circle(gx, gy, 42).fill({ color: 0x294676 });
-      g.circle(gx, gy, 30).stroke({ color: 0x4d75bb, width: 3 });
-      g.circle(gx, gy, 18).fill({ color: 0x153657 });
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        g.rect(gx + Math.cos(a) * 36 - 2, gy + Math.sin(a) * 36 - 2, 4, 4).fill({ color: 0x8ab9ee });
-      }
-    }
-    warningBorder(g, c, 0xf2c63d, 0x0c1428);
-  },
-
-  anim: (g, c, t, v) => {
-    const rows = Math.ceil(c.arenaH / 40);
-    for (let r = 3; r < rows; r += 7) {
-      const y = r * 40 + 16;
-      if (y < v.y0 - 20 || y > v.y1 + 20) continue;
-      g.rect(v.x0, y + 2, v.x1 - v.x0, 2).fill({ color: 0x276e96 });
-      flowX(v, 260, (t * 150) % 260, (x) => g.rect(x, y, 46, 6).fill({ color: 0xa7f3ff, alpha: 0.9 }));
-    }
-  },
+const plant:StageTheme={id:'plant',name:'발전 구획',accent:0x55e7ff,
+ far:(g,c)=>{g.rect(0,0,c.arenaW,c.arenaH).fill({color:0x050a16});for(let x=24;x<c.arenaW;x+=96){g.rect(x,0,14,c.arenaH).fill({color:0x0b1930});g.rect(x+3,0,3,c.arenaH).fill({color:0x1a3b61});}for(let i=0;i<7;i++)tower(g,80+i*205,90+(i%2)*30,72,360,0x091326,0x173a5d,0x2b78aa);},
+ ground:(g,c)=>{floor(g,c,40,0x304d7d,0x638fc8,0x172947,0x070e1d,0x3dcfe9);for(let y=56;y<c.arenaH;y+=160){g.rect(0,y,c.arenaW,8).fill({color:0x091323});g.rect(0,y+2,c.arenaW,2).fill({color:0x255a78});for(let x=24;x<c.arenaW;x+=96)g.rect(x,y-3,14,14).fill({color:0x1b3658});}border(g,c,0x55e7ff);},
+ anim:(g,_c,t,v)=>{const off=(t*150)%320;for(let x=Math.floor(v.x0/320)*320-off;x<v.x1+80;x+=320)g.rect(x,v.y0+1,56,4).fill({color:0x9cf7ff,alpha:.8});}
 };
-
-// ---------------------------------------------------------------- 냉각 구획
-const coolant: StageTheme = {
-  id: 'ice',
-  name: '냉각 구획',
-  accent: 0x9fe7ff,
-
-  far: (g, c) => {
-    g.rect(0, 0, c.arenaW, c.arenaH).fill({ color: 0x08182d });
-    for (let i = 0; i < 60; i++) {
-      const x = c.rnd() * c.arenaW;
-      const y = c.rnd() * c.arenaH;
-      const w = 30 + c.rnd() * 90;
-      g.rect(x, y, w, 6).fill({ color: 0x103154 });
-      g.rect(x + 4, y + 1, Math.max(4, w - 12), 2).fill({ color: 0x286a98 });
-    }
-  },
-
-  ground: (g, c) => {
-    platedFloor(g, c, {
-      tile: 44, plate: 0x76a9c7, lit: 0xc8ecff, dark: 0x3e6587,
-      line: 0x102239, rivet: 0xeaf9ff, holeChance: 0.12, grate: 0x2a5677,
-    });
-    for (let i = 0; i < 22; i++) {
-      const x = 60 + c.rnd() * (c.arenaW - 120);
-      const y = 60 + c.rnd() * (c.arenaH - 120);
-      const r = 12 + c.rnd() * 16;
-      g.moveTo(x, y - r).lineTo(x + r * 0.7, y).lineTo(x, y + r).lineTo(x - r * 0.7, y).closePath();
-      g.fill({ color: 0x25658f });
-      g.moveTo(x, y - r + 5).lineTo(x + r * 0.38, y).lineTo(x, y + r - 6).lineTo(x - r * 0.38, y).closePath();
-      g.fill({ color: 0x83d8f4 });
-    }
-    warningBorder(g, c, 0x73d6f6, 0x102b46);
-  },
-
-  anim: (g, _c, t, v) => {
-    const w = v.x1 - v.x0;
-    const h = v.y1 - v.y0;
-    for (let i = 0; i < 70; i++) {
-      const sx = ((i * 137.5) % 360) / 360;
-      const sy = ((i * 71.3) % 360) / 360;
-      const x = v.x0 + ((sx * w + t * (14 + (i % 5) * 7)) % w);
-      const y = v.y0 + ((sy * h + t * (26 + (i % 3) * 12)) % h);
-      g.rect(Math.round(x), Math.round(y), 2, 2).fill({ color: 0xe4f7ff, alpha: 0.52 });
-    }
-  },
+const coolant:StageTheme={id:'coolant',name:'냉각 구획',accent:0x8ceaff,
+ far:(g,c)=>{g.rect(0,0,c.arenaW,c.arenaH).fill({color:0x061323});for(let x=20;x<c.arenaW;x+=128){g.rect(x,0,28,c.arenaH).fill({color:0x0d2941});g.rect(x+7,0,3,c.arenaH).fill({color:0x245d7d});}for(let i=0;i<18;i++){const x=c.rnd()*c.arenaW,y=40+c.rnd()*(c.arenaH-80);pipe(g,x,y,90+c.rnd()*90,0x4c91ae);}},
+ ground:(g,c)=>{floor(g,c,44,0x4c7894,0x94c9df,0x27465d,0x0d1b2a,0x8ceaff);for(let i=0;i<14;i++){const x=70+c.rnd()*(c.arenaW-140),y=60+c.rnd()*(c.arenaH-120);g.circle(x,y,28).fill({color:0x18374e});g.circle(x,y,21).stroke({color:0x5d9fba,width:3});g.circle(x,y,8).fill({color:0x7ee6ff});}border(g,c,0x8ceaff);},
+ anim:(g,_c,t,v)=>{const off=(t*90)%220;for(let x=Math.floor(v.x0/220)*220-off;x<v.x1+40;x+=220){g.rect(x,v.y0,2,v.y1-v.y0).fill({color:0x77dcff,alpha:.18});g.rect(x+1,v.y0+((t*80)%80),2,22).fill({color:0xd7f9ff,alpha:.55});}}
 };
-
-// ---------------------------------------------------------------- 용광 구획
-const foundry: StageTheme = {
-  id: 'foundry',
-  name: '용광 구획',
-  accent: 0xff9a3c,
-
-  far: (g, c) => {
-    g.rect(0, 0, c.arenaW, c.arenaH).fill({ color: 0x240b06 });
-    for (let i = 0; i < 90; i++) {
-      const x = c.rnd() * c.arenaW;
-      const y = c.rnd() * c.arenaH;
-      const w = 40 + c.rnd() * 120;
-      const h = 16 + c.rnd() * 30;
-      g.rect(x, y, w, h).fill({ color: 0x6f2109 });
-      g.rect(x + 4, y + 4, Math.max(4, w - 8), Math.max(4, h - 8)).fill({ color: 0xc74716 });
-      g.rect(x + 10, y + 7, Math.max(4, w - 20), Math.max(3, h - 14)).fill({ color: 0xff9f32 });
-    }
-  },
-
-  ground: (g, c) => {
-    platedFloor(g, c, {
-      tile: 40, plate: 0x513522, lit: 0x8b6340, dark: 0x2d1b10,
-      line: 0x100805, rivet: 0xc28b52, holeChance: 0.14, grate: 0x28170e,
-    });
-    const cols = Math.ceil(c.arenaW / 40);
-    for (let col = 3; col < cols; col += 6) {
-      const x = col * 40 + 8;
-      g.rect(x - 5, 0, 30, c.arenaH).fill({ color: 0x160b06 });
-      g.rect(x, 0, 20, c.arenaH).fill({ color: 0x83300e });
-    }
-    warningBorder(g, c, 0xf1c33b, 0x28170e);
-  },
-
-  anim: (g, c, t, v) => {
-    const cols = Math.ceil(c.arenaW / 40);
-    for (let col = 3; col < cols; col += 6) {
-      const x = col * 40 + 8;
-      if (x < v.x0 - 40 || x > v.x1 + 40) continue;
-      g.rect(x + 2, v.y0, 16, v.y1 - v.y0).fill({ color: 0xc94b17 });
-      flowY(v, 90, (t * 70) % 90, (y) => g.rect(x + 3, y, 14, 38).fill({ color: 0xffc35d, alpha: 0.92 }));
-    }
-  },
+const furnace:StageTheme={id:'furnace',name:'용해 구획',accent:0xff8a42,
+ far:(g,c)=>{g.rect(0,0,c.arenaW,c.arenaH).fill({color:0x120b0a});for(let x=0;x<c.arenaW;x+=110){g.rect(x,0,16,c.arenaH).fill({color:0x241513});g.rect(x+3,0,3,c.arenaH).fill({color:0x4b2920});}for(let i=0;i<6;i++){tower(g,70+i*230,120+(i%2)*40,86,330,0x1a1111,0x54302a,0xb34b2e);}},
+ ground:(g,c)=>{floor(g,c,42,0x5b3730,0x9a5b45,0x2d1d1a,0x0d0909,0xff7b36);for(let y=70;y<c.arenaH;y+=126){g.rect(0,y,c.arenaW,7).fill({color:0x21100d});for(let x=0;x<c.arenaW;x+=72)g.rect(x,y+1,34,3).fill({color:0xc14e2d});}border(g,c,0xff8a42);},
+ anim:(g,_c,t,v)=>{const p=(Math.sin(t*3)+1)*.5;for(let y=Math.floor(v.y0/126)*126;y<v.y1+30;y+=126)g.rect(v.x0,y+2,v.x1-v.x0,2).fill({color:0xffa34d,alpha:.25+.35*p});}
 };
-
-// ---------------------------------------------------------------- 야간 고속도로
-const highway: StageTheme = {
-  id: 'highway',
-  name: '야간 고속도로',
-  accent: 0x70d4ff,
-
-  far: (g, c) => {
-    g.rect(0, 0, c.arenaW, c.arenaH).fill({ color: 0x040811 });
-    for (let i = 0; i < 70; i++) {
-      const x = c.rnd() * c.arenaW;
-      const y = c.rnd() * c.arenaH;
-      const w = 26 + c.rnd() * 40;
-      const h = 40 + c.rnd() * 90;
-      g.rect(x, y, w, h).fill({ color: 0x0b1428 });
-      for (let wy = y + 5; wy < y + h - 4; wy += 9) {
-        for (let wx = x + 4; wx < x + w - 4; wx += 8) {
-          if (c.rnd() > 0.55) g.rect(wx, wy, 3, 4).fill({ color: c.rnd() > 0.7 ? 0xffe08a : 0x3e72b8 });
-        }
-      }
-    }
-  },
-
-  ground: (g, c) => {
-    platedFloor(g, c, {
-      tile: 48, plate: 0x2b3245, lit: 0x515d74, dark: 0x171d2c,
-      line: 0x080b13, rivet: 0x69748b, holeChance: 0.16, grate: 0x121824,
-    });
-    const rows = Math.ceil(c.arenaH / 48);
-    for (let r = 2; r < rows; r += 5) {
-      const y = r * 48 + 20;
-      for (let x = 10; x < c.arenaW; x += 64) g.rect(x, y, 34, 5).fill({ color: 0xdedbc9 });
-    }
-    warningBorder(g, c, 0xe7bd46, 0x171d2c);
-  },
-
-  anim: (g, c, t, v) => {
-    const rows = Math.ceil(c.arenaH / 48);
-    for (let r = 2; r < rows; r += 5) {
-      const y = r * 48 + 12;
-      if (y < v.y0 - 30 || y > v.y1 + 30) continue;
-      flowX(v, 520, (t * 320 + r * 130) % 520, (x) => {
-        g.rect(x, y, 70, 3).fill({ color: 0x8fdcff, alpha: 0.42 });
-        g.rect(x + 50, y - 1, 26, 5).fill({ color: 0xf4fbff, alpha: 0.72 });
-      });
-    }
-  },
+const rift:StageTheme={id:'rift',name:'균열 외곽',accent:0xd36cff,
+ far:(g,c)=>{g.rect(0,0,c.arenaW,c.arenaH).fill({color:0x090714});for(let i=0;i<55;i++){const x=c.rnd()*c.arenaW,y=c.rnd()*c.arenaH,s=1+c.rnd()*3;g.rect(x,y,s,s).fill({color:i%4===0?0xa16bff:0x38406b,alpha:.65});}for(let i=0;i<8;i++){const x=60+i*190;g.moveTo(x,40).lineTo(x+70,180).lineTo(x+25,390).lineTo(x-45,240).closePath().fill({color:0x11102a});g.moveTo(x+4,60).lineTo(x+58,184).lineTo(x+28,360).stroke({color:0x3e315f,width:3});}},
+ ground:(g,c)=>{floor(g,c,46,0x353354,0x6d66a1,0x24213c,0x0a0915,0xd36cff);for(let i=0;i<16;i++){const x=c.rnd()*c.arenaW,y=c.rnd()*c.arenaH;g.moveTo(x,y).lineTo(x+18,y-7).lineTo(x+31,y+2).lineTo(x+8,y+10).closePath().fill({color:0x4e4279});g.rect(x+7,y+1,10,2).fill({color:0x9f86e8});}border(g,c,0xd36cff);},
+ anim:(g,_c,t,v)=>{const p=(Math.sin(t*2.5)+1)*.5;for(let x=Math.floor(v.x0/180)*180;x<v.x1+30;x+=180)g.rect(x,v.y0,2,v.y1-v.y0).fill({color:0xb77cff,alpha:.08+.1*p});}
 };
+export const THEMES:StageTheme[]=[plant,coolant,furnace,rift];
 
-export const THEMES: StageTheme[] = [powerPlant, coolant, foundry, highway];
-
-export function buildTheme(
-  theme: StageTheme,
-  arenaW: number,
-  arenaH: number,
-): { far: Container; ground: Container } {
-  const c: ThemeCtx = { arenaW, arenaH, rnd: makeRnd(0x9e37 + theme.id.length * 7919) };
-  const far = new Container();
-  const ground = new Container();
-  const fg = new Graphics();
-  const gg = new Graphics();
-  theme.far(fg, c);
-  theme.ground(gg, c);
-  far.addChild(fg);
-  ground.addChild(gg);
-  return { far, ground };
+/** horde.ts의 기존 호출 규약: buildTheme(theme, width, height) */
+export function buildTheme(theme:StageTheme, arenaW:number, arenaH:number):{far:Container;ground:Container} {
+  let seed=0x5eED;
+  const rnd=():number=>{seed=(seed*1664525+1013904223)>>>0;return seed/0x100000000;};
+  const c:ThemeCtx={arenaW,arenaH,rnd};
+  const farG=new Graphics(), groundG=new Graphics();
+  theme.far(farG,c); theme.ground(groundG,c);
+  const far=new Container(), ground=new Container();
+  far.addChild(farG); ground.addChild(groundG);
+  return {far,ground};
 }

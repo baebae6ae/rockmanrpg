@@ -299,6 +299,11 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
       if (mat === M.eye) { put(x, y, EYE); continue; }
       if (mat === M.white) { put(x, y, EYE_LIT); continue; }
       if (mat === M.iris) { put(x, y, iris); continue; }
+      // 살은 음영을 안 먹인다. 얼굴이 4등신에 맞춰 폭 11px 로 작아지면서
+      // 그러데이션 한 단이 얼굴의 3할을 차지하게 됐고, 그러니 입체가
+      // 아니라 얼룩으로 보인다. 참조인 X4 도 이 크기의 얼굴엔 음영을
+      // 넣지 않는다 — 살빛은 한 색, 입체는 실루엣과 머리카락 경계선이 낸다.
+      if (mat === M.skin) { put(x, y, sk[1]); continue; }
       if (mat === M.skinS) { put(x, y, sk[0]); continue; }
       if (mat === M.skinH) { put(x, y, sk[2]); continue; }
       const form = formTone(m, x, y);
