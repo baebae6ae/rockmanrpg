@@ -43,12 +43,21 @@ function runCycle(): Pose[] {
 
 export function crewTags(): Tag[] {
   return [
+    /**
+     * 대기 — 원래는 'rest'(-10)와 'guard'(-3)를 프레임마다 번갈아 썼는데,
+     * 둘의 높이 차가 7칸(어깨~골반 낙차 10칸의 70%)이나 돼서 150ms 마다
+     * 팔이 가슴 높이까지 튀어 올랐다 떨어지길 반복했다 — 캐릭터 선택
+     * 화면에 항상 떠 있는 애니메이션이라 이 스냅이 제일 먼저, 제일 자주
+     * 눈에 띈다. 참고한 X/제로는 서 있을 때 팔을 아예 안 움직인다.
+     * 팔은 'rest' 로 고정하고, 골반 1칸·머리 살짝만 오르내려 숨쉬듯
+     * 보이게 한다.
+     */
     {
       name: 'idle', duration: 150, loop: true,
       poses: [
         { hipY: 21, lean: 2, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'rest' },
-        { hipY: 21, lean: 2, headY: -1, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'guard' },
-        { hipY: 20, lean: 3, headY: -1, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'guard' },
+        { hipY: 20, lean: 2, headY: -1, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'rest' },
+        { hipY: 20, lean: 3, headY: -1, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'rest' },
         { hipY: 21, lean: 2, footF: [7, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'rest' },
       ],
     },
