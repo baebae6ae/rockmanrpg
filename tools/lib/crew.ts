@@ -26,7 +26,8 @@ import { F, M, type CrewPal } from './crewart.js';
 export const HIP0 = 21;
 
 export type ArmPose =
-  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'runF' | 'runN' | 'runB';
+  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'strike'
+  | 'runF' | 'runN' | 'runB';
 
 /** 어깨에서 손까지의 상대 위치 */
 const HAND: Record<ArmPose, [number, number]> = {
@@ -44,7 +45,15 @@ const HAND: Record<ArmPose, [number, number]> = {
   up: [2, 8],
   guard: [5, -3],
   aim: [9, 1],
-  // 달리기 전용 반동 — 세 칸 다 높이를 맞춰서 손이 위아래로 출렁이지
+  // 실제로 후려치는 타격 프레임 전용. 'aim'(9,1)을 그대로 썼더니 어깨
+  // 높이(dy=1)에서 손이 몸 중앙 쪽으로 조금 움직이는 정도라, 무기가
+  // 크게 휘둘러지는 게 아니라 제자리에서 살짝 들썩이는 것처럼 보였다
+  // — 특히 무기가 뒷손인 도끼·거울은 이 폭으로는 몸을 거의 못
+  // 가로지른다. 가로 폭을 크게(16) 키우고 세로(-8)를 낮춰서 어깨보다
+  // 아래, 몸 앞쪽 멀리까지 확실히 휘둘러지게 한다 — 내려찍는 궤적이라
+  // 얼굴 높이도 자연히 피한다.
+  strike: [16, -8],
+  // 달리기 전용 — 세 칸 다 높이를 맞춰서 손이 위아래로 출렁이지
   // 않고 앞뒤로만 좁게 스치게 한다. 폭은 8px(runB~runF)로, 어깨 폭
   // 16~18px 의 절반 이하다.
   //
@@ -705,11 +714,7 @@ export const CREW: Crew[] = [
     hand: 'B',
     build: (f, r) => {
       const [hx, hy] = r.handW;
-      // 날은 손에서 위로 14칸이나 뻗어 있어서, 공격 중 손이 몸 중앙까지
-      // 따라오면 날이 얼굴 위에 그대로 겹친다. 자루의 손 쪽 끝은 실제
-      // 손 위치를 그대로 따라가되(안 그러면 자루가 손에서 떨어져 보인다),
-      // 날 끝만 얼굴 중심(r.lean) 너머로 넘어가지 않게 잡아둔다.
-      const tipX = Math.min(hx - 3, r.lean - 6);
+      const tipX = hx - 3;
       f.line(hx + 1, hy - 7, tipX, hy + 14, 3, M.trim);  // 손을 관통하는 자루
       f.crescent(tipX, hy + 14, 9, 4, -1, M.metal);
       f.crescent(tipX, hy + 14, 6, 4, -1, M.accent);
