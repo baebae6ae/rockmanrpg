@@ -26,7 +26,7 @@ import { F, M, type CrewPal } from './crewart.js';
 export const HIP0 = 21;
 
 export type ArmPose =
-  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'swing_hi' | 'swing_lo';
+  | 'down' | 'rest' | 'forward' | 'back' | 'up' | 'guard' | 'aim' | 'runF' | 'runB';
 
 /** 어깨에서 손까지의 상대 위치 */
 const HAND: Record<ArmPose, [number, number]> = {
@@ -35,13 +35,19 @@ const HAND: Record<ArmPose, [number, number]> = {
   // 두 팔이 똑같이 'down' 이면 좌우가 완벽히 대칭이라 사람이 아니라
   // 인형으로 보인다 — 빈 팔의 기본값을 이걸로 둔 이유다.
   rest: [3, -10],
+  // forward/back 은 공격 동작처럼 팔을 크게 뻗는 '한 번짜리' 큰 동작
+  // 전용이다. 달리기처럼 매 프레임 번갈아 스치는 반복 동작에 이 폭을
+  // 쓰면 좌우 진폭이 15px 나 되어(어깨 폭이 16~18px 뿐인데) 팔이
+  // 몸통 폭만큼 휘두르는 것처럼 보인다 — 그래서 runF/runB 를 따로 뒀다.
   forward: [9, -2],
   back: [-6, -6],
   up: [2, 8],
   guard: [5, -3],
   aim: [9, 1],
-  swing_hi: [8, 5],
-  swing_lo: [9, -8],
+  // 달리기 전용 반동 폭. 어깨 폭(16~18px)의 절반 이하로 좁혀서, 다리가
+  // 크게 나가는 동안 반대쪽 팔이 그만큼 튀지 않고 살짝만 스치게 한다.
+  runF: [5, -3],
+  runB: [-2, -6],
 };
 
 /**
