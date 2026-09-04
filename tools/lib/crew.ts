@@ -228,65 +228,52 @@ export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void 
  * 관절 위치가 갈리면 애니메이션을 아홉 벌 만들어야 한다.
  */
 export function torso(f: F, s: number): void {
-  // --- 실루엣: 골반 → 잘록한 허리 → 넓은 가슴. 위아래 폭이 같으면 통이다.
-  //
-  // 4등신으로 다시 잡으면서 몸통이 위로 6px 자랐다(어깨 y25→y31).
-  // 늘린 몫은 전부 허리~가슴 구간에 넣었다 — 골반을 늘리면 다리가
-  // 짧아 보이고, 가슴만 늘리면 목이 짧은 씨름 선수가 된다.
-  f.taper(0, 17, 23, 11 + 2 * s, 9 + s, M.cloth);
-  f.taper(0, 23, 31, 9 + s, 12 + 2 * s, M.cloth);
-  f.blob(0, 31, 6 + s, 2, M.cloth);
+  // --- 실루엣: 골반 → 잘록한 허리 → 넓은 가슴.
+  f.taper(0, 17, 23, 11 + 2 * s, 9 + s, M.suit);
+  f.taper(0, 23, 31, 9 + s, 12 + 2 * s, M.suit);
+  f.blob(0, 31, 6 + s, 2, M.suit);
 
-  // --- 어깨. 몸에서 흘러내리는 둥근 것. 오른쪽을 한 칸 낮춰 힘을 뺀다
-  f.blob(-7 - s, 31, 3 + s, 3, M.cloth);
-  f.blob(7 + s, 30, 3 + s, 3, M.cloth);
-  f.set(-7 - s, 29, M.clothS);                    // 겨드랑이 접힘
-  f.set(7 + s, 28, M.clothS);
-  // 견갑 — 어깨 위에 얹힌 금속판. 몸통과 같은 색 천만으로는 팔이
-  // 어디서 시작하는지 안 보인다. 록맨류는 이 자리가 늘 딱딱하다
-  f.blob(-7 - s, 32, 3 + s, 2, M.joint);
-  f.blob(7 + s, 31, 3 + s, 2, M.joint);
-  f.set(-8 - s, 33, M.spec);                      // 빛 쪽 견갑 하이라이트
+  // --- 어깨 파츠. 시안의 실루엣을 가르는 제일 큰 요소다 — 예전의
+  //     "몸에서 흘러내리는 둥근 천"이 아니라, 몸통보다 확실히 넓게
+  //     얹힌 큰 장갑 덩어리여야 한다. 본색 위에 금색 띠 한 줄.
+  for (const d of [-1, 1] as const) {
+    const sx = d * (8 + s);
+    f.blob(sx, 32, 5 + s, 4, M.suit);                // 파츠 본체 — 크게
+    f.blob(sx, 33, 4 + s, 2, M.suit);
+    f.rect(sx - 4 - s, 29, 9 + 2 * s, 1, M.trim);    // 아래 그늘
+    f.rect(sx - 3 - s, 34, 7 + 2 * s, 1, M.accent);  // 위를 지나는 금색 띠
+    f.set(sx - 2, 35, M.spec);
+  }
 
-  // --- 옷깃 → 앞섶 → 허리띠.
-  //
-  // 여기가 이 몸통의 전부다. 예전엔 실루엣만 잡고 안쪽을 비워 뒀는데,
-  // 그러면 아무리 명암을 잘 먹여도 '색칠한 덩어리'지 '옷 입은 사람'이
-  // 아니다. 옷깃이 벌어져 있고 앞섶이 내려가고 허리가 묶여 있어야
-  // 비로소 입은 것으로 읽힌다.
-  f.rect(-4, 31, 3, 1, M.clothH);                 // 벌어진 옷깃
-  f.rect(2, 31, 3, 1, M.clothH);
-  f.set(-2, 30, M.clothH); f.set(2, 30, M.clothH);
-  f.set(-1, 29, M.clothS); f.set(1, 29, M.clothS); // 깃 끝이 만나는 자리
-  f.line(0, 28, 0, 24, 1, M.clothS);              // 앞섶 한 줄
+  // --- 가슴 장갑. 회색 판을 통째로 얹었더니 몸통이 끊겨 보였다 —
+  //     본색 위에 금색 트림으로 형태를 내고, 금속은 테두리 한 줄만.
+  f.soft(-5 - s, 24, 11 + 2 * s, 7, 2, M.suit);
+  f.rect(-5 - s, 30, 11 + 2 * s, 1, M.accent);     // 쇄골 라인
+  f.line(-4, 29, -4, 25, 1, M.trim);               // 흉갑 좌우 홈
+  f.line(4, 29, 4, 25, 1, M.trim);
+  f.rect(-3, 24, 7, 1, M.metal);                   // 명치 금속 테
+  f.set(-5 - s, 30, M.spec);
 
-  f.rect(-5 - s, 22, 11 + 2 * s, 2, M.clothS);    // 허리띠
-  f.rect(-5 - s, 23, 11 + 2 * s, 1, M.clothH);    // 띠 윗면
-  f.rect(-1, 22, 3, 2, M.accent);                 // 버클
-  f.soft(3 + s, 18, 4, 4, 1, M.clothS);           // 허리에 매단 주머니
-  f.rect(3 + s, 20, 4, 1, M.clothH);
-  f.set(4 + s, 21, M.accent);
+  // 코어 — 가슴 한복판의 빛나는 보석. 시안 아홉이 전부 갖고 있다.
+  // 크게 그리면 흰 턱받이로 보인다 — 두 칸이면 충분하다
+  f.blob(0, 27, 1, 1, M.glow);
+  f.set(0, 28, M.spec);
+  f.crescent(0, 27, 3, 2, -1, M.metal);            // 코어를 감싼 테
+  f.crescent(0, 27, 3, 2, 1, M.metal);
 
-  // 허리 주름 두 줄 — 천은 접힌다. 이게 없으면 아래위가 한 판이다
-  f.rect(-5 - s, 25, 2, 1, M.clothS);
-  f.rect(4 + s, 24, 2, 1, M.clothS);
+  // --- 허리 — 장갑판 사이 관절부. 얇고 어둡게 해서 흉갑과 골반을 끊는다
+  f.rect(-4 - s, 22, 9 + 2 * s, 2, M.joint);
+  f.rect(-4 - s, 23, 9 + 2 * s, 1, M.jointB);
 
-  // --- 가슴에 붙은 단단한 것 하나. 이게 있어야 나머지가 천으로 읽힌다.
-  //     가운데에 큰 판을 붙이면 그게 곧 로봇 흉갑이라, 한쪽으로 치우친
-  //     작은 패널로 줄였다. 좌우가 어긋나 있는 게 사람이다.
-  f.soft(-6 - s, 25, 5 + s, 4, 1, M.joint);
-  f.rect(-6 - s, 28, 5 + s, 1, M.accent);
-  f.set(-6 - s, 28, M.spec);                      // 가슴판 모서리 하이라이트
-  // 코어 보석 — 사각 점 하나가 아니라 둥근 보석. 구석에 밝은 점을
-  // 하나 곁들이면 그냥 빛나는 게 아니라 반짝이는 것으로 보인다
-  f.blob(-5 - s, 26, 1, 1, M.glow);
-  f.set(-5 - s, 27, M.spec);
+  // --- 골반 장갑 — 앞으로 내려온 판 두 장
+  for (const d of [-1, 1] as const) {
+    f.soft(d * 3 - 2, 17, 5, 5, 1, M.suit);
+    f.rect(d * 3 - 2, 17, 5, 1, M.accent);
+  }
 
-  // 목 — 두 줄이면 충분하다. 예전엔 네 줄이었는데, 큰 머리 밑에 긴
-  // 목이 붙으니 머리가 어깨에서 떠 보였다. X4 의 X 도 목은 두 줄이다.
+  // 목 — 두 줄. 큰 머리 밑에 긴 목이 붙으면 머리가 어깨에서 떠 보인다
   f.rect(-2, 34, 4, 2, M.skin);
-  f.rect(-2, 35, 4, 1, M.skinS);                  // 턱 밑 그늘
-  // 머리는 대원마다 다르다 — HEADS 가 따로 그린다
+  f.rect(-2, 35, 4, 1, M.skinS);
 }
 
 // ---------------------------------------------------------------- 얼굴
@@ -455,136 +442,178 @@ function collar(f: F, mat: M, lit: M): void {
   f.set(-5, 31, mat); f.set(5, 31, mat);
 }
 
+// ---------------------------------------------------------------- 헬멧
+/**
+ * 장갑 헬멧 — 아홉이 공유하는 새 실루엣.
+ *
+ * 예전엔 머리카락 + 모자/머리띠였다. 그래서 아홉 다 "옷 입은 사람"으로
+ * 보였고, 지향하는 화풍(록맨 X 계열 장갑 대원)과는 아예 다른 물건이
+ * 됐다. 컨셉 시안(docs/concept/)의 아홉을 뜯어보면 공통 언어가 셋이다:
+ *
+ *   1. 두개골을 덮는 돔 — 이마 위로 한 겹 더 얹혀 있고 앞은 열려서
+ *      얼굴이 보인다. 헬멧이 얼굴을 먹으면 정이 안 붙는다
+ *   2. 관자놀이 양옆의 원형 귀 파츠 — 이 동그라미 둘이 실루엣의 핵심이다.
+ *      이게 없으면 그냥 두건 쓴 사람이다
+ *   3. 눈 바로 위를 가로지르는 바이저 테두리(금색 트림) — 얼굴과 헬멧의
+ *      경계를 여기서 딱 끊어 준다
+ *
+ * 개성은 crest(정수리 장식)가 낸다 — 핀·뿔·안테나·불꽃.
+ */
+function helmet(f: F): void {
+  // 돔은 캐릭터 본색(M.suit)이다. 금속색으로 칠했더니 아홉 다 회색
+  // 머리가 됐다 — 시안에서 헬멧은 그 대원의 색 그 자체고, 금속은
+  // 테두리와 귀 파츠 가장자리에만 얇게 들어간다.
+  f.blob(0, HAIRLINE + 3, 7, 2, M.suit);
+  f.blob(0, HAIRLINE + 1, 7, 2, M.suit);
+  // 관자놀이를 감싸고 내려오는 측면 — 아래로 갈수록 좁아져 광대에서 끝난다
+  f.taper(-7, HAIRLINE - 3, HAIRLINE + 2, 2, 3, M.suit);
+  f.taper(6, HAIRLINE - 3, HAIRLINE + 2, 2, 3, M.suit);
+  f.set(-7, HAIRLINE - 2, M.trim);            // 측면 그늘 한 줄
+  f.set(6, HAIRLINE - 2, M.trim);
+  // 바이저 테두리 — 눈 바로 위. 금색 한 줄이 헬멧을 헬멧으로 만든다
+  f.rect(-6, HAIRLINE + 1, 13, 1, M.metal);
+  f.rect(-6, HAIRLINE, 13, 1, M.accent);
+  // 귀 파츠 — 원형 장갑 디스크. 테두리는 금속, 가운데는 속성색으로 빛난다
+  for (const x of [-8, 7] as const) {
+    f.blob(x, 39, 2, 2, M.metal);
+    f.set(x, 39, M.glow);
+    f.set(x, 40, M.spec);
+  }
+  f.set(-2, HAIRLINE + 4, M.spec);            // 정수리 하이라이트
+}
+
+/** 정수리 장식 — 캐릭터를 구분하는 유일한 머리 요소 */
+const crest = {
+  /** 위로 곧게 선 핀 하나 — 기본형 */
+  fin(f: F): void {
+    f.taper(0, HAIRLINE + 5, HAIRLINE + 9, 4, 2, M.suit);
+    f.rect(-1, HAIRLINE + 9, 2, 1, M.accent);
+    f.set(-1, HAIRLINE + 7, M.spec);
+  },
+  /** 뒤로 젖혀 흐르는 긴 핀 — 날렵한 유형 */
+  swept(f: F): void {
+    f.line(0, HAIRLINE + 5, -7, HAIRLINE + 9, 3, M.suit);
+    f.line(-3, HAIRLINE + 7, -8, HAIRLINE + 10, 1, M.accent);
+    f.set(-3, HAIRLINE + 7, M.spec);
+  },
+  /** 좌우로 뻗은 뿔 두 개 — 완력형 */
+  horns(f: F): void {
+    for (const d of [-1, 1] as const) {
+      f.line(d * 3, HAIRLINE + 4, d * 8, HAIRLINE + 9, 3, M.suit);
+      f.blob(d * 8, HAIRLINE + 9, 1, 1, M.accent);
+      f.set(d * 5, HAIRLINE + 6, M.spec);
+    }
+  },
+  /** 가는 안테나 두 개 — 지원형 */
+  antenna(f: F): void {
+    for (const d of [-1, 1] as const) {
+      f.line(d * 2, HAIRLINE + 4, d * 4, HAIRLINE + 10, 1, M.metal);
+      f.blob(d * 4, HAIRLINE + 10, 1, 1, M.glow);
+    }
+  },
+  /** 타오르는 깃털 — 화염 유형 */
+  flame(f: F): void {
+    f.taper(0, HAIRLINE + 4, HAIRLINE + 9, 5, 1, M.accent);
+    f.taper(0, HAIRLINE + 5, HAIRLINE + 8, 3, 1, M.glow);
+    f.set(2, HAIRLINE + 7, M.glow);
+    f.set(-2, HAIRLINE + 6, M.accent);
+  },
+  /** 각진 결정 — 빛 유형 */
+  crystal(f: F): void {
+    f.taper(0, HAIRLINE + 4, HAIRLINE + 8, 6, 1, M.metal);
+    f.taper(0, HAIRLINE + 5, HAIRLINE + 7, 3, 1, M.glow);
+    f.set(-3, HAIRLINE + 5, M.spec);
+  },
+};
+
 export const HEADS: Record<string, Head> = {
-  // 못 — 맏이. 짧게 친 머리에 작업 밴드 하나. 눈썹이 굵고 곧다
+  // 못 — 맏이, 파워 타입. 정면으로 곧게 선 핀 하나. 제일 기본형이라
+  // 나머지 여덟이 여기서 얼마나 벗어났는지를 재는 기준이 된다
   '못': (f) => {
     face(f, 'bold');
-    hairCap(f, 0, 4);
-    bangs(f, -4, -1, 3);
-    f.rect(-6, HAIRLINE, 13, 2, M.accent);      // 이마 밴드
-    f.rect(-6, HAIRLINE, 13, 1, M.metal);
-    f.blob(-7, HAIRLINE + 1, 1, 2, M.accent);       // 옆으로 삐져나온 매듭
-    collar(f, M.cloth, M.clothS);
+    helmet(f);
+    crest.fin(f);
+    f.rect(-3, HAIRLINE + 2, 7, 1, M.accent);   // 이마판 한 줄 더 — 두껍게
+    collar(f, M.metal, M.accent);
   },
 
-  // 종 — 제일 시끄러운 무기를 든다. 귀를 덮는 폭신한 것
+  // 종 — 공명 서포터. 귀 파츠를 한 겹 키우고 안테나를 세운다
   '종': (f) => {
     face(f, 'calm');
-    hairCap(f, 0, 3);
-    bangs(f, -3, 1);
-    for (const x of [-7, 6] as const) {             // 이어머프 — 둥글고 두껍게
-      f.blob(x, 39, 2, 3, M.cloth);
-      f.blob(x, 39, 1, 2, M.clothS);
-      f.set(x, 40, M.accent);
+    helmet(f);
+    crest.antenna(f);
+    for (const x of [-8, 7] as const) {         // 귀 파츠 바깥에 공명 링 하나
+      f.crescent(x, 39, 3, 2, x < 0 ? -1 : 1, M.accent);
     }
-    f.rect(-6, HAIRLINE + 3, 13, 1, M.cloth);       // 머리 위를 지나는 띠
-    collar(f, M.cloth, M.clothS);
+    collar(f, M.metal, M.accent);
   },
 
-  // 불씨 — 불을 다룬다. 헝클어진 머리, 고글은 목에 걸쳐 둔다
+  // 불씨 — 화염 어썰트. 정수리에서 타오르는 깃털
   '불씨': (f) => {
     face(f, 'sly');
-    hairCap(f, 1, 4);
-    bangs(f, -5, -3, 0, 2, 4);
-    f.set(-7, HAIRLINE + 3, M.hair);                // 삐친 머리
-    f.set(7, HAIRLINE + 4, M.hair);
-    f.set(8, HAIRLINE + 2, M.hair);
-    // 목에 걸친 고글 — 얼굴을 안 가리면서 직업은 그대로 읽힌다
-    collar(f, M.clothS, M.metal);
-    f.blob(-3, 32, 2, 1, M.glow);
-    f.blob(3, 32, 2, 1, M.glow);
-    f.rect(-1, 32, 3, 1, M.metal);
+    helmet(f);
+    crest.flame(f);
+    f.set(-6, HAIRLINE + 2, M.glow);            // 관자놀이에 남은 불티
+    f.set(6, HAIRLINE + 3, M.accent);
+    collar(f, M.metal, M.accent);
   },
 
-  // 거울 — 단정하다. 턱선까지 오는 단발에 챙 짧은 캡
+  // 거울 — 반사 디펜더. 각진 결정 크레스트에 바이저가 한 겹 더 있다
   '거울': (f) => {
     face(f, 'calm');
-    f.blob(0, HAIRLINE + 2, 6, 2, M.hair);
-    f.rect(-7, 37, 2, 5, M.hair);                   // 턱선까지 내려오는 옆머리
-    f.rect(5, 37, 2, 5, M.hair);
-    f.set(-7, 36, M.hairS); f.set(6, 36, M.hairS);
-    bangs(f, -4, -1, 2);
-    f.blob(0, HAIRLINE + 3, 6, 2, M.cloth);         // 캡
-    f.rect(-7, HAIRLINE + 1, 15, 1, M.metal);       // 짧은 챙
-    f.rect(-7, HAIRLINE + 2, 15, 1, M.accent);
-    collar(f, M.cloth, M.clothS);
+    helmet(f);
+    crest.crystal(f);
+    f.rect(-6, HAIRLINE - 1, 13, 1, M.metal);   // 눈 위로 내려온 바이저 챙
+    f.set(-5, HAIRLINE - 1, M.spec);
+    collar(f, M.metal, M.accent);
   },
 
-  // 바늘 — 저격수. 후드를 젖혀 목에 걸치고 앞머리 한 갈래가 길다
+  // 바늘 — 스나이퍼. 뒤로 길게 젖혀 흐르는 핀
   '바늘': (f) => {
     face(f, 'worried');
-    hairCap(f, 0, 5);
-    bangs(f, -4, -2, 2);
-    f.rect(5, 37, 1, 4, M.hair);                    // 길게 내린 한 갈래
-    f.set(5, 36, M.hairS);
-    // 뒤로 젖힌 후드가 어깨에 얹혀 있다
-    f.blob(-5, 33, 5, 2, M.cloth);
-    f.blob(5, 33, 5, 2, M.cloth);
-    f.rect(-9, 34, 19, 1, M.clothS);
-    f.blob(-8, 31, 3, 3, M.cloth);                  // 등 뒤로 늘어진 자락
+    helmet(f);
+    crest.swept(f);
+    f.set(7, 41, M.glow);                       // 조준용 광학 한 점
+    collar(f, M.metal, M.accent);
   },
 
-  // 반딧불 — 부스스한 곱슬에 더듬이 핀 두 개
+  // 반딧불 — 기동 서포터. 끝이 빛나는 더듬이 둘
   '반딧불': (f) => {
     face(f, 'soft');
-    hairCap(f, 1, 4);
-    bangs(f, -5, -3, 0, 3);
-    for (const x of [-7, 6] as const) {             // 곱슬 — 옆으로 부푼다
-      f.blob(x, HAIRLINE + 2, 2, 2, M.hair);
-      f.set(x + (x < 0 ? -1 : 1), HAIRLINE + 3, M.hair);
-    }
-    for (const x of [-3, 3] as const) {             // 더듬이
-      f.rect(x, HAIRLINE + 5, 1, 3, M.metal);
-      f.blob(x, HAIRLINE + 9, 1, 1, M.glow);
-    }
-    collar(f, M.cloth, M.clothS);
+    helmet(f);
+    crest.antenna(f);
+    f.set(-4, HAIRLINE + 3, M.glow);            // 헬멧 위 발광점 둘
+    f.set(4, HAIRLINE + 3, M.glow);
+    collar(f, M.metal, M.accent);
   },
 
-  // 도끼 — 덥수룩하다. 머리띠로 겨우 눌러 놨다
+  // 도끼 — 브루트. 좌우로 뻗은 뿔. 헬멧도 한 겹 두껍다
   '도끼': (f) => {
     face(f, 'bold');
-    f.blob(0, HAIRLINE + 3, 7, 3, M.hair);          // 크게 부푼 머리
-    f.rect(-8, HAIRLINE - 3, 2, 5, M.hair);
-    f.rect(6, HAIRLINE - 3, 2, 5, M.hair);
-    f.blob(0, HAIRLINE + 4, 5, 1, M.hairS);
-    bangs(f, -5, -3, 0, 2, 4);
-    f.set(-8, HAIRLINE + 4, M.hair); f.set(8, HAIRLINE + 3, M.hair);
-    f.rect(-7, HAIRLINE, 15, 2, M.accent);      // 머리띠
-    f.rect(-7, HAIRLINE, 15, 1, M.clothS);
-    f.rect(-10, HAIRLINE - 1, 3, 2, M.accent);          // 뒤로 흐르는 자락
-    f.rect(-11, HAIRLINE - 2, 2, 1, M.clothS);
+    helmet(f);
+    crest.horns(f);
+    f.blob(0, HAIRLINE + 4, 7, 1, M.metal);     // 정수리를 한 겹 더 덮는다
+    f.rect(-4, HAIRLINE + 2, 9, 1, M.accent);
+    collar(f, M.metal, M.accent);
   },
 
-  // 작살 — 물에서 일한다. 젖어서 넘긴 머리, 물안경은 목에
+  // 작살 — 랜서. 물에서 일한다. 젖은 듯 매끈한 헬멧에 짧은 핀
   '작살': (f) => {
     face(f, 'calm');
-    f.blob(0, HAIRLINE + 2, 6, 2, M.hair);
-    f.blob(1, HAIRLINE + 3, 5, 1, M.hairS);         // 뒤로 넘긴 결
-    f.rect(-7, HAIRLINE - 2, 2, 4, M.hair);
-    f.rect(5, HAIRLINE - 2, 2, 4, M.hair);
-    f.rect(-3, HAIRLINE, 6, 1, M.hairS);            // 이마가 드러난다
-    f.set(-5, HAIRLINE + 3, M.hairS); f.set(4, HAIRLINE + 3, M.hairS);
-    collar(f, M.clothS, M.metal);                   // 목에 건 물안경
-    f.blob(-3, 32, 2, 1, M.glow);
-    f.blob(3, 32, 2, 1, M.glow);
+    helmet(f);
+    crest.swept(f);
+    f.rect(-2, HAIRLINE + 3, 5, 1, M.accent);   // 정수리를 지나는 유선 홈
+    collar(f, M.metal, M.accent);
   },
 
-  // 사슬 — 긴 머리를 하나로 묶고 목도리를 둘렀다
+  // 사슬 — 구속 컨트롤러. 암흑 속성. 크레스트도 낮게 깔린다
   '사슬': (f) => {
     face(f, 'sly');
-    f.blob(0, HAIRLINE + 2, 6, 2, M.hair);
-    bangs(f, -4, -2, 1, 3);
-    f.rect(-7, 37, 2, 5, M.hair);
-    f.rect(5, 37, 2, 5, M.hair);
-    // 뒤로 묶어 늘어뜨린 머리 — 흔들릴 것 같은 게 있어야 살아 보인다
-    f.blob(-7, HAIRLINE + 1, 2, 2, M.accent);       // 묶은 자리
-    f.taper(-9, 34, HAIRLINE, 4, 2, M.hair);
-    f.blob(-10, 33, 2, 2, M.hairS);
-    // 목도리 — 한쪽 끝이 길게 날린다
-    f.blob(0, 33, 7, 2, M.cloth);
-    f.rect(-6, 34, 13, 1, M.clothS);
-    f.taper(10, 26, 33, 3, 4, M.cloth);
-    f.rect(9, 26, 3, 1, M.clothS);
+    helmet(f);
+    crest.swept(f);
+    f.blob(-7, HAIRLINE + 1, 2, 2, M.accent);   // 뒤통수에 걸린 구속 고리
+    f.set(-8, HAIRLINE, M.glow);
+    collar(f, M.metal, M.accent);
   },
 };
 
@@ -608,7 +637,7 @@ export interface Crew extends CrewPal {
 export const CREW: Crew[] = [
   {
     id: 'nail', name: '못',
-    suit: '#525d70', metal: '#aab4c2', glow: '#ff9a4c', skin: '#e0a882',
+    suit: '#2a4c96', metal: '#b9c6d8', glow: '#7fd4ff', gold: '#e8b94a', skin: '#e0a882',
     iris: '#c9743c', hair: '#2e2a30', bulk: 1,
     hand: 'F',
     build: (f, r) => {
@@ -621,7 +650,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'bell', name: '종',
-    suit: '#6b5a34', metal: '#c9a04a', glow: '#ffe08a', skin: '#c98c62',
+    suit: '#0f7fa2', metal: '#b9c6d8', glow: '#8ef0ff', gold: '#e8b94a', skin: '#c98c62',
     iris: '#e0b45a', hair: '#4a3824', bulk: 1,
     hand: 'F',
     build: (f, r) => {
@@ -643,7 +672,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'ember', name: '불씨',
-    suit: '#7a3f2e', metal: '#7d858f', glow: '#ff6a2c', skin: '#f0c6a0',
+    suit: '#c02418', metal: '#cbb69a', glow: '#ff8a3c', gold: '#e8b94a', skin: '#f0c6a0',
     iris: '#ff8a44', hair: '#3a241c', bulk: 0,
     hand: 'F',
     build: (f, r) => {
@@ -664,7 +693,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'mirror', name: '거울',
-    suit: '#5c6474', metal: '#b6c2d2', glow: '#eaf6ff', skin: '#e8b48c',
+    suit: '#48607f', metal: '#dfe8f2', glow: '#eaf6ff', gold: '#e8b94a', skin: '#e8b48c',
     iris: '#9fd8ff', hair: '#6e7280', bulk: 0,
     hand: 'B',
     build: (f, r) => {
@@ -678,7 +707,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'needle', name: '바늘',
-    suit: '#2f6360', metal: '#8fa8a4', glow: '#5ce0d0', skin: '#a8734c',
+    suit: '#4a3a86', metal: '#a8b0c8', glow: '#b98cff', gold: '#e8b94a', skin: '#a8734c',
     iris: '#5ce0d0', hair: '#1e3a36', bulk: -1,
     hand: 'F',
     build: (f, r) => {
@@ -691,7 +720,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'firefly', name: '반딧불',
-    suit: '#5b6a2e', metal: '#a3b268', glow: '#c8ff5c', skin: '#f0c6a0',
+    suit: '#0f8a78', metal: '#b6c8a8', glow: '#c8ff5c', gold: '#e8b94a', skin: '#f0c6a0',
     iris: '#c2e85a', hair: '#40401f', bulk: -1,
     hand: 'F',
     build: (f, r) => {
@@ -715,7 +744,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'axe', name: '도끼',
-    suit: '#6b4326', metal: '#b3bcc7', glow: '#ff7a5a', skin: '#c98c62',
+    suit: '#8f3418', metal: '#c7b49a', glow: '#ff7a3c', gold: '#e8b94a', skin: '#c98c62',
     iris: '#e8664a', hair: '#8a4526', bulk: 1,
     hand: 'B',
     build: (f, r, pose) => {
@@ -755,7 +784,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'harpoon', name: '작살',
-    suit: '#3b4f83', metal: '#93a6c8', glow: '#7cc4ff', skin: '#e0a882',
+    suit: '#2f6a76', metal: '#b3c6cc', glow: '#7cd8ff', gold: '#e8b94a', skin: '#e0a882',
     iris: '#7cc4ff', hair: '#22385c', bulk: 0,
     hand: 'F',
     build: (f, r) => {
@@ -773,7 +802,7 @@ export const CREW: Crew[] = [
   },
   {
     id: 'chain', name: '사슬',
-    suit: '#4d465f', metal: '#b3a6ce', glow: '#c79bee', skin: '#a8734c',
+    suit: '#3f2f66', metal: '#a99cc4', glow: '#c79bee', gold: '#e8b94a', skin: '#a8734c',
     iris: '#c79bee', hair: '#2a2438', bulk: -1,
     hand: 'F',
     build: (f, r) => {

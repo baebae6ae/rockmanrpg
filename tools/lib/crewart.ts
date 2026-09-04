@@ -250,6 +250,10 @@ function partTone(m: Uint8Array, cx: number, cy: number): number {
 
 export interface CrewPal {
   suit: string; metal: string; glow: string;
+  /** 갑옷 트림(테두리) 색. 시안 아홉은 속성색과 별개로 전원 금색
+   * 트림을 두르고 있다 — 이걸 glow 와 같이 쓰면 속성색이 몸 전체
+   * 테두리로 번져서 아홉이 다 제 속성색 옷을 입은 꼴이 된다. */
+  gold?: string;
   skin?: string; iris?: string; hair?: string;
 }
 
@@ -270,7 +274,7 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
     [M.suit]: rampRim(suit, glowRGB, 0.4), [M.trim]: rampRim(trim, glowRGB, 0.4),
     [M.metal]: ramp(saturate(hex(c.metal), 0.18)),
     [M.joint]: ramp(joint), [M.jointB]: ramp(mix(joint, COOL, 0.24)),
-    [M.accent]: ramp(c.glow), [M.glow]: ramp(c.glow),
+    [M.accent]: ramp(c.gold ?? c.glow), [M.glow]: ramp(c.glow),
     [M.skin]: skinRamp(sk[1]), [M.skinS]: ramp(sk[0]), [M.skinH]: ramp(sk[2]),
     [M.eye]: ramp(EYE), [M.iris]: ramp(iris), [M.white]: ramp(EYE_LIT),
     [M.hair]: ramp(hair),
