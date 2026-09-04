@@ -109,37 +109,38 @@ export function crewTags(): Tag[] {
       ],
     },
     /**
-     * idle 의 lean(+2)에서 첫 프레임이 곧장 lean -4 로 튀어서, 대기 상태에서
-     * 공격이 시작되는 순간 자체가 이어지지 않고 끊겨 보였다. 첫 프레임을
-     * 완만하게(-1) 낮추고 두 번째 프레임에서 깊은 백스윙(-6)에 도달하게
-     * 해서 준비 동작이 한 단계를 더 거치며 이어지게 한다.
+     * 공격 모션을 처음부터 다시 짰다. 이전 버전들의 문제:
      *
-     * 타격 프레임은 'aim' 대신 'strike' 를 쓴다 — 'aim' 은 원래 총을 겨누는
-     * 자세(어깨 높이에서 살짝 앞으로)라 도끼 같은 근접무기를 휘두르는
-     * 그림이 안 나왔다. 특히 무기가 뒷손인 도끼·거울은 이 폭으로는 몸을
-     * 거의 못 가로질러서, 눈에 보이는 건 앞의 빈손이 뻗는 것뿐이고
-     * 무기는 제자리에 머무는 것처럼 보였다("반대손으로 공격하는" 원인).
-     * 무기 팔과 빈 팔을 둘 다 'strike' 로 같은 방향으로 보내 양손이
-     * 함께 앞으로 크게 휘둘러지게 한다. 다음 프레임에서 'forward'(진폭이
-     * 훨씬 작고 높이도 다름)로 바꿨더니 휘두른 팔이 순간적으로 다시
-     * 위로 튀어 올랐다 — 타격 자세를 한 프레임 더 붙잡아 두는 게
-     * 눈으로 궤적을 따라가기에도, 자연스러움에도 낫다.
+     * 1. 무기 팔과 빈 팔을 똑같이 'strike'(큰 폭)로 같이 보냈더니, 총·
+     *    포드처럼 무기가 손과 상관없거나(반딧불) 애초에 한 손만 쓰는
+     *    무기(총 든 나머지 캐릭터들)까지 양팔을 몸 폭만큼 벌리는 그림이
+     *    됐다 — 다들 T자로 서서 팔만 쫙 벌리는 꼴이라 오히려 더
+     *    부자연스러웠다. 실제로 움직여야 하는 건 무기를 쥔 팔 하나뿐이다
+     *    — 빈 팔은 'guard'(몸 쪽으로 붙인 자세)로 고정해 둔다.
+     *
+     * 2. 준비(back) → 타격(strike) 두 단계만 있어서 팔이 한쪽 끝에서
+     *    반대쪽 끝으로 순간이동하듯 보였다. 준비-깊은 준비-중간 전환-
+     *    타격-타격 유지-회복 6단계로 늘려서, 팔이 실제로 호를 그리며
+     *    지나가는 중간 지점(armWeapon:'aim')을 눈으로 볼 수 있게 했다.
      */
     {
-      name: 'attack_main', duration: 88, loop: false,
+      name: 'attack_main', duration: 68, loop: false,
       poses: [
-        { hipY: 22, lean: -1, footF: [4, 0], footB: [-6, 0], armWeapon: 'back', armFree: 'back' },
-        { hipY: 20, lean: -6, headY: -1, footF: [3, 1], footB: [-7, 0], armWeapon: 'back', armFree: 'guard', charge: 0.18 },
-        { hipY: 21, lean: 1, footF: [7, 0], footB: [-4, 0], armWeapon: 'strike', armFree: 'strike', slash: 'high', charge: 0.8 },
-        { hipY: 21, lean: 3, footF: [8, 0], footB: [-3, 0], armWeapon: 'strike', armFree: 'strike' },
+        { hipY: 22, lean: -1, footF: [4, 0], footB: [-6, 0], armWeapon: 'back', armFree: 'guard' },
+        { hipY: 20, lean: -5, headY: -1, footF: [3, 1], footB: [-7, 0], armWeapon: 'back', armFree: 'guard', charge: 0.25 },
+        { hipY: 20, lean: -3, headY: -1, footF: [4, 1], footB: [-6, 0], armWeapon: 'aim', armFree: 'guard', charge: 0.55 },
+        { hipY: 21, lean: 1, footF: [7, 0], footB: [-4, 0], armWeapon: 'strike', armFree: 'guard', slash: 'high', charge: 0.9 },
+        { hipY: 21, lean: 3, footF: [8, 0], footB: [-3, 0], armWeapon: 'strike', armFree: 'guard' },
+        { hipY: 21, lean: 2, footF: [7, 0], footB: [-4, 0], armWeapon: 'forward', armFree: 'rest' },
         { hipY: 21, lean: 1, footF: [6, 0], footB: [-4, 0], armWeapon: 'down', armFree: 'rest' },
       ],
     },
     {
-      name: 'attack_air', duration: 82, loop: false,
+      name: 'attack_air', duration: 68, loop: false,
       poses: [
         { hipY: 25, lean: -2, footF: [5, 6], footB: [-6, 4], armWeapon: 'guard', armFree: 'up' },
-        { hipY: 24, lean: -5, footF: [3, 7], footB: [-8, 3], armWeapon: 'back', armFree: 'up', charge: 0.2 },
+        { hipY: 24, lean: -5, footF: [3, 7], footB: [-8, 3], armWeapon: 'back', armFree: 'up', charge: 0.25 },
+        { hipY: 23, lean: -1, footF: [5, 6], footB: [-6, 5], armWeapon: 'aim', armFree: 'up', charge: 0.55 },
         { hipY: 23, lean: 3, footF: [8, 5], footB: [-5, 6], armWeapon: 'strike', armFree: 'up', slash: 'low' },
         { hipY: 23, lean: 1, footF: [6, 4], footB: [-4, 6], armWeapon: 'down', armFree: 'guard' },
       ],
