@@ -121,6 +121,24 @@ function ramp(base: string | RGB): Ramp {
   };
 }
 
+/**
+ * 갑옷판(suit/trim) 전용 — 캐릭터 속성색(glow)을 밝은 쪽 가장자리에
+ * 섞어서 "에너지 림라이트"를 준다. 지금까지는 명암 전체가 COOL(청색)
+ * 한 방향으로만 갈려서, 캐릭터마다 색은 달라도 입체감의 성격은 하나로
+ * 똑같았다 — 참고 시안들은 캐릭터 속성색이 갑옷 테두리에 은은히
+ * 번져 있어서 그게 개성으로 읽힌다. 밝은 가장자리 색 하나(edgeLit)와
+ * 가장 밝은 하이라이트 계단(t[6])만 속성색 쪽으로 밀어서, 베이스
+ * 색과 어두운 쪽은 그대로 두고 "빛나는 쪽"만 캐릭터 색을 낸다.
+ */
+function rampRim(base: string | RGB, glow: RGB, amt: number): Ramp {
+  const r = ramp(base);
+  return {
+    ...r,
+    edgeLit: mix(r.edgeLit, glow, amt),
+    t: [r.t[0], r.t[1], r.t[2], r.t[3], r.t[4], mix(r.t[5], glow, amt * 0.5), mix(r.t[6], glow, amt * 0.7)],
+  };
+}
+
 export class F {
   m = new Uint8Array(CELL * CELL);
   private dx = 0;
@@ -247,8 +265,9 @@ export function paint(f: F, c: CrewPal, alpha = 255): Uint8Array {
   const trim = mix(suit, COOL, 0.40);
   const STEEL: RGB = [146, 164, 184];
   const joint = mix(STEEL, hex(c.glow), 0.10);
+  const glowRGB = hex(c.glow);
   const R: Partial<Record<M, Ramp>> = {
-    [M.suit]: ramp(suit), [M.trim]: ramp(trim),
+    [M.suit]: rampRim(suit, glowRGB, 0.4), [M.trim]: rampRim(trim, glowRGB, 0.4),
     [M.metal]: ramp(saturate(hex(c.metal), 0.18)),
     [M.joint]: ramp(joint), [M.jointB]: ramp(mix(joint, COOL, 0.24)),
     [M.accent]: ramp(c.glow), [M.glow]: ramp(c.glow),
