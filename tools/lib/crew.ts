@@ -45,14 +45,16 @@ const HAND: Record<ArmPose, [number, number]> = {
   up: [2, 8],
   guard: [5, -3],
   aim: [9, 1],
-  // 실제로 후려치는 타격 프레임 전용. 'aim'(9,1)을 그대로 썼더니 어깨
-  // 높이(dy=1)에서 손이 몸 중앙 쪽으로 조금 움직이는 정도라, 무기가
-  // 크게 휘둘러지는 게 아니라 제자리에서 살짝 들썩이는 것처럼 보였다
-  // — 특히 무기가 뒷손인 도끼·거울은 이 폭으로는 몸을 거의 못
-  // 가로지른다. 가로 폭을 크게(16) 키우고 세로(-8)를 낮춰서 어깨보다
-  // 아래, 몸 앞쪽 멀리까지 확실히 휘둘러지게 한다 — 내려찍는 궤적이라
-  // 얼굴 높이도 자연히 피한다.
-  strike: [16, -8],
+  // 실제로 후려치는 타격 프레임 전용. 가로 폭을 키우고(11) 세로(-5)를
+  // 낮춰서 어깨보다 아래로 내려찍게 한다.
+  //
+  // 처음엔 16까지 키우고 빈 팔에도 똑같이 먹였더니, 무기와 상관없는
+  // 반대편 빈손까지 몸 폭만큼 쫙 뻗어서 다 같이 T자로 뻗는 꼴이
+  // 됐다 — 총 든 캐릭터도, 손과 무관하게 어깨에 무기가 얹힌 반딧불
+  // 같은 캐릭터도 전부 "빈손 두 짝을 벌리는" 그림으로 보여서 오히려
+  // 더 어색했다. 지금은 무기 팔에만 쓰고 빈 팔은 'guard'로 몸에 붙여
+  // 둔다 — 실제로 휘두르는 건 무기 팔 하나뿐이어야 자연스럽다.
+  strike: [11, -5],
   // 달리기 전용 — 세 칸 다 높이를 맞춰서 손이 위아래로 출렁이지
   // 않고 앞뒤로만 좁게 스치게 한다. 폭은 8px(runB~runF)로, 어깨 폭
   // 16~18px 의 절반 이하다.
@@ -109,6 +111,9 @@ export interface Rig {
   handF: [number, number]; handB: [number, number];
   /** 무기 손 / 빈 손 — 위 둘 중 하나를 가리킨다 */
   handW: [number, number]; handO: [number, number];
+  /** 무기 손이 붙은 어깨 — 무기가 어깨→손 방향을 그대로 이어 뻗어야
+   * (칼날이 손잡이보다 앞서야) 할 때 이 방향 벡터를 구하는 기준점 */
+  shW: [number, number];
 }
 
 export function rigOf(pose: Pose, s: number, weaponHand: 'F' | 'B' = 'F'): Rig {
@@ -145,6 +150,7 @@ export function rigOf(pose: Pose, s: number, weaponHand: 'F' | 'B' = 'F'): Rig {
     s, hipY, lean, headY: pose.headY ?? 0, shF, shB, handF, handB,
     handW: handWeapon,
     handO: handFree,
+    shW: wF ? shF : shB,
   };
 }
 
@@ -587,7 +593,7 @@ export const HEADS: Record<string, Head> = {
  * 장비. 무기를 고정 좌표에 그리면 팔이 움직이는 순간 손에서 떨어져
  * 공중에 뜬다. 그래서 전부 rig 의 손 좌표에서 뻗어 나가게 짠다.
  */
-export type Build = (f: F, r: Rig) => void;
+export type Build = (f: F, r: Rig, pose: Pose) => void;
 
 export interface Crew extends CrewPal {
   id: string;
@@ -712,10 +718,37 @@ export const CREW: Crew[] = [
     suit: '#6b4326', metal: '#b3bcc7', glow: '#ff7a5a', skin: '#c98c62',
     iris: '#e8664a', hair: '#8a4526', bulk: 1,
     hand: 'B',
-    build: (f, r) => {
+    build: (f, r, pose) => {
       const [hx, hy] = r.handW;
+      // 공격 동작(back/aim/strike/forward) 중에는 어깨→손 방향을 그대로
+      // 이어서 날을 손 앞쪽에 둔다 — 손잡이를 고정된 모양으로 그리면
+      // 팔이 어느 쪽으로 뻗든 날은 항상 같은 자리에 남아서, 실제로
+      // 휘두르는 쪽이 손잡이 끝이지 날이 아니게 된다. 팔이 휘둘러지는
+      // 만큼 날도 같이 돌아야 날 쪽으로 후려치는 그림이 나온다.
+      //
+      // 대기·달리기(armWeapon:'down')처럼 팔이 그냥 옆에 늘어진
+      // 자세에서까지 이 방향을 그대로 따르면, 손이 아래로 늘어진
+      // 방향 그대로 날도 다리 옆까지 축 처져서 어깨에 멘 도끼가 아니라
+      // 흘러내린 도끼처럼 보인다 — 그런 자세에서는 원래의 고정된
+      // "어깨에 멘" 모양을 그대로 쓴다.
+      const swinging =
+        pose.armWeapon === 'back' || pose.armWeapon === 'aim' ||
+        pose.armWeapon === 'strike' || pose.armWeapon === 'forward';
+      if (swinging) {
+        const [sx, sy] = r.shW;
+        const dx = hx - sx, dy = hy - sy;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const grip = 6;   // 손 뒤로 남는 자루 끝(손잡이를 쥔 느낌)
+        const reach = 16; // 손에서 날까지 거리
+        const side: -1 | 1 = ux >= 0 ? 1 : -1;
+        f.line(hx - ux * grip, hy - uy * grip, hx + ux * reach, hy + uy * reach, 3, M.trim);
+        f.crescent(hx + ux * reach, hy + uy * reach, 9, 4, side, M.metal);
+        f.crescent(hx + ux * reach, hy + uy * reach, 6, 4, side, M.accent);
+        return;
+      }
       const tipX = hx - 3;
-      f.line(hx + 1, hy - 7, tipX, hy + 14, 3, M.trim);  // 손을 관통하는 자루
+      f.line(hx + 1, hy - 7, tipX, hy + 14, 3, M.trim);  // 어깨에 멘 자루
       f.crescent(tipX, hy + 14, 9, 4, -1, M.metal);
       f.crescent(tipX, hy + 14, 6, 4, -1, M.accent);
     },
@@ -805,7 +838,7 @@ export function drawCrew(f: F, c: Crew, pose: Pose = {}): void {
   leg(f, s, r.lean + 3 + s, hipY, footF);
   arm(f, shWeapon[0], shWeapon[1], r.handW[0], r.handW[1]);
 
-  if (pose.weapon !== false) c.build(f, r);
+  if (pose.weapon !== false) c.build(f, r, pose);
 
   // 이펙트는 무기 손을 기준으로 뜬다. 화면 중앙에 고정하면 팔을 어디로
   // 뻗든 같은 자리에서 빛나서 몸과 따로 논다.
