@@ -725,6 +725,11 @@ interface HordeChar {
   desc?: string;
   sprite_scale?: number;
   archetype?: string;
+  /** 총구 높이 계산용 — 본편(player.ts)은 이미 이 둘로 손 높이를 잡는다.
+   * 프로토타입은 그동안 이걸 안 쓰고 py-10(허리 아래) 으로 고정해 놔서,
+   * 총알이 손이 아니라 발 근처에서 나가는 것처럼 보였다. */
+  hitbox?: { w: number; h: number };
+  muzzle_ratio?: number;
   base_stats: { hp: number };
   /** X·제로만 갖고 있다. 나머지는 시작 스킬에서 탄을 가져온다 */
   shot?: { speed: number; color: string; power: number; element?: string };
@@ -2317,7 +2322,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
     attackHold = 0.2;
     const muzX = px + facing * 9;
-    const muzY = py - 10;
+    // 총알이 실제로 나가는 자리는 조준 각도 계산(py-10, 위 base)과는
+    // 별개로 본편과 같은 손 높이 공식을 쓴다 — py-10 은 허리 아래라
+    // 총알이 발 근처에서 나가는 것처럼 보였다.
+    const muzY = py - (charDef.hitbox?.h ?? 30) * (charDef.muzzle_ratio ?? 0.63);
 
     fireDrones(base);
 
@@ -4059,9 +4067,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const t = comboStep === 0 ? 'attack_main' : `attack_main${comboStep + 1}`;
       return hv.has(t) ? t : 'attack_main';
     };
-    if (firing) {
+    if (holdFire && chargeT > 0 && hv.has('charge_loop')) {
+      // 차지 중엔 무기 종류와 무관하게 이 자세가 최우선이다. 총류는
+      // 원래 자동사격마다 스윙 자세가 없으니 더더욱, 세이버도 차지
+      // 중엔 매 자동공격마다 휘두르는 게 아니라 웅크려 모으는 그림이어야
+      // 한다.
+      wantTag = 'charge_loop';
+    } else if (firing) {
       const moveTag = dashTimer > 0 ? 'dash_attack' : 'run_attack';
-      if (!(dashTimer > 0 || moving)) {
+      if (w.style !== 'saber') {
+        // 총류(charge/rapid)는 자동사격 간격(빠르면 초당 여러 번)마다
+        // 스윙 자세로 갈아탔더니 다리가 멈추거나 뚝뚝 끊겨 보였다 — 총은
+        // 실제로 휘두르는 무기가 아니라 총구 섬광과 탄만으로 충분하다.
+        // 팔을 크게 써야 하는 건 근접무기(세이버)뿐이다.
+        wantTag = idleTag;
+      } else if (!(dashTimer > 0 || moving)) {
         wantTag = comboTag();
       } else if (hv.has(moveTag)) {
         // 이동 전용 공격 태그가 있으면(엑스) 그대로 쓴다 — 걷기와 사격이
