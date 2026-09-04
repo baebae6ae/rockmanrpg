@@ -363,6 +363,28 @@ const STYLE_DESC: Record<Style, string> = {
 };
 
 /**
+ * 대원별 실제 총구(발사체가 나오는 지점) 위치 — 서 있는 자세(armWeapon
+ * 'down') 기준, 몸 중심에서 바라보는 방향으로 얼마나(dx) 떨어져 있고
+ * 발에서 얼마나 높은지(dy)를 tools/lib/crew.ts 의 무기 그림에서 직접
+ * 측정한 값이다.
+ *
+ * 예전엔 캐릭터·무기와 무관하게 (9, 10) 고정값 하나를 다 같이 썼다.
+ * 총구 높이만 맞추고 나니(총구 높이 수정 커밋) 이번엔 총알이 총구가
+ * 아니라 목 옆 몸통에 바짝 붙어 나가는 게 보였다 — 바늘의 총열은
+ * 24칸이나 뻗어 있는데 9칸짜리 고정폭을 쓰면 총구 3분의 1도 못
+ * 가는 자리에서 나가는 셈이다. 무기마다 총구까지 뻗은 길이가 다 달라서
+ * (짧은 권총부터 등에 멘 포드까지) 캐릭터별로 실측해 표로 둔다.
+ */
+const MUZZLE: Record<string, [number, number]> = {
+  nail: [20, 29],
+  needle: [27, 22],
+  ember: [20, 22],
+  firefly: [12, 32],
+  harpoon: [10, 52],
+  mirror: [6, 29],
+};
+
+/**
  * 대원별 공격 서명.
  *
  * 방식(차지/연사/세이버)은 밸런스의 뼈대라 그대로 두되, 같은 방식을 쓰는
@@ -2321,11 +2343,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
     attackHold = 0.2;
-    const muzX = px + facing * 9;
     // 총알이 실제로 나가는 자리는 조준 각도 계산(py-10, 위 base)과는
-    // 별개로 본편과 같은 손 높이 공식을 쓴다 — py-10 은 허리 아래라
-    // 총알이 발 근처에서 나가는 것처럼 보였다.
-    const muzY = py - (charDef.hitbox?.h ?? 30) * (charDef.muzzle_ratio ?? 0.63);
+    // 별개다. 캐릭터별 실측 총구 위치(MUZZLE)가 있으면 그걸 쓰고,
+    // 없으면(세이버는 탄이 없어 안 쓰인다) 대략의 손 높이로 대체한다.
+    const muz = MUZZLE[charDef.id];
+    const muzX = px + facing * (muz?.[0] ?? 9);
+    const muzY = py - (muz?.[1] ?? (charDef.hitbox?.h ?? 30) * (charDef.muzzle_ratio ?? 0.63));
 
     fireDrones(base);
 
