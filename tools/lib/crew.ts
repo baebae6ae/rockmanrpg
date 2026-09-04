@@ -167,23 +167,20 @@ export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, 
   const kx = Math.round((hipX + fx) / 2);
   const ky = Math.round((hipY + fy) / 2) + 1;
 
-  f.taper(hipX, ky, hipY, 5 + s, 6 + s, M.cloth);        // 허벅지 갑옷판 — 위가 굵다
-  f.taper(kx, fy + 3, ky, 4 + s, 5 + s, M.cloth);        // 종아리 갑옷판 — 발목이 가늘다
-  // 무릎 — 관절 구체. 각지면 꺾인 막대고, 천 크레이즈 하나로는 부품이
-  // 아니라 얼룩이다. 록맨류는 이 자리가 늘 은색 공이다.
-  f.blob(kx, ky, 2 + s, 2, M.joint);
-  f.set(kx - 1, ky + 1, M.spec);                         // 무릎 하이라이트
-  // 다리 앞면에 빛 한 줄. 이게 없으면 굵기를 아무리 바꿔도 납작한
-  // 색 기둥으로 보인다
-  f.line(hipX - 2, hipY - 1, kx - 2, ky + 1, 1, M.clothH);
+  // 허벅지·종아리를 굵게. 시안은 아래로 갈수록 무거워지는 실루엣이라
+  // 다리가 가늘면 상체만 장갑을 두른 것처럼 위아래가 따로 논다.
+  f.taper(hipX, ky, hipY, 6 + s, 8 + s, M.suit);        // 허벅지 장갑
+  f.taper(kx, fy + 3, ky, 5 + s, 6 + s, M.suit);        // 종아리 장갑
+  f.blob(kx, ky, 3 + s, 2, M.joint);                    // 무릎 관절
+  f.rect(kx - 2 - s, ky + 2, 5 + 2 * s, 1, M.accent);   // 무릎 금색 띠
+  f.set(kx - 1, ky + 1, M.spec);
 
-  // 부츠 — 둥근 앞코. 발등은 갑옷판, 앞코·굽만 금속
-  f.blob(fx, fy + 2, 3 + s, 3, M.joint);
-  f.blob(fx + 1, fy + 1, 3 + s, 2, M.cloth);             // 발등 갑옷판
-  f.rect(fx - 2 - s, fy + 3, 3, 1, M.clothH);            // 발등 윗면
-  f.rect(fx - 3 - s, fy, 6 + 2 * s, 1, M.trim);          // 밑창
-  f.rect(fx - 2 - s, fy + 4, 5 + 2 * s, 1, M.accent);    // 발등 띠
-  f.set(fx + 1, fy + 2, M.spec);                          // 앞코 하이라이트
+  // 부츠 — 발등이 크게 부풀고 밑창이 넓다
+  f.blob(fx, fy + 2, 4 + s, 3, M.suit);
+  f.blob(fx + 1, fy + 1, 4 + s, 2, M.suit);
+  f.rect(fx - 3 - s, fy, 8 + 2 * s, 1, M.metal);        // 밑창
+  f.rect(fx - 3 - s, fy + 4, 7 + 2 * s, 1, M.accent);   // 발등 금색 띠
+  f.set(fx + 1, fy + 2, M.spec);
 }
 
 /**
@@ -193,20 +190,21 @@ export function leg(f: F, s: number, hipX: number, hipY: number, foot: [number, 
 export function arm(f: F, sx: number, sy: number, hx: number, hy: number): void {
   const ex = Math.round((sx + hx) / 2);
   const ey = Math.round((sy + hy) / 2);
-  const dir = sx < 0 ? -1 : 1;                    // 몸 어느 쪽에 붙은 팔인가
-  f.capsule(sx, sy, ex, ey, 2, M.cloth);          // 위팔 갑옷판
-  // 팔꿈치 — 무릎과 같은 관절 구체. 천 주름 하나로는 부품이 아니다
-  f.blob(ex, ey, 2, 2, M.joint);
+  const dir = sx < 0 ? -1 : 1;
+  // 위팔·아래팔을 굵게. 시안의 팔은 몸통에 비해 확실히 두껍고, 그
+  // 두께가 "장갑을 둘렀다"는 인상의 절반을 만든다 — 가늘면 아무리
+  // 색을 맞춰도 옷 입은 사람이다.
+  f.capsule(sx, sy, ex, ey, 3, M.suit);           // 위팔 장갑
+  f.blob(ex, ey, 2, 2, M.joint);                  // 팔꿈치 관절
   f.set(ex - dir, ey + 1, M.spec);
-  f.capsule(ex, ey, hx, hy, 2, M.cloth);          // 아래팔 갑옷판
-  // 팔과 몸통이 같은 판이라 그냥 두면 실루엣이 한 덩어리로 뭉친다.
-  // 안쪽 모서리에 그늘 한 줄을 넣어야 팔이 몸에서 떨어져 보인다.
-  f.line(sx - dir * 2, sy, ex - dir * 2, ey, 1, M.clothS);
-  // 손 — 맨살이 아니라 건틀릿. 얼굴은 사람이어도 팔다리는 갑옷이다
-  f.blob(hx, hy, 2, 2, M.joint);
-  f.set(hx - dir, hy - 1, M.jointB);              // 손등 쪽 그늘
-  f.set(hx + dir, hy + 1, M.spec);                // 손등 하이라이트
-  f.blob(hx, hy + 2, 2, 1, M.accent);             // 손목 밴드
+  f.capsule(ex, ey, hx, hy, 3, M.suit);           // 아래팔 장갑
+  f.line(sx - dir * 2, sy, ex - dir * 2, ey, 1, M.trim);   // 몸통과 끊는 그늘
+  // 건틀릿 — 손목에서 한 번 굵어졌다가 주먹으로 끝난다
+  f.blob(hx, hy + 1, 3, 2, M.suit);
+  f.rect(hx - 2, hy + 2, 5, 1, M.accent);         // 손목 금색 밴드
+  f.blob(hx, hy - 1, 2, 2, M.joint);              // 주먹
+  f.set(hx - dir, hy - 2, M.jointB);
+  f.set(hx + dir, hy, M.spec);
 }
 
 // ---------------------------------------------------------------- 몸통
@@ -315,33 +313,18 @@ export function face(f: F, brow: BrowShape = 'calm'): void {
   // 5→9 로 한 번에 두 칸씩 튀어 각진 모서리가 생겼다. 여섯 줄뿐이라
   // 수식에 맡기는 것보다 한 줄씩 정하는 편이 정확하다.
   //   11 관자놀이 / 11 광대 / 9 눈높이 / 9 / 7 볼 / 5 턱
-  f.rect(-5, 40, 11, 2, M.skin);
-  f.rect(-4, 38, 9, 2, M.skin);
-  f.rect(-3, 37, 7, 1, M.skin);
+  // 얼굴은 헬멧에 뚫린 작은 창이다. 예전엔 폭 11px 짜리 살덩이를
+  // 먼저 그리고 그 위에 헬멧을 얹었더니, 큰 얼굴에 모자를 씌운 꼴이
+  // 되어 "두건 쓴 아이"로 읽혔다 — 시안은 반대다. 헬멧이 머리를 거의
+  // 다 덮고 얼굴은 눈·코가 겨우 들어가는 창이다. 폭을 7로 줄인다.
+  f.rect(-3, 39, 7, 2, M.skin);
+  f.rect(-3, 37, 7, 2, M.skin);
   f.rect(-2, 36, 5, 1, M.skin);
-  f.blob(0, 43, 5, 2, M.skin);                     // 머리통 위 — 머리카락이 덮는다
-  // 볼의 입체는 이제 formTone 자동 음영이 낸다. 예전엔 여기에 각진
-  // 사각 블록으로 그늘·하이라이트를 얹었는데, 그러데이션 위에 각진
-  // 블록이 얹히니 음영이 아니라 얼룩처럼 보였다 — 자동 음영과 손으로
-  // 얹는 블록은 같이 쓰면 안 된다.
-  // --- 눈. 흰자 + 검은자, 두 색뿐이다.
-  //
-  // 실제 X4 스프라이트의 눈 색을 뽑아 보면 순백(240,240,240) 과 거의
-  // 검정(32,40,72) 두 칸이 전부다. 홍채색 같은 건 아예 없다. 눈이
-  // 커 보이는 건 크기 때문이 아니라 이 두 색의 대비 때문이다.
-  //
-  // 앞서 안쪽 한 칸만 홍채색으로 찍어 봤다가 두 가지를 한꺼번에
-  // 틀렸다. 홍채색은 살빛과 명도가 비슷해서 인게임 크기로 줄이면
-  // 눈이 아예 사라졌고, 밝은 칸이 좌우 눈의 서로 반대쪽(둘 다 안쪽)에
-  // 놓여 눈동자가 바깥으로 벌어진 사시로 보였다.
-  //
-  // 그래서 흰자를 두 눈 모두 '같은 쪽'에 둔다 — 그래야 두 눈이 같은
-  // 방향을 본다. 몸이 기우는 쪽(+x)으로 시선이 가도록 흰자를 왼쪽,
-  // 검은자를 오른쪽에 놓았다. 세로 두 줄인 건 순전히 인게임 크기에서
-  // 살아남기 위해서다 — 한 줄이면 축소했을 때 뭉개져 없어진다.
-  for (const ex of [-3, 2] as const) {
-    f.rect(ex, 38, 1, 2, M.white);               // 흰자
-    f.rect(ex + 1, 38, 1, 2, M.eye);             // 검은자
+  f.blob(0, 43, 5, 2, M.skin);                     // 머리통 위 — 헬멧이 덮는다
+  // --- 눈. 흰자 + 검은자, 두 색뿐이다. 얼굴이 좁아진 만큼 안쪽으로 당긴다
+  for (const ex of [-2, 1] as const) {
+    f.rect(ex, 38, 1, 2, M.white);
+    f.rect(ex + 1, 38, 1, 2, M.eye);
   }
 
   drawBrow(f, brow);
@@ -460,35 +443,38 @@ function collar(f: F, mat: M, lit: M): void {
  * 개성은 crest(정수리 장식)가 낸다 — 핀·뿔·안테나·불꽃.
  */
 function helmet(f: F): void {
-  // 돔은 캐릭터 본색(M.suit)이다. 금속색으로 칠했더니 아홉 다 회색
-  // 머리가 됐다 — 시안에서 헬멧은 그 대원의 색 그 자체고, 금속은
-  // 테두리와 귀 파츠 가장자리에만 얇게 들어간다.
-  f.blob(0, HAIRLINE + 3, 7, 2, M.suit);
-  f.blob(0, HAIRLINE + 1, 7, 2, M.suit);
-  // 관자놀이를 감싸고 내려오는 측면 — 아래로 갈수록 좁아져 광대에서 끝난다
-  f.taper(-7, HAIRLINE - 3, HAIRLINE + 2, 2, 3, M.suit);
-  f.taper(6, HAIRLINE - 3, HAIRLINE + 2, 2, 3, M.suit);
-  f.set(-7, HAIRLINE - 2, M.trim);            // 측면 그늘 한 줄
-  f.set(6, HAIRLINE - 2, M.trim);
-  // 바이저 테두리 — 눈 바로 위. 금색 한 줄이 헬멧을 헬멧으로 만든다
+  // 돔은 낮고 넓다. 처음엔 위로 두 겹 쌓아 올렸는데, 거기에 세로
+  // 크레스트가 서니 고깔(마법사 모자) 실루엣이 나왔다 — 시안 헬멧은
+  // 위로 솟지 않는다. 부피는 뒤통수 쪽으로 간다.
+  f.blob(0, HAIRLINE + 2, 8, 2, M.suit);
+  f.blob(-2, HAIRLINE + 3, 6, 1, M.suit);       // 뒤통수 쪽으로 흐르는 볼륨
+  // 볼·턱 가드 — 얼굴 창 좌우를 감싸고 턱선까지 내려온다. 이게 헬멧을
+  // '쓴' 게 아니라 얼굴을 '감싼' 것으로 만든다
+  for (const d of [-1, 1] as const) {
+    f.taper(d * 5, 36, HAIRLINE + 1, 3, 5, M.suit);
+    f.set(d * 5, 37, M.trim);
+  }
+  f.rect(-4, 35, 9, 1, M.trim);                 // 턱 밑을 지나는 가드 아랫면
+  // 바이저 — 눈 위로 앞으로 튀어나온 챙
   f.rect(-6, HAIRLINE + 1, 13, 1, M.metal);
   f.rect(-6, HAIRLINE, 13, 1, M.accent);
-  // 귀 파츠 — 원형 장갑 디스크. 테두리는 금속, 가운데는 속성색으로 빛난다
+  f.set(-7, HAIRLINE, M.accent); f.set(7, HAIRLINE, M.accent);
+  // 귀 파츠 — 원형 장갑 디스크
   for (const x of [-8, 7] as const) {
     f.blob(x, 39, 2, 2, M.metal);
     f.set(x, 39, M.glow);
     f.set(x, 40, M.spec);
   }
-  f.set(-2, HAIRLINE + 4, M.spec);            // 정수리 하이라이트
+  f.set(-2, HAIRLINE + 3, M.spec);
 }
 
 /** 정수리 장식 — 캐릭터를 구분하는 유일한 머리 요소 */
 const crest = {
-  /** 위로 곧게 선 핀 하나 — 기본형 */
+  /** 이마에서 뒤로 낮게 눕는 핀 — 기본형. 세로로 세우면 고깔이 된다 */
   fin(f: F): void {
-    f.taper(0, HAIRLINE + 5, HAIRLINE + 9, 4, 2, M.suit);
-    f.rect(-1, HAIRLINE + 9, 2, 1, M.accent);
-    f.set(-1, HAIRLINE + 7, M.spec);
+    f.line(2, HAIRLINE + 4, -7, HAIRLINE + 6, 2, M.suit);
+    f.line(-1, HAIRLINE + 5, -8, HAIRLINE + 6, 1, M.accent);
+    f.set(0, HAIRLINE + 5, M.spec);
   },
   /** 뒤로 젖혀 흐르는 긴 핀 — 날렵한 유형 */
   swept(f: F): void {
