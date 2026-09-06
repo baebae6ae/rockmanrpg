@@ -80,8 +80,6 @@ function findRawFrames(canvas: HTMLCanvasElement): Box[] {
   // The uploaded character sheets use a common presentation template:
   // labels on the far left, the character animation rows in the middle,
   // a character card on the right, and projectile/effect rows at the bottom.
-  // Restricting the scan to the character panel avoids importing UI text or
-  // the effect library as animation frames.
   const x0 = Math.floor(w * 0.075);
   const x1 = Math.floor(w * 0.79);
   const y1 = Math.floor(h * 0.76);
@@ -152,15 +150,12 @@ function findRawFrames(canvas: HTMLCanvasElement): Box[] {
 
       const bw = bx1 - bx0 + 1;
       const bh = by1 - by0 + 1;
-      // Character frames are large; this rejects labels and tiny UI marks.
       if (area >= 180 && bw >= 12 && bh >= 18 && bw <= 120 && bh <= 120) {
         boxes.push([bx0 + x0, by0, bx1 + x0, by1]);
       }
     }
   }
 
-  // A character can contain separated pixels (weapon tips, hands, etc.).
-  // Merge nearby components before treating them as animation frames.
   let merged = boxes;
   let changed = true;
   while (changed) {
@@ -252,8 +247,6 @@ async function loadRawHordeSheet(id: string): Promise<Sheet> {
       const dw = Math.max(1, Math.round(cw * scale));
       const dh = Math.max(1, Math.round(ch * scale));
 
-      // Every frame gets its own canvas. Reusing one canvas would mutate all
-      // previously-created Texture objects when the next frame is drawn.
       const frameCanvas = document.createElement('canvas');
       frameCanvas.width = 64;
       frameCanvas.height = 64;
@@ -261,11 +254,7 @@ async function loadRawHordeSheet(id: string): Promise<Sheet> {
       if (!fctx) continue;
       fctx.imageSmoothingEnabled = false;
       fctx.clearRect(0, 0, 64, 64);
-      fctx.drawImage(
-        canvas,
-        x0, y0, cw, ch,
-        Math.floor((64 - dw) / 2), 63 - dh, dw, dh,
-      );
+      fctx.drawImage(canvas, x0, y0, cw, ch, Math.floor((64 - dw) / 2), 63 - dh, dw, dh);
 
       const texture = Texture.from(frameCanvas);
       texture.source.scaleMode = 'nearest';
@@ -283,8 +272,6 @@ async function loadRawHordeSheet(id: string): Promise<Sheet> {
     }
   }
 
-  // Keep the existing Horde animation calls safe even if a particular raw
-  // sheet has fewer rows than the template.
   if (!tags.idle) tags.idle = { from: 0, to: 0, duration: 140, loop: true };
   if (!tags.walk) tags.walk = tags.idle;
   if (!tags.run) tags.run = tags.walk;
@@ -309,7 +296,8 @@ export function loadSheet(kind: 'characters' | 'enemies', id: string): Promise<S
   if (hit) return hit;
 
   const found = resolvePaths(kind, id);
-  if (!found && kind === 'characters' && RAW_HORDE_CHARACTER[id]) {
+  const isHorde = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('horde');
+  if (!found && isHorde && kind === 'characters' && RAW_HORDE_CHARACTER[id]) {
     const promise = loadRawHordeSheet(id);
     cache.set(key, promise);
     return promise;
