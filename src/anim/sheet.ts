@@ -39,20 +39,47 @@ const metaFiles = import.meta.glob('/assets/{sprites,generated}/**/*.json', {
   import: 'default',
 }) as Record<string, SheetMeta>;
 
+// import.meta.glob는 정적으로 분석되어 빌드 시 해시된 URL로 치환된다.
+// new URL(파일명, import.meta.url)은 한글/공백이 섞인 파일명에서 정적 분석에
+// 실패해 프로덕션 빌드에서 base 경로 없이 깨진 URL을 만들어냈다.
+const rawUrls = import.meta.glob('/assets/raw/*.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+
+// 업로드된 파일명은 NFD로 정규화돼 있어 소스에 쓴 NFC 문자열과 바이트가
+// 다르다. 조회 전에 양쪽 다 NFC로 맞춘다.
+const rawUrlsByNfc: Record<string, string> = {};
+for (const [path, url] of Object.entries(rawUrls)) {
+  rawUrlsByNfc[path.normalize('NFC')] = url;
+}
+
+function rawUrl(filename: string): string {
+  const url = rawUrlsByNfc[`/assets/raw/${filename}`.normalize('NFC')];
+  if (!url) throw new Error(`raw 에셋을 찾지 못했다: ${filename}`);
+  return url;
+}
+
 /**
- * The upload commit added these nine files in the same order as the Horde
- * roster. IDs remain unchanged so all existing combat data stays intact.
+ * The upload order does NOT match the Horde roster order — the nine sheets
+ * were generated across two ChatGPT sessions in no particular sequence, so
+ * each file was opened and matched to its roster slot by the character name
+ * printed on its info card (RIVET/CHIME/CINDER/PRISM/STING/LUMEN/CLEAVER/
+ * PIKE/VYRE) or, for the four cards without one, by its weapon art matching
+ * that character's data/characters/<id>.json 설명 (e.g. PIKE's lancer spear
+ * "꿰뚫어 여럿을 한 줄로 눕힌다" → harpoon).
  */
 const RAW_HORDE_CHARACTER: Record<string, string> = {
-  nail: new URL('../../assets/raw/ChatGPT Image 2026년 9월 5일 오후 12_08_50.png', import.meta.url).href,
-  bell: new URL('../../assets/raw/ChatGPT Image 2026년 9월 5일 오후 12_21_52.png', import.meta.url).href,
-  ember: new URL('../../assets/raw/ChatGPT Image 2026년 9월 5일 오후 12_25_01.png', import.meta.url).href,
-  mirror: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 11_18_14.png', import.meta.url).href,
-  needle: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 12_04_37.png', import.meta.url).href,
-  firefly: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 12_11_24.png', import.meta.url).href,
-  axe: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 12_12_53.png', import.meta.url).href,
-  harpoon: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 12_13_13.png', import.meta.url).href,
-  chain: new URL('../../assets/raw/ChatGPT Image 2026년 9월 6일 오후 12_13_52.png', import.meta.url).href,
+  nail: rawUrl('ChatGPT Image 2026년 9월 5일 오후 12_08_50.png'), // RIVET
+  bell: rawUrl('ChatGPT Image 2026년 9월 5일 오후 12_21_52.png'), // CHIME
+  ember: rawUrl('ChatGPT Image 2026년 9월 5일 오후 12_25_01.png'), // CINDER
+  mirror: rawUrl('ChatGPT Image 2026년 9월 6일 오후 12_13_13.png'), // PRISM
+  needle: rawUrl('ChatGPT Image 2026년 9월 6일 오후 12_12_53.png'), // STING
+  firefly: rawUrl('ChatGPT Image 2026년 9월 6일 오후 12_04_37.png'), // LUMEN
+  axe: rawUrl('ChatGPT Image 2026년 9월 6일 오후 12_11_24.png'), // CLEAVER
+  harpoon: rawUrl('ChatGPT Image 2026년 9월 6일 오후 12_13_52.png'), // PIKE
+  chain: rawUrl('ChatGPT Image 2026년 9월 6일 오후 11_18_14.png'), // VYRE
 };
 
 function resolvePaths(kind: 'characters' | 'enemies', id: string) {
@@ -208,6 +235,33 @@ function groupRows(frames: Box[]): Box[][] {
   return rows.sort((a, b) => ((a[0][1] + a[0][3]) / 2) - ((b[0][1] + b[0][3]) / 2));
 }
 
+/**
+ * The nine uploaded sheets don't share one row layout — each ChatGPT session
+ * used a slightly different template (RIVET/CHIME/CINDER/PRISM have no
+ * separate RUN row and one ATTACK row; STING splits ATTACK in two; VYRE adds
+ * a RUN row; LUMEN/CLEAVER/PIKE add a third attack row on top of that). A
+ * single fixed row order would misassign every row after IDLE for anything
+ * but the 10-row layout, so pick the label list by the row count actually
+ * detected in that sheet instead of assuming one universal order.
+ */
+function rowNamesForCount(n: number): string[] {
+  switch (n) {
+    case 7: return ['idle', 'walk', 'jump_rise', 'jump_fall', 'dash', 'attack_main', 'hurt'];
+    case 8: return ['idle', 'walk', 'jump_rise', 'jump_fall', 'dash', 'attack_main', 'attack_air', 'hurt'];
+    case 9: return ['idle', 'walk', 'run', 'jump_rise', 'jump_fall', 'dash', 'attack_main', 'attack_air', 'hurt'];
+    case 10: return ['idle', 'walk', 'run', 'jump_rise', 'jump_fall', 'dash', 'attack_main', 'attack_air', 'charge_loop', 'hurt'];
+    default: {
+      // 못 보던 행 수 — idle을 맨 앞, hurt를 맨 뒤로 고정하고 나머지는
+      // run/attack_main으로 채워 최소한 전투가 깨지지 않게 한다.
+      const names = new Array<string>(n).fill('run');
+      names[0] = 'idle';
+      names[n - 1] = 'hurt';
+      if (n > 2) names[Math.floor(n / 2)] = 'attack_main';
+      return names;
+    }
+  }
+}
+
 async function loadRawHordeSheet(id: string): Promise<Sheet> {
   const url = RAW_HORDE_CHARACTER[id];
   if (!url) throw new Error(`Horde raw 스프라이트 매핑이 없다: ${id}`);
@@ -231,10 +285,7 @@ async function loadRawHordeSheet(id: string): Promise<Sheet> {
 
   const textures: Texture[] = [];
   const tags: Record<string, TagMeta> = {};
-  const rowNames = [
-    'idle', 'walk', 'run', 'jump_rise', 'jump_fall',
-    'dash', 'attack_main', 'attack_air', 'charge_loop', 'hurt',
-  ];
+  const rowNames = rowNamesForCount(rows.length);
 
   for (let ri = 0; ri < rows.length; ri++) {
     const row = rows[ri];
