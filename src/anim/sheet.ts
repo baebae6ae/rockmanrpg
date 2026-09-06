@@ -295,13 +295,17 @@ export function loadSheet(kind: 'characters' | 'enemies', id: string): Promise<S
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const found = resolvePaths(kind, id);
   const isHorde = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('horde');
-  if (!found && isHorde && kind === 'characters' && RAW_HORDE_CHARACTER[id]) {
+
+  // Horde must use the newly uploaded character art even when an older
+  // generated/sprite sheet with the same character id also exists.
+  if (isHorde && kind === 'characters' && RAW_HORDE_CHARACTER[id]) {
     const promise = loadRawHordeSheet(id);
     cache.set(key, promise);
     return promise;
   }
+
+  const found = resolvePaths(kind, id);
 
   if (!found) {
     return Promise.reject(
