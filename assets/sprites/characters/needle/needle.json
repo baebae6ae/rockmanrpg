@@ -1,9 +1,9 @@
 {
   "canvas": {
     "w": 150,
-    "h": 136
+    "h": 109
   },
-  "columns": 23,
+  "columns": 26,
   "tags": {
     "idle": {
       "from": 0,
@@ -41,15 +41,21 @@
       "duration": 60,
       "loop": false
     },
-    "hurt": {
+    "attack_air": {
       "from": 21,
-      "to": 22,
+      "to": 23,
+      "duration": 60,
+      "loop": false
+    },
+    "hurt": {
+      "from": 24,
+      "to": 25,
       "duration": 60,
       "loop": false
     },
     "death": {
-      "from": 22,
-      "to": 22,
+      "from": 25,
+      "to": 25,
       "duration": 200,
       "loop": false
     },
