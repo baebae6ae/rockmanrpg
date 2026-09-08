@@ -3,35 +3,35 @@
     "w": 82,
     "h": 67
   },
-  "columns": 22,
+  "columns": 12,
   "tags": {
     "idle": {
       "from": 0,
-      "to": 8,
-      "duration": 110,
+      "to": 3,
+      "duration": 130,
       "loop": true
     },
     "walk": {
-      "from": 9,
-      "to": 17,
+      "from": 4,
+      "to": 7,
       "duration": 70,
       "loop": true
     },
     "dash": {
-      "from": 18,
-      "to": 18,
+      "from": 8,
+      "to": 8,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 19,
-      "to": 21,
+      "from": 9,
+      "to": 11,
       "duration": 90,
       "loop": false
     },
     "run": {
-      "from": 9,
-      "to": 17,
+      "from": 4,
+      "to": 7,
       "duration": 70,
       "loop": true
     },
