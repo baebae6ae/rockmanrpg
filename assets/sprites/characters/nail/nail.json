@@ -3,7 +3,7 @@
     "w": 83,
     "h": 70
   },
-  "columns": 20,
+  "columns": 23,
   "tags": {
     "idle": {
       "from": 0,
@@ -13,25 +13,25 @@
     },
     "walk": {
       "from": 8,
-      "to": 15,
+      "to": 18,
       "duration": 70,
       "loop": true
     },
     "dash": {
-      "from": 16,
-      "to": 16,
+      "from": 19,
+      "to": 19,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 17,
-      "to": 19,
+      "from": 20,
+      "to": 22,
       "duration": 90,
       "loop": false
     },
     "run": {
       "from": 8,
-      "to": 15,
+      "to": 18,
       "duration": 70,
       "loop": true
     },
