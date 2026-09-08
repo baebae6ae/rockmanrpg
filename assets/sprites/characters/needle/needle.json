@@ -1,9 +1,9 @@
 {
   "canvas": {
-    "w": 112,
-    "h": 69
+    "w": 84,
+    "h": 66
   },
-  "columns": 11,
+  "columns": 16,
   "tags": {
     "idle": {
       "from": 0,
@@ -13,25 +13,25 @@
     },
     "walk": {
       "from": 4,
-      "to": 7,
+      "to": 10,
       "duration": 70,
       "loop": true
     },
     "dash": {
-      "from": 8,
-      "to": 8,
+      "from": 11,
+      "to": 11,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 9,
-      "to": 10,
+      "from": 12,
+      "to": 15,
       "duration": 90,
       "loop": false
     },
     "run": {
       "from": 4,
-      "to": 7,
+      "to": 10,
       "duration": 70,
       "loop": true
     },
