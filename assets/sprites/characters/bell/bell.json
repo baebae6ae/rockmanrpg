@@ -1,9 +1,9 @@
 {
   "canvas": {
-    "w": 143,
+    "w": 78,
     "h": 66
   },
-  "columns": 12,
+  "columns": 14,
   "tags": {
     "idle": {
       "from": 0,
@@ -25,7 +25,7 @@
     },
     "attack_main": {
       "from": 9,
-      "to": 11,
+      "to": 13,
       "duration": 90,
       "loop": false
     },

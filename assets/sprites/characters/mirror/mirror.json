@@ -3,7 +3,7 @@
     "w": 96,
     "h": 66
   },
-  "columns": 12,
+  "columns": 13,
   "tags": {
     "idle": {
       "from": 0,
@@ -25,7 +25,7 @@
     },
     "attack_main": {
       "from": 9,
-      "to": 11,
+      "to": 12,
       "duration": 90,
       "loop": false
     },
