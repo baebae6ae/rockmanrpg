@@ -280,6 +280,8 @@ interface Foe {
   /** 돌진할 때 고정해 두는 방향 */
   ax: number;
   ay: number;
+  /** 빙결 — 0보다 크면 이 시간만큼 느려진다 (얼음 무기가 건다) */
+  slow: number;
 }
 
 /** 적이 쏘는 탄 — 플레이어만 맞힌다 */
@@ -321,7 +323,7 @@ interface Boss {
 }
 
 /** 궤적선(버스터) / 회전 날(메탈 블레이드) / 구체(토네이도·미사일·폭탄) */
-type Shape = 'tracer' | 'blade' | 'orb';
+type Shape = 'tracer' | 'blade' | 'orb' | 'shard';
 
 interface Bullet {
   x: number;
@@ -342,6 +344,8 @@ interface Bullet {
   angle: number;
   /** 0보다 크면 매 프레임 가장 가까운 적 쪽으로 이 각속도만큼 튼다 */
   homing: number;
+  /** 0보다 크면 맞은 적에게 이 시간만큼 빙결을 건다 */
+  slow: number;
   /** 0보다 크면 사라질 때 이 반경으로 터진다 */
   boomR: number;
   boomDmg: number;
@@ -1652,7 +1656,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     foes.push({
       mode: 0, timer: Math.random() * 1.2, ax: 0, ay: 0,
-      kind, x, y, kx: 0, ky: 0,
+      kind, x, y, kx: 0, ky: 0, slow: 0,
       hp: def.hp * grow * (elite ? 5.5 : 1),
       def, scale, elite, flash: 0, view, alive: true,
     });
@@ -1734,6 +1738,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       back: 0,
       boomerang: false,
       elem: w.elem,
+      slow: 0,
     });
   }
 
@@ -1743,7 +1748,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bullets.push({
       life: 1, pierce: 0, lastHit: null, alive: true,
       shape: 'orb', color: 0xffffff, r: 4, spin: 0, angle: 0,
-      homing: 0, boomR: 0, boomDmg: 0, back: 0, boomerang: false, elem: 'none',
+      homing: 0, boomR: 0, boomDmg: 0, back: 0, boomerang: false, elem: 'none', slow: 0,
       ...b,
     } as Bullet);
   }
@@ -2653,120 +2658,189 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // ---- 속성별 두 번째 선택지.
     // 구간마다 화면을 지배하는 속성이 바뀌는데(waveWeights) 정작 뽑기
     // 풀에 그 속성 무기가 없으면 예고를 보고도 할 수 있는 게 없다.
-    // 특히 물은 하나도 없어서 불 구간에 아예 답이 없었다.
-    // 같은 속성이라도 동작이 겹치면 고를 이유가 없으니 전부 다르게 둔다.
+    //
+    // 여기서 중요한 건 속성을 채우는 것만이 아니다. "가까운 적한테 탄을
+    // 날린다" 를 색만 바꿔 다섯 개 더 놓으면 고를 이유가 없는 카드가
+    // 다섯 장 느는 것뿐이다. 그래서 전부 **쓰는 법이 다른** 축으로 잡았다.
+    //   범람   — 바닥에 깔아 두고 적을 끌고 다닌다 (장판)
+    //   물대포 — 밀어내서 거리를 만든다 (넉백)
+    //   화염방사 — 계속 닿아 있어야 한다 (지속 부채꼴)
+    //   고드름 — 속도를 깎는다 (빙결)
+    //   전격지대 — 붙은 것을 통째로 떼어낸다 (자기중심 폭발 + 밀치기)
     {
-      id: 'bubble_burst',
+      // 깔아 두는 무기. 적이 이 위를 지나가게 움직이는 게 사용법이다.
+      id: 'flood',
       elem: 'aqua',
-      name: '버블 버스트',
+      name: '범람',
+      color: 0x4fb8ff,
+      max: 5,
+      desc: (lv) => (lv === 0
+        ? '바닥에 남아 계속 적시는 물웅덩이'
+        : `장판 ${2 + lv + 1}초 · 초당 ${14 + 7 * (lv + 1)}`),
+      interval: (lv) => 2.4 - 0.18 * lv,
+      fire: (lv) => {
+        // 적이 제일 몰린 쪽에 깐다 — 가까운 적 하나만 보면 엉뚱한 데 깔린다
+        const t = nearestFoe(px, py);
+        const cx = t ? t.x : px + facing * 40;
+        const cy = t ? t.y - 8 : py - 10;
+        if (zones.length >= MAX_ZONES) zones.shift();
+        const life = 2 + lv;
+        zones.push({
+          x: cx, y: cy, r: 30 + 5 * lv, life, max: life,
+          dps: 14 + 7 * lv, elem: 'aqua', color: 0x4fb8ff, slow: 0,
+        });
+        for (let i = 0; i < 3; i++) {
+          rings.push({ x: cx, y: cy, r: (30 + 5 * lv) * (0.4 + i * 0.3), life: 0.45, max: 0.45, color: 0x8fd8ff });
+        }
+        sfx.hit();
+      },
+    },
+    {
+      // 밀어내는 무기. 딜보다 "포위를 뜯어내는" 쪽에 값어치가 있다.
+      id: 'water_cannon',
+      elem: 'aqua',
+      name: '물대포',
       color: 0x6ec8ff,
       max: 5,
-      desc: (lv) => (lv === 0 ? '퍼져 나가며 터지는 물방울' : `${3 + lv + 1}발 · 폭발 ${10 + 6 * (lv + 1)}`),
-      interval: (lv) => 1.15 - 0.1 * lv,
+      desc: (lv) => (lv === 0
+        ? '앞을 쓸며 밀어내는 물줄기'
+        : `위력 ${10 + 6 * (lv + 1)} · 밀치기 ${190 + 40 * (lv + 1)}`),
+      interval: (lv) => 1.05 - 0.09 * lv,
       fire: (lv) => {
-        const n = 3 + lv;
         const t = nearestFoe(px, py);
-        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
-        for (let i = 0; i < n; i++) {
-          const a = base + (i - (n - 1) / 2) * 0.26;
-          addBullet({
-            x: px, y: py - 10,
-            vx: Math.cos(a) * 120, vy: Math.sin(a) * 120 * 0.8,
-            life: 1.4, dmg: 0, pierce: 0,
-            shape: 'orb', color: 0x6ec8ff, r: 5, spin: 3,
-            boomR: 16 + 4 * lv, boomDmg: 10 + 6 * lv,
-            elem: 'aqua',
-          });
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const reach = 86 + 10 * lv;
+        const dmg = 10 + 6 * lv;
+        const push = 190 + 40 * lv;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          const dx = f.x - px;
+          const dy = (f.y - 8 - (py - 10)) / 0.78;
+          const along = dx * ca + dy * sa;
+          const perp = Math.abs(-dx * sa + dy * ca);
+          // 앞쪽 부채꼴 — 멀수록 넓어진다
+          if (along < 0 || along > reach || perp > 16 + along * 0.42) continue;
+          hurtFoe(f, dmg, 'aqua');
+          f.kx += ca * push;
+          f.ky += sa * push * 0.78;
         }
+        if (boss) {
+          const dx = boss.x - px;
+          const dy = (boss.y - 14 - (py - 10)) / 0.78;
+          const along = dx * ca + dy * sa;
+          const perp = Math.abs(-dx * sa + dy * ca);
+          if (along > -10 && along < reach + 16 && perp < 30 + along * 0.42) hurtBoss(dmg, 'aqua');
+        }
+        jets.push({ x: px, y: py - 10, angle: a, reach, life: 0.22, max: 0.22, color: 0x6ec8ff });
         sfx.shot('charge');
       },
     },
     {
-      id: 'torrent',
-      elem: 'aqua',
-      name: '격류',
-      color: 0x4fd6e8,
-      max: 5,
-      desc: (lv) => (lv === 0 ? '꿰뚫고 지나가는 물줄기' : `위력 ${9 + 5 * (lv + 1)} · 관통 ${3 + lv + 1}`),
-      interval: (lv) => 0.42 - 0.04 * lv,
-      fire: (lv) => {
-        const t = nearestFoe(px, py);
-        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
-        addBullet({
-          x: px, y: py - 10,
-          vx: Math.cos(a) * 330, vy: Math.sin(a) * 330 * 0.8,
-          life: 0.8, dmg: 9 + 5 * lv, pierce: 3 + lv,
-          // tracer 는 플레이어 기본탄 전용 모양이라 특수무기 배치에서
-          // 안 그려진다. 빠른 orb 는 꼬리선이 같이 그려져 물줄기로 보인다.
-          shape: 'orb', color: 0x4fd6e8, r: 6,
-          elem: 'aqua',
-        });
-        sfx.shot('rapid');
-      },
-    },
-    {
-      // 사거리가 짧은 대신 간격이 아주 촘촘하다 — 붙어서 녹이는 무기다.
-      // 초당 열 번 가까이 나가므로 여기서는 소리를 내지 않는다.
+      // 계속 닿아 있어야 값이 나오는 무기 — 붙어서 태우는 쪽.
+      // 한 번에 큰 걸 넣는 대신 매 프레임 조금씩 넣는다.
       id: 'flame_jet',
       elem: 'fire',
       name: '화염 방사',
       color: 0xff9a4c,
       max: 5,
-      desc: (lv) => (lv === 0 ? '가까이 퍼붓는 불길' : `위력 ${5 + 3 * (lv + 1)} · 사거리 ${60 + 8 * (lv + 1)}`),
-      interval: (lv) => 0.16 - 0.012 * lv,
+      desc: (lv) => (lv === 0
+        ? '가까이 붙어 계속 태우는 불길'
+        : `초당 ${52 + 26 * (lv + 1)} · 사거리 ${64 + 9 * (lv + 1)}`),
+      // 짧게 잡아 사실상 상시 발동이다 — 부채꼴이 계속 떠 있게 한다
+      interval: () => 0.06,
       fire: (lv) => {
         const t = nearestFoe(px, py);
-        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
-        const a = base + (Math.random() - 0.5) * 0.5;
-        const reach = 60 + 8 * lv;
-        addBullet({
-          x: px, y: py - 10,
-          vx: Math.cos(a) * reach * 2.6, vy: Math.sin(a) * reach * 2.6 * 0.8,
-          life: 0.38, dmg: 5 + 3 * lv, pierce: 2,
-          shape: 'orb', color: 0xff9a4c, r: 7, spin: 5,
-          elem: 'fire',
-        });
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const reach = 64 + 9 * lv;
+        const dps = 52 + 26 * lv;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        for (let j = foes.length - 1; j >= 0; j--) {
+          const f = foes[j];
+          const dx = f.x - px;
+          const dy = (f.y - 8 - (py - 10)) / 0.78;
+          const along = dx * ca + dy * sa;
+          const perp = Math.abs(-dx * sa + dy * ca);
+          if (along < 0 || along > reach || perp > 12 + along * 0.5) continue;
+          hurtFoe(f, dps * 0.06, 'fire');
+        }
+        if (boss) {
+          const dx = boss.x - px;
+          const dy = (boss.y - 14 - (py - 10)) / 0.78;
+          const along = dx * ca + dy * sa;
+          const perp = Math.abs(-dx * sa + dy * ca);
+          if (along > -10 && along < reach + 16 && perp < 26 + along * 0.5) hurtBoss(dps * 0.06, 'fire');
+        }
+        flames.length = 0;
+        flames.push({ x: px, y: py - 10, angle: a, reach, life: 0.1, max: 0.1, color: 0xff9a4c });
       },
     },
     {
+      // 속도를 깎는 무기. 몰이사냥에서 느려지는 건 순수 피해와 값어치가
+      // 완전히 다르다 — 포위가 늦어지는 만큼 판 전체가 편해진다.
       id: 'icicle',
       elem: 'ice',
       name: '고드름',
       color: 0xdcf4ff,
       max: 5,
-      desc: (lv) => (lv === 0 ? '쏟아지는 얼음 조각' : `${3 + lv + 1}발 · 위력 ${8 + 5 * (lv + 1)}`),
-      interval: (lv) => 0.85 - 0.08 * lv,
+      desc: (lv) => (lv === 0
+        ? '맞은 적을 얼려 늦추는 얼음 조각'
+        : `${2 + lv + 1}발 · 위력 ${9 + 6 * (lv + 1)} · 빙결 ${(0.8 + 0.2 * (lv + 1)).toFixed(1)}초`),
+      interval: (lv) => 1.0 - 0.09 * lv,
       fire: (lv) => {
-        const n = 3 + lv;
+        const n = 2 + lv;
         const t = nearestFoe(px, py);
         const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
         for (let i = 0; i < n; i++) {
-          const a = base + (Math.random() - 0.5) * 0.34;
+          const a = base + (i - (n - 1) / 2) * 0.16;
           addBullet({
             x: px, y: py - 10,
-            vx: Math.cos(a) * 300, vy: Math.sin(a) * 300 * 0.8,
-            life: 0.9, dmg: 8 + 5 * lv, pierce: 1,
-            shape: 'blade', color: 0xdcf4ff, r: 4, spin: 12,
-            elem: 'ice',
+            vx: Math.cos(a) * 320, vy: Math.sin(a) * 320 * 0.8,
+            life: 0.85, dmg: 9 + 6 * lv, pierce: 1,
+            shape: 'shard', color: 0xdcf4ff, r: 5, spin: 0,
+            angle: a, elem: 'ice', slow: 0.8 + 0.2 * lv,
           });
         }
         sfx.shot('rapid');
       },
     },
     {
-      // 트라이어드 썬더가 '멀리 있는 놈을 골라 때리는' 쪽이라, 이쪽은
-      // 반대로 붙은 놈을 떼어내는 자기 중심 방전으로 잡는다.
+      // 붙은 것을 통째로 떼어낸다 — 트라이어드 썬더가 '멀리 있는 놈을
+      // 골라 때리는' 쪽이라 이쪽은 정반대 자리를 맡는다.
       id: 'shock_field',
       elem: 'elec',
       name: '전격 지대',
       color: 0xffe86b,
       max: 5,
-      desc: (lv) => (lv === 0 ? '몸에서 터지는 방전' : `반경 ${34 + 7 * (lv + 1)} · 위력 ${14 + 9 * (lv + 1)}`),
-      interval: (lv) => 1.6 - 0.14 * lv,
+      desc: (lv) => (lv === 0
+        ? '몸에서 터져 주위를 밀어내는 방전'
+        : `반경 ${36 + 8 * (lv + 1)} · 위력 ${16 + 11 * (lv + 1)}`),
+      interval: (lv) => 1.7 - 0.15 * lv,
       fire: (lv) => {
-        const rr = 34 + 7 * lv;
-        rings.push({ x: px, y: py - 10, r: rr, life: 0.22, max: 0.22, color: 0xffe86b });
-        blast(px, py - 10, rr, 14 + 9 * lv, 0xffe86b, 'elec');
+        const rr = 36 + 8 * lv;
+        const dmg = 16 + 11 * lv;
+        blast(px, py - 10, rr, dmg, 0xffe86b, 'elec');
+        // 사방으로 뻗는 갈래 — 원 하나만 그리면 '전기' 로 안 읽힌다
+        const spokes = 7 + lv;
+        for (let i = 0; i < spokes; i++) {
+          const a = (i / spokes) * Math.PI * 2 + Math.random() * 0.3;
+          arcs.push({
+            x: px, y: py - 10, angle: a, r: rr * (0.8 + Math.random() * 0.3),
+            span: 0.1, life: 0.18, max: 0.18, color: 0xffe86b,
+          });
+        }
+        rings.push({ x: px, y: py - 10, r: rr, life: 0.28, max: 0.28, color: 0xfff2c0 });
+        // 붙어 있던 적을 밀어낸다
+        for (const f of foes) {
+          const dx = f.x - px;
+          const dy = (f.y - 8 - (py - 10)) / 0.78;
+          const d = Math.hypot(dx, dy) || 1;
+          if (d > rr) continue;
+          f.kx += (dx / d) * 150;
+          f.ky += (dy / d) * 150 * 0.78;
+        }
         sfx.hit();
       },
     },
@@ -3295,6 +3369,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 차지 킥이 남긴 불길 */
   const kickTrail: { x: number; y: number; life: number; r: number; dmg: number }[] = [];
 
+  /**
+   * 바닥에 남아 계속 때리는 장판. 날아가서 맞히는 탄과는 쓰는 법이
+   * 아예 다르다 — 깔아 두고 적을 그 위로 끌고 다니게 된다.
+   * (차지 킥의 kickTrail 이 이미 같은 꼴이지만 그쪽은 대시 전용이라
+   *  수치가 고정이다. 무기가 쓸 수 있게 일반화해 둔다.)
+   */
+  interface Zone {
+    x: number; y: number; r: number;
+    life: number; max: number;
+    /** 초당 피해 */
+    dps: number;
+    elem: Element;
+    color: number;
+    /** 0보다 크면 장판 안의 적에게 이만큼 빙결을 건다 */
+    slow: number;
+  }
+  const zones: Zone[] = [];
+  const MAX_ZONES = 24;
+
+  /** 물대포가 뿜은 부채꼴 — 잠깐 보이고 사라진다 */
+  interface Jet { x: number; y: number; angle: number; reach: number; life: number; max: number; color: number }
+  const jets: Jet[] = [];
+  /** 화염 방사는 상시 켜져 있는 부채꼴이라 한 장만 들고 매 프레임 갱신한다 */
+  const flames: Jet[] = [];
+
   // --- 보스 무기용 상태
   /** 카멜레온 스팅 — 남은 무적 시간 */
   let stingT = 0;
@@ -3520,6 +3619,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
+    // 장판 — 깔린 자리에 들어온 적을 계속 때린다
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const p = zones[i];
+      p.life -= dt;
+      if (p.life <= 0) { zones.splice(i, 1); continue; }
+      for (let j = foes.length - 1; j >= 0; j--) {
+        const f = foes[j];
+        const dx = f.x - p.x;
+        const dy = (f.y - 8 - p.y) / 0.78;
+        if (dx * dx + dy * dy > p.r * p.r) continue;
+        hurtFoe(f, p.dps * dt, p.elem);
+        if (p.slow > 0) f.slow = Math.max(f.slow, p.slow);
+      }
+      if (boss) {
+        const bx = boss.x - p.x;
+        const by = (boss.y - 14 - p.y) / 0.78;
+        if (bx * bx + by * by <= (p.r + 16) * (p.r + 16)) hurtBoss(p.dps * dt, p.elem);
+      }
+    }
+
     // 차지 킥 자국 — 남아서 계속 태운다
     for (let i = kickTrail.length - 1; i >= 0; i--) {
       const k = kickTrail[i];
@@ -3740,6 +3859,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     rings.length = 0;
     bolts.length = 0;
     arcs.length = 0;
+    // 장판·부채꼴·대시 자국도 판에 딸린 것이다 — 안 비우면 새 판이
+    // 지난 판의 물웅덩이 위에서 시작한다 (kickTrail 이 원래 그랬다)
+    zones.length = 0;
+    jets.length = 0;
+    flames.length = 0;
+    kickTrail.length = 0;
     hostiles.length = 0;
     heals.length = 0;
     if (boss) { foeLayer.removeChild(boss.view); boss = null; }
@@ -4663,6 +4788,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 포위가 끝나는 데 20초도 안 걸린다.
       const ramp = Math.min(1.2, 0.78 + time * 0.0045);
       let sp = f.def.speed * (f.elite ? 0.8 : 1) * ramp;
+      // 빙결 — 얼음 무기에 맞으면 한동안 느려진다. 몰이사냥에서 속도를
+      // 깎는 건 순수 피해와 완전히 다른 값어치를 가진다(포위가 늦어진다).
+      if (f.slow > 0) {
+        f.slow -= dt;
+        sp *= f.elite ? 0.62 : 0.42;
+      }
       let toward = 1;
       /** 돌진 중이면 목표를 계속 쫓지 않고 고정 방향으로만 간다 */
       let locked = false;
@@ -4713,7 +4844,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       if (f.flash > 0) {
         f.flash -= dt;
-        if (f.flash <= 0) f.view.tint = f.elite ? 0xffb0b0 : 0xffffff;
+        // 피격 섬광이 끝나면 평소 색으로 돌아간다 — 다만 얼어 있는 동안은
+        // 푸르게 남겨 둬야 "왜 저놈만 느리지" 가 눈으로 읽힌다.
+        if (f.flash <= 0) f.view.tint = f.slow > 0 ? 0x8fd0ff : f.elite ? 0xffb0b0 : 0xffffff;
+      } else if (f.slow > 0) {
+        f.view.tint = 0x8fd0ff;
+      } else if (f.view.tint === 0x8fd0ff) {
+        f.view.tint = f.elite ? 0xffb0b0 : 0xffffff;
       }
 
       f.view.scale.x = dx < 0 ? -f.scale : f.scale;
@@ -4875,6 +5012,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             sfx.hit();
             b.lastHit = f;
             hurtFoe(f, b.dmg, b.elem, b.x, b.y);
+            if (b.slow > 0) f.slow = Math.max(f.slow, b.slow);
 
             if (b.pierce > 0) b.pierce--;
             else bullets.splice(i, 1);
@@ -5192,6 +5330,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // 세이버 참격 — 부채꼴이 확 퍼졌다 사라진다
+    // 뿜어낸 부채꼴 수명. 화염 방사는 쏘는 동안 매번 새로 밀어넣으므로
+    // 발사가 멎으면 여기서 저절로 꺼진다.
+    for (let i = jets.length - 1; i >= 0; i--) {
+      jets[i].life -= dt;
+      if (jets[i].life <= 0) jets.splice(i, 1);
+    }
+    for (let i = flames.length - 1; i >= 0; i--) {
+      flames[i].life -= dt;
+      if (flames[i].life <= 0) flames.splice(i, 1);
+    }
     for (let i = arcs.length - 1; i >= 0; i--) {
       const ac = arcs[i];
       ac.life -= dt;
@@ -5258,6 +5406,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             .lineTo(b.x - s, b.y + c)
             .lineTo(b.x - c, b.y - s)
             .lineTo(b.x + s, b.y - c)
+            .closePath();
+        } else if (b.shape === 'shard') {
+          // 고드름 — 날아가는 방향으로 길게 뻗은 침. 동그라미로 그리면
+          // 얼음 조각이 아니라 그냥 파란 점이 된다.
+          const c = Math.cos(b.angle);
+          const s = Math.sin(b.angle) * 0.8;
+          const len = b.r * 2.6;
+          const wid = b.r * 0.62;
+          specialG.moveTo(b.x + c * len, b.y + s * len)
+            .lineTo(b.x - s * wid, b.y + c * wid)
+            .lineTo(b.x - c * len * 0.42, b.y - s * len * 0.42)
+            .lineTo(b.x + s * wid, b.y - c * wid)
             .closePath();
         } else {
           specialG.circle(b.x, b.y, b.r);
@@ -5339,6 +5499,69 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // 차지 킥 — 겹겹이 흔들리는 불길 + 위로 오르는 불티
+    // 장판 — 가라앉은 물웅덩이. 단색 원 하나면 '판때기' 로 보이니
+    // 가장자리 물결 + 안쪽 일렁임 + 떠오르는 물방울로 겹쳐 쌓는다.
+    for (const z of zones) {
+      if (!onScreen(z.x, z.y)) continue;
+      const k = z.life / z.max;
+      const a = Math.min(1, k * 2.2);
+      const wob = 1 + Math.sin(animClock * 4 + z.x * 0.05) * 0.03;
+      specialG.ellipse(z.x, z.y, z.r * wob, z.r * 0.78 * wob)
+        .fill({ color: z.color, alpha: a * 0.2 });
+      specialG.ellipse(z.x, z.y, z.r * 0.72 * wob, z.r * 0.56 * wob)
+        .fill({ color: z.color, alpha: a * 0.22 });
+      // 테두리 물결 — 두 겹을 위상만 어긋나게 돌린다
+      for (let i = 0; i < 2; i++) {
+        const rr = z.r * (0.88 + i * 0.1) * (1 + Math.sin(animClock * 3.2 + i * 2 + z.y * 0.04) * 0.035);
+        specialG.ellipse(z.x, z.y, rr, rr * 0.78)
+          .stroke({ color: 0xbfe8ff, width: 1, alpha: a * (0.5 - i * 0.18) });
+      }
+      // 떠오르는 물방울
+      for (let i = 0; i < 4; i++) {
+        const ph = (animClock * 0.9 + i * 0.25 + z.x * 0.01) % 1;
+        const bx = z.x + Math.sin(i * 2.2 + z.y * 0.1) * z.r * 0.55;
+        const by = z.y + z.r * 0.36 - ph * z.r * 0.7;
+        specialG.circle(bx, by, 1.4 * (1 - ph) + 0.6)
+          .fill({ color: 0xdff4ff, alpha: a * 0.5 * (1 - ph) });
+      }
+    }
+
+    // 물대포 / 화염 방사 — 뿜어져 나가는 부채꼴.
+    // 삼각형 하나로 그리면 '종이 조각' 이라, 폭이 다른 세 겹을 겹치고
+    // 끝쪽에 알갱이를 뿌려서 뿜어나가는 덩어리로 만든다.
+    for (const j of [...jets, ...flames]) {
+      if (!onScreen(j.x, j.y)) continue;
+      const k = Math.max(0, j.life / j.max);
+      const ca = Math.cos(j.angle);
+      const sa = Math.sin(j.angle);
+      const layers: [number, number, number][] = [
+        [1.0, 0.52, 0.22],
+        [0.82, 0.34, 0.34],
+        [0.6, 0.2, 0.5],
+      ];
+      for (const [lr, spread, alpha] of layers) {
+        const reach = j.reach * lr * (0.9 + k * 0.1);
+        const halfW = 12 + reach * spread;
+        const tipX = j.x + ca * reach;
+        const tipY = j.y + sa * reach * 0.78;
+        // 끝이 벌어진 사다리꼴
+        specialG.moveTo(j.x - sa * 5, j.y + ca * 5 * 0.78)
+          .lineTo(tipX - sa * halfW, tipY + ca * halfW * 0.78)
+          .lineTo(tipX + sa * halfW, tipY - ca * halfW * 0.78)
+          .lineTo(j.x + sa * 5, j.y - ca * 5 * 0.78)
+          .closePath()
+          .fill({ color: j.color, alpha: alpha * (0.5 + k * 0.5) });
+      }
+      // 뿜어나가는 알갱이
+      for (let i = 0; i < 5; i++) {
+        const ph = (animClock * 2.4 + i * 0.2) % 1;
+        const d = j.reach * (0.35 + ph * 0.7);
+        const off = Math.sin(i * 3.1 + animClock * 6) * (6 + d * 0.3);
+        specialG.circle(j.x + ca * d - sa * off, j.y + (sa * d + ca * off) * 0.78, 2.2 * (1 - ph) + 0.8)
+          .fill({ color: 0xfff2c0, alpha: k * 0.75 * (1 - ph) });
+      }
+    }
+
     for (const kt of kickTrail) {
       if (!onScreen(kt.x, kt.y)) continue;
       const a = Math.min(1, kt.life / 2.2);
@@ -5812,6 +6035,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       coins,
       pity: pityCount,
       kick: kickTrail.length,
+      frozen: foes.reduce((n, f) => n + (f.slow > 0 ? 1 : 0), 0),
+      zones: zones.length,
       specColors: specialColors.size,
     };
     dbg.__hordePick = phase === 'pick'
