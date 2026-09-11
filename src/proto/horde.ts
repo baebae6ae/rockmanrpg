@@ -596,9 +596,6 @@ interface Upgrade {
 /** 파티클은 이 색들만 쓴다 — 색이 고정이라야 색깔별 배치 그리기가 가능하다 */
 const PART_COLORS = [0xfff0a0, 0xff9a4c, 0xffc45c, 0xfff2c0, 0xff5c5c, 0x8ef0ff, 0xffffff];
 
-/** 특수무기 탄 색. 같은 이유로 고정이다 (SPECIALS 의 color 와 맞춰 둘 것) */
-const SPECIAL_COLORS = [0xd8e2f0, 0xffa8dc, 0x9fe8ff, 0xff8a5c];
-
 const GRID_CELL = 34;
 const GRID_W = Math.ceil(ARENA_W / GRID_CELL);
 const GRID_H = Math.ceil(ARENA_H / GRID_CELL);
@@ -1012,6 +1009,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const foeLayer = new Container();
   const bulletG = new Graphics();
   const specialG = new Graphics();
+  /** 이번 프레임에 화면에 떠 있는 특수무기 탄 색 — 매 프레임 새로 만들지 않는다 */
+  const specialColors = new Set<number>();
   const partG = new Graphics();
   // animG 는 바닥 바로 위여야 한다 — 아래에 두면 흐르는 쇳물도 눈발도
   // 바닥에 가려서 안 보인다.
@@ -2664,7 +2663,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           x: px, y: py - 10,
           vx: Math.cos(a) * 330, vy: Math.sin(a) * 330 * 0.8,
           life: 0.8, dmg: 9 + 5 * lv, pierce: 3 + lv,
-          shape: 'tracer', color: 0x4fd6e8, r: 6,
+          // tracer 는 플레이어 기본탄 전용 모양이라 특수무기 배치에서
+          // 안 그려진다. 빠른 orb 는 꼬리선이 같이 그려져 물줄기로 보인다.
+          shape: 'orb', color: 0x4fd6e8, r: 6,
           elem: 'aqua',
         });
         sfx.shot('rapid');
@@ -4060,6 +4061,35 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       phase = 'gacha';
     };
     dbg.__hordeFireLegend = (id: string, lv = 1): void => { LEGENDS.find((x) => x.id === id)?.fire?.(lv); };
+    /** 무기를 바로 쥐여준다 — 레벨업 뽑기 운을 기다리지 않고 확인하려고 */
+    dbg.__hordeGiveWeapon = (id: string, lv = 1): boolean => {
+      const d = ALL_WEAPONS.find((x) => x.id === id);
+      if (!d) return false;
+      owned.set(id, lv);
+      cooldowns.set(id, 0);
+      return true;
+    };
+    /**
+     * 무기 하나를 딱 한 번 발사시키고 실제로 무엇이 생겼는지 돌려준다.
+     * "골랐는데 아무것도 안 나간다" 류를 눈으로 좇지 않고 가려내려는 용도다.
+     */
+    dbg.__hordeTestWeapon = (id: string, lv = 1): unknown => {
+      const d = ALL_WEAPONS.find((x) => x.id === id);
+      if (!d) return { found: false };
+      const hpBefore = foes.reduce((a, f) => a + f.hp, 0);
+      const b0 = bullets.length, r0 = rings.length, k0 = bolts.length;
+      d.fire?.(lv);
+      return {
+        found: true,
+        hasFire: !!d.fire,
+        hasInterval: !!d.interval,
+        bullets: bullets.length - b0,
+        rings: rings.length - r0,
+        bolts: bolts.length - k0,
+        foeDmg: +(hpBefore - foes.reduce((a, f) => a + f.hp, 0)).toFixed(1),
+        foes: foes.length,
+      };
+    };
   }
 
   // ------------------------------------------------------------ 루프
@@ -5141,7 +5171,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    for (const color of SPECIAL_COLORS) {
+    // 예전엔 여기서 하드코딩된 색 목록(SPECIAL_COLORS)을 돌았다. 그래서
+    // 무기를 새로 넣을 때 그 목록에 색을 추가하는 걸 잊으면 탄이 생성만
+    // 되고 화면에는 아무것도 안 나왔다 — 레이 스플래셔·비트·탱고·
+    // 되돌아오는 톱·불고리가 실제로 그 상태로 방치돼 있었다.
+    // 화면에 떠 있는 탄에서 색을 직접 모으면 목록을 손으로 맞출 일이
+    // 없어지고, 안 쓰는 색을 훑지도 않으니 오히려 싸다.
+    // (tracer 는 플레이어 기본탄 전용 모양이라 위 mine 쪽에서 그린다)
+    specialColors.clear();
+    for (const b of bullets) {
+      if (b.shape === 'tracer' || b.color === shotColor || !onScreen(b.x, b.y)) continue;
+      specialColors.add(b.color);
+    }
+    for (const color of specialColors) {
       // 1) 꼬리 — 선이라 stroke 로 따로 그려야 한다. 점만 있으면 날아가는 게 안 보인다.
       let trail = false;
       for (const b of bullets) {
@@ -5716,6 +5758,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
       coins,
       pity: pityCount,
+      kick: kickTrail.length,
+      specColors: specialColors.size,
     };
     dbg.__hordePick = phase === 'pick'
       ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
