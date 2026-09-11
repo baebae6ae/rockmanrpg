@@ -706,6 +706,101 @@ function drawTouchButton(
 }
 
 /** 색을 흰색 쪽으로 amount 만큼 민다 — 탄 심지를 캐릭터 색의 밝은 판으로 쓴다 */
+/**
+ * ── 도트 이펙트 기본 도형 ─────────────────────────────────────────
+ *
+ * 이 게임은 270×480 백버퍼를 CSS 로 확대해 띄우는 도트 그림이다. 그래서
+ * 이펙트를 매끈한 circle/ellipse 로 그리면 확대될 때 그 매끈함까지 같이
+ * 커져서, 캐릭터·적은 각진 도트인데 이펙트만 벡터 그림처럼 뜬다.
+ * 파티클이 이미 Math.round 로 정수 칸에 맞춰 rect 를 찍는 것과 같은
+ * 이유다 — 이펙트도 전부 이쪽으로 맞춘다.
+ *
+ * step 은 도트 한 칸의 크기다. 크게 잡을수록 굵고 거칠어진다.
+ */
+function pxDisc(
+  g: Graphics, cx: number, cy: number, r: number, squash = 0.78, step = 2,
+): void {
+  if (r < step) return;
+  const x0 = Math.round(cx);
+  const y0 = Math.round(cy);
+  const ry = r * squash;
+  const rows = Math.floor(ry / step);
+  for (let i = -rows; i <= rows; i++) {
+    const dy = i * step;
+    const t = dy / ry;
+    const hw = Math.round((r * Math.sqrt(Math.max(0, 1 - t * t))) / step) * step;
+    if (hw <= 0) continue;
+    g.rect(x0 - hw, y0 + dy, hw * 2, step);
+  }
+}
+
+/** 속이 빈 고리. 테두리 두께도 도트 칸 단위다. */
+function pxRing(
+  g: Graphics, cx: number, cy: number, r: number, squash = 0.78, step = 2, thick = 2,
+): void {
+  if (r < step * 2) return;
+  const x0 = Math.round(cx);
+  const y0 = Math.round(cy);
+  const ry = r * squash;
+  const inner = Math.max(0, r - thick * step);
+  const iry = inner * squash;
+  const rows = Math.floor(ry / step);
+  for (let i = -rows; i <= rows; i++) {
+    const dy = i * step;
+    const t = dy / ry;
+    const hw = Math.round((r * Math.sqrt(Math.max(0, 1 - t * t))) / step) * step;
+    if (hw <= 0) continue;
+    const ti = iry > 0 ? dy / iry : 2;
+    const ihw = Math.abs(ti) < 1
+      ? Math.round((inner * Math.sqrt(Math.max(0, 1 - ti * ti))) / step) * step
+      : 0;
+    if (ihw <= 0) {
+      g.rect(x0 - hw, y0 + dy, hw * 2, step);
+    } else {
+      g.rect(x0 - hw, y0 + dy, hw - ihw, step);
+      g.rect(x0 + ihw, y0 + dy, hw - ihw, step);
+    }
+  }
+}
+
+/**
+ * 뿜어 나가는 부채꼴.
+ *
+ * 처음엔 축을 따라가며 띠를 하나씩 놓았는데, 층마다 격자가 어긋나
+ * 줄무늬(모아레)가 생기고 좌표에 step/2 가 섞여 다시 소수가 됐다.
+ * 그냥 화면 칸을 훑으면서 부채꼴 안에 드는 칸만 찍는다 — 격자가
+ * 하나뿐이라 어긋날 일이 없다.
+ *
+ * band 는 축에서 떨어진 정도(0=한가운데, 1=가장자리)의 범위다. 같은
+ * 부채꼴을 안쪽/바깥쪽으로 나눠 다른 색으로 칠하려고 쓴다.
+ */
+function pxCone(
+  g: Graphics, x: number, y: number, angle: number, reach: number,
+  spread: number, step: number, bandLo: number, bandHi: number,
+): void {
+  if (reach < step) return;
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const x0 = Math.round(x);
+  const y0 = Math.round(y);
+  // 훑을 범위 — 부채꼴 끝의 반폭까지 넉넉히 잡는다
+  const maxHw = 4 + reach * spread;
+  const ext = Math.ceil((reach + maxHw) / step) * step;
+  for (let gy = -ext; gy <= ext; gy += step) {
+    for (let gx = -ext; gx <= ext; gx += step) {
+      // 세로가 눌린 좌표계라 판정할 때 되돌린다 (다른 판정부와 같은 규칙)
+      const uy = gy / 0.78;
+      const along = gx * ca + uy * sa;
+      if (along < 0 || along > reach) continue;
+      const perp = Math.abs(-gx * sa + uy * ca);
+      const hw = 4 + along * spread;
+      const t = perp / hw;
+      if (t < bandLo || t >= bandHi) continue;
+      g.rect(x0 + gx, y0 + gy, step, step);
+    }
+  }
+}
+
 function lighten(color: number, amount: number): number {
   const r = (color >> 16) & 255;
   const g = (color >> 8) & 255;
@@ -2733,7 +2828,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           const perp = Math.abs(-dx * sa + dy * ca);
           if (along > -10 && along < reach + 16 && perp < 30 + along * 0.42) hurtBoss(dmg, 'aqua');
         }
-        jets.push({ x: px, y: py - 10, angle: a, reach, life: 0.22, max: 0.22, color: 0x6ec8ff });
+        jets.push({
+          x: px, y: py - 10, angle: a, reach, life: 0.22, max: 0.22, color: 0x6ec8ff,
+          palette: [0x2a6fc4, 0x4fb8ff, 0xd6f2ff],
+        });
         sfx.shot('charge');
       },
     },
@@ -2774,7 +2872,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           if (along > -10 && along < reach + 16 && perp < 26 + along * 0.5) hurtBoss(dps * 0.06, 'fire');
         }
         flames.length = 0;
-        flames.push({ x: px, y: py - 10, angle: a, reach, life: 0.1, max: 0.1, color: 0xff9a4c });
+        flames.push({
+          x: px, y: py - 10, angle: a, reach, life: 0.1, max: 0.1, color: 0xff9a4c,
+          palette: [0xc4340c, 0xff7b1c, 0xffd75e],
+        });
       },
     },
     {
@@ -3389,7 +3490,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const MAX_ZONES = 24;
 
   /** 물대포가 뿜은 부채꼴 — 잠깐 보이고 사라진다 */
-  interface Jet { x: number; y: number; angle: number; reach: number; life: number; max: number; color: number }
+  /**
+   * 뿜어내는 부채꼴. 색은 lighten() 으로 흰색 쪽에 밀면 어두운 배경에서
+   * 채도가 죽어 회백색 빔처럼 보인다 — 불은 불 색, 물은 물 색으로
+   * 바깥→안쪽 세 단계를 직접 지정한다.
+   */
+  interface Jet {
+    x: number; y: number; angle: number; reach: number;
+    life: number; max: number; color: number;
+    /** [바깥, 중간, 심지] */
+    palette: [number, number, number];
+  }
   const jets: Jet[] = [];
   /** 화염 방사는 상시 켜져 있는 부채꼴이라 한 장만 들고 매 프레임 갱신한다 */
   const flames: Jet[] = [];
@@ -5420,7 +5531,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             .lineTo(b.x + s * wid, b.y - c * wid)
             .closePath();
         } else {
-          specialG.circle(b.x, b.y, b.r);
+          // 모든 특수무기 탄이 여기를 지난다 — 도트로 찍어야 캐릭터와
+          // 같은 결로 보인다. 작은 탄은 칸을 잘게, 큰 탄은 굵게.
+          pxDisc(specialG, b.x, b.y, b.r, 1, b.r > 9 ? 3 : 2);
         }
         any = true;
       }
@@ -5505,25 +5618,28 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (!onScreen(z.x, z.y)) continue;
       const k = z.life / z.max;
       const a = Math.min(1, k * 2.2);
-      const wob = 1 + Math.sin(animClock * 4 + z.x * 0.05) * 0.03;
-      specialG.ellipse(z.x, z.y, z.r * wob, z.r * 0.78 * wob)
-        .fill({ color: z.color, alpha: a * 0.2 });
-      specialG.ellipse(z.x, z.y, z.r * 0.72 * wob, z.r * 0.56 * wob)
-        .fill({ color: z.color, alpha: a * 0.22 });
-      // 테두리 물결 — 두 겹을 위상만 어긋나게 돌린다
-      for (let i = 0; i < 2; i++) {
-        const rr = z.r * (0.88 + i * 0.1) * (1 + Math.sin(animClock * 3.2 + i * 2 + z.y * 0.04) * 0.035);
-        specialG.ellipse(z.x, z.y, rr, rr * 0.78)
-          .stroke({ color: 0xbfe8ff, width: 1, alpha: a * (0.5 - i * 0.18) });
-      }
-      // 떠오르는 물방울
+      // 굵은 칸부터 잔 칸으로 세 겹 — 가장자리가 계단으로 남아야 도트로 읽힌다
+      specialG.beginPath();
+      pxDisc(specialG, z.x, z.y, z.r, 0.78, 3);
+      specialG.fill({ color: 0x1b4f8c, alpha: a * 0.62 });
+      specialG.beginPath();
+      pxDisc(specialG, z.x, z.y, z.r * 0.66, 0.78, 2);
+      specialG.fill({ color: z.color, alpha: a * 0.7 });
+      // 일렁이는 테두리
+      const wob = 1 + Math.sin(animClock * 4 + z.x * 0.05) * 0.05;
+      specialG.beginPath();
+      pxRing(specialG, z.x, z.y, z.r * wob, 0.78, 2, 1);
+      specialG.fill({ color: 0xbfe8ff, alpha: a * 0.55 });
+      // 떠오르는 물방울 — 파티클과 같은 결로 정수 칸에 찍는다
+      specialG.beginPath();
       for (let i = 0; i < 4; i++) {
         const ph = (animClock * 0.9 + i * 0.25 + z.x * 0.01) % 1;
-        const bx = z.x + Math.sin(i * 2.2 + z.y * 0.1) * z.r * 0.55;
-        const by = z.y + z.r * 0.36 - ph * z.r * 0.7;
-        specialG.circle(bx, by, 1.4 * (1 - ph) + 0.6)
-          .fill({ color: 0xdff4ff, alpha: a * 0.5 * (1 - ph) });
+        const bx = Math.round(z.x + Math.sin(i * 2.2 + z.y * 0.1) * z.r * 0.55);
+        const by = Math.round(z.y + z.r * 0.3 - ph * z.r * 0.66);
+        const sz = ph < 0.5 ? 2 : 1;
+        specialG.rect(bx, by, sz, sz);
       }
+      specialG.fill({ color: 0xdff4ff, alpha: a * 0.7 });
     }
 
     // 물대포 / 화염 방사 — 뿜어져 나가는 부채꼴.
@@ -5532,46 +5648,49 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     for (const j of [...jets, ...flames]) {
       if (!onScreen(j.x, j.y)) continue;
       const k = Math.max(0, j.life / j.max);
-      const ca = Math.cos(j.angle);
-      const sa = Math.sin(j.angle);
-      const layers: [number, number, number][] = [
-        [1.0, 0.52, 0.22],
-        [0.82, 0.34, 0.34],
-        [0.6, 0.2, 0.5],
+      // 한 격자로 한 번만 훑고, 축에서 떨어진 정도로 안/바깥을 갈라
+      // 다른 색을 칠한다. 층마다 따로 그리면 격자가 어긋나 줄이 진다.
+      const reach = j.reach * (0.9 + k * 0.1);
+      const bands: [number, number, number, number][] = [
+        [0.5, 1.0, 0.55, j.palette[0]],
+        [0.2, 0.5, 0.8, j.palette[1]],
+        [0.0, 0.2, 1.0, j.palette[2]],
       ];
-      for (const [lr, spread, alpha] of layers) {
-        const reach = j.reach * lr * (0.9 + k * 0.1);
-        const halfW = 12 + reach * spread;
-        const tipX = j.x + ca * reach;
-        const tipY = j.y + sa * reach * 0.78;
-        // 끝이 벌어진 사다리꼴
-        specialG.moveTo(j.x - sa * 5, j.y + ca * 5 * 0.78)
-          .lineTo(tipX - sa * halfW, tipY + ca * halfW * 0.78)
-          .lineTo(tipX + sa * halfW, tipY - ca * halfW * 0.78)
-          .lineTo(j.x + sa * 5, j.y - ca * 5 * 0.78)
-          .closePath()
-          .fill({ color: j.color, alpha: alpha * (0.5 + k * 0.5) });
+      for (const [lo, hi, alpha, col] of bands) {
+        specialG.beginPath();
+        pxCone(specialG, j.x, j.y, j.angle, reach, 0.5, 3, lo, hi);
+        specialG.fill({ color: col, alpha: alpha * (0.45 + k * 0.55) });
       }
-      // 뿜어나가는 알갱이
+      // 끝에서 흩어지는 알갱이
+      specialG.beginPath();
+      const ca = Math.cos(j.angle);
+      const sa = Math.sin(j.angle) * 0.78;
       for (let i = 0; i < 5; i++) {
         const ph = (animClock * 2.4 + i * 0.2) % 1;
-        const d = j.reach * (0.35 + ph * 0.7);
-        const off = Math.sin(i * 3.1 + animClock * 6) * (6 + d * 0.3);
-        specialG.circle(j.x + ca * d - sa * off, j.y + (sa * d + ca * off) * 0.78, 2.2 * (1 - ph) + 0.8)
-          .fill({ color: 0xfff2c0, alpha: k * 0.75 * (1 - ph) });
+        const d = j.reach * (0.4 + ph * 0.7);
+        const off = Math.sin(i * 3.1 + animClock * 6) * (5 + d * 0.3);
+        specialG.rect(
+          Math.round(j.x + ca * d - (sa / 0.78) * off),
+          Math.round(j.y + sa * d + ca * 0.78 * off),
+          ph < 0.55 ? 2 : 1, ph < 0.55 ? 2 : 1,
+        );
       }
+      specialG.fill({ color: 0xfff2c0, alpha: k * 0.8 });
     }
 
     for (const kt of kickTrail) {
       if (!onScreen(kt.x, kt.y)) continue;
       const a = Math.min(1, kt.life / 2.2);
       const fl = 0.86 + Math.sin(animClock * 17 + kt.x * 0.3) * 0.14;
-      specialG.circle(kt.x, kt.y, kt.r * (0.75 + a * 0.35) * fl)
-        .fill({ color: 0x8c1a44, alpha: a * 0.3 });
-      specialG.circle(kt.x, kt.y, kt.r * 0.72 * fl)
-        .fill({ color: 0xff5c9c, alpha: a * 0.34 });
-      specialG.circle(kt.x, kt.y, kt.r * 0.42 * fl)
-        .fill({ color: 0xffb0d4, alpha: a * 0.42 });
+      specialG.beginPath();
+      pxDisc(specialG, kt.x, kt.y, kt.r * (0.75 + a * 0.35) * fl, 0.78, 3);
+      specialG.fill({ color: 0x8c1a44, alpha: a * 0.34 });
+      specialG.beginPath();
+      pxDisc(specialG, kt.x, kt.y, kt.r * 0.72 * fl, 0.78, 2);
+      specialG.fill({ color: 0xff5c9c, alpha: a * 0.4 });
+      specialG.beginPath();
+      pxDisc(specialG, kt.x, kt.y, kt.r * 0.42 * fl, 0.78, 2);
+      specialG.fill({ color: 0xffb0d4, alpha: a * 0.5 });
       // 오르는 불티
       for (let i = 0; i < 3; i++) {
         const ph = (animClock * 1.5 + i * 0.33 + kt.x * 0.05) % 1;
@@ -5919,8 +6038,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       rg.life -= dt;
       if (rg.life <= 0) { rings.splice(i, 1); continue; }
       const k = 1 - rg.life / rg.max;
-      specialG.circle(rg.x, rg.y, rg.r * (0.45 + k * 0.55));
-      specialG.stroke({ color: rg.color, width: 2, alpha: (1 - k) * 0.85 });
+      specialG.beginPath();
+      pxRing(specialG, rg.x, rg.y, rg.r * (0.45 + k * 0.55), 0.78, 2, 1);
+      specialG.fill({ color: rg.color, alpha: (1 - k) * 0.9 });
     }
 
     // 경험치
