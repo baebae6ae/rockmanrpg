@@ -129,13 +129,74 @@ const SPAWN_WEIGHT: Record<FoeKind, number> = {
 };
 const SPAWN_TOTAL = KIND_LIST.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
 
-function pickKind(): FoeKind {
-  let r = Math.random() * SPAWN_TOTAL;
+/**
+ * 구간(웨이브)마다 한 속성이 화면을 지배한다.
+ *
+ * 예전엔 이 비율이 처음부터 끝까지 고정이었다 — 1초째 화면도 60초째
+ * 화면도 물 30 · 전기 32 · 얼음 22 · 불 16 이 똑같이 섞여 있었다.
+ * 그러면 상성 3배가 통계적으로 그냥 상수로 평균나 버려서, 속성이
+ * "고르는 것"이 아니라 내가 손댈 수 없는 데미지 편차로만 작동한다.
+ * 가위바위보가 성립하려면 상대가 뭘 낼지 알 수 있어야 한다.
+ *
+ * 구간마다 한 속성으로 몰아주면 비로소 "읽고 대비한다"가 생긴다.
+ * 잡몹 종류가 속성에 묶여 있어서(얼음=호퍼, 불=바이터 …) 구간이 바뀌면
+ * 색만이 아니라 움직임까지 통째로 바뀌는 것이 덤으로 따라온다.
+ */
+const WAVE_DOMINANT = 0.58;
+/**
+ * 쏘는 놈은 구간과 무관하게 희소하게 유지한다 — 위 SPAWN_WEIGHT 주석과
+ * 같은 이유다. 전기 구간이라고 드론까지 같이 불려 놓으면 화면 전체가
+ * 피할 수 없는 탄막이 된다.
+ */
+const SNIPER_SHARE = SPAWN_WEIGHT.sniper_drone / SPAWN_TOTAL;
+
+/** 속성당 한 번만 계산하면 되는 값이다 — 스폰은 초당 수십 번 돈다 */
+const WAVE_WEIGHT_CACHE = new Map<Element, Record<FoeKind, number>>();
+
+function waveWeights(dom: Element): Record<FoeKind, number> {
+  const hit = WAVE_WEIGHT_CACHE.get(dom);
+  if (hit) return hit;
+
+  const out = {} as Record<FoeKind, number>;
+  const lead = KIND_LIST.filter((k) => k !== 'sniper_drone' && KINDS[k].elem === dom);
+  if (!lead.length) {
+    // 해당 속성의 잡몹이 없다(무속성 구간 등) — 원래 비율 그대로 간다
+    for (const k of KIND_LIST) out[k] = SPAWN_WEIGHT[k] / SPAWN_TOTAL;
+    WAVE_WEIGHT_CACHE.set(dom, out);
+    return out;
+  }
+
+  const rest = KIND_LIST.filter((k) => k !== 'sniper_drone' && !lead.includes(k));
+  const room = 1 - SNIPER_SHARE;
+  const leadSum = lead.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
+  const restSum = rest.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
+
+  out.sniper_drone = SNIPER_SHARE;
+  for (const k of lead) out[k] = room * WAVE_DOMINANT * (SPAWN_WEIGHT[k] / leadSum);
+  for (const k of rest) {
+    out[k] = restSum ? room * (1 - WAVE_DOMINANT) * (SPAWN_WEIGHT[k] / restSum) : 0;
+  }
+  WAVE_WEIGHT_CACHE.set(dom, out);
+  return out;
+}
+
+function pickKind(dom: Element): FoeKind {
+  const wt = waveWeights(dom);
+  let r = Math.random();
   for (const k of KIND_LIST) {
-    r -= SPAWN_WEIGHT[k];
+    r -= wt[k];
     if (r <= 0) return k;
   }
   return KIND_LIST[0];
+}
+
+/** 구간에 쓰는 속성 — 무속성은 상성이 없어서 구간으로 쓸 값어치가 없다 */
+const WAVE_POOL: Element[] = ['elec', 'aqua', 'fire', 'ice'];
+
+/** 직전 구간과 같은 속성이 연달아 나오면 구간을 나눈 의미가 없다 */
+function rollWaveElem(avoid: Element): Element {
+  const pool = WAVE_POOL.filter((e) => e !== avoid);
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /**
@@ -1021,7 +1082,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const hintLabel = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0x8a97c4 } });
   hintLabel.anchor.set(0.5, 1);
   hintLabel.position.set(W / 2, H - 3);
-  ui.addChild(timeLabel, killLabel, lvLabel, hintLabel);
+  /**
+   * 지금 화면을 지배하는 속성. 예고 배너는 지나가 버리니, 한창 싸우는
+   * 도중에 "지금 뭐가 밀려오고 있는지"를 확인할 곳이 따로 있어야 한다.
+   */
+  const waveLabel = new Text({ text: '', style: { ...mono, fontSize: 9, fill: 0xcfe0ff } });
+  waveLabel.anchor.set(0.5, 0);
+  // HUD 판은 y 0~26 을 쓰고 그 위에 체력바(y17)·무기 아이콘이 올라간다.
+  // 보스 이름표와 같은 자리(y30)에 두는데, 보스가 나오면 이 표시는
+  // 숨으므로 둘이 겹칠 일은 없다.
+  waveLabel.position.set(W / 2, 30);
+  ui.addChild(timeLabel, killLabel, lvLabel, hintLabel, waveLabel);
 
   const stageLabel = new Text({ text: '', style: { ...mono, fontSize: 12, fill: 0xffffff } });
   stageLabel.anchor.set(0.5);
@@ -1155,6 +1226,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let spawnAcc = 0;
   let fireAcc = 0;
   let surgeAt = 32;
+  /**
+   * 한 구간의 길이. 보스가 70초에 나오니 판 하나에 구간이 셋 들어간다 —
+   * 더 짧게 자르면 대비할 틈이 없고, 더 길면 구간 안에서 다시 지루해진다.
+   */
+  const WAVE_LEN = 22;
+  /** 다음 구간을 몇 초 전에 예고하는가 — 레벨업 카드 한 번 뽑을 여유 */
+  const WAVE_TELL = 5;
+  let waveElem: Element = 'elec';
+  let nextWaveElem: Element = 'aqua';
+  let waveEnd = WAVE_LEN;
+  /** 구간이 바뀌었음을 알리는 배너의 남은 시간 */
+  let waveBanner = 0;
+  /** 예고를 이번 구간에 이미 띄웠는지 */
+  let waveTold = false;
   /** 구역 이름을 띄워두는 남은 시간 */
   let stageBanner = 0;
   /** 배경 애니메이션용 시계 — 일시정지 중에도 흘러야 자연스럽다 */
@@ -1486,7 +1571,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   function spawnFoe(elite: boolean): void {
     if (foes.length >= MAX_FOES) return;
-    const kind = pickKind();
+    const kind = pickKind(waveElem);
     const def = KINDS[kind];
     // 원형으로 뿌리면 화면 비율이 안 맞는 축의 개체가 한참을 걸어온다.
     // 화면(세로) 비율에 맞춘 타원 바로 바깥에 뿌려야 스폰 즉시 압박이 된다.
@@ -3499,6 +3584,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     attackHold = 0; attackBeat = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
     spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
+    waveElem = rollWaveElem('none');
+    nextWaveElem = rollWaveElem(waveElem);
+    waveEnd = WAVE_LEN; waveBanner = 0; waveTold = false;
     echoes.length = 0;
     stageBanner = 0;
     stageBossSpawned = false;
@@ -4180,6 +4268,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       for (let i = 0; i < 10 + Math.floor(time / 4); i++) spawnFoe(false);
       shake = 7;
     }
+
+    // ---- 구간 전환. 예고 → 교대 순으로 돈다.
+    // 보스가 나와 있는 동안은 건드리지 않는다 — 보스 경고와 구간 예고가
+    // 같은 자리에서 겹치면 둘 다 안 읽힌다.
+    if (!boss && !stageBossSpawned) {
+      if (!waveTold && time >= waveEnd - WAVE_TELL) {
+        waveTold = true;
+        waveBanner = WAVE_TELL;
+        sfx.pick();
+      }
+      if (time >= waveEnd) {
+        waveElem = nextWaveElem;
+        nextWaveElem = rollWaveElem(waveElem);
+        waveEnd += WAVE_LEN;
+        waveTold = false;
+        waveBanner = 1.6;
+        shake = Math.max(shake, 4);
+      }
+    }
+    if (waveBanner > 0) waveBanner -= dt;
 
     // ---- 자동사격
     // 연사 차지가 터지는 동안은 간격이 무너진다
@@ -5494,6 +5602,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     muteLabel.text = sfx.muted ? '♪ OFF (M)' : '';
 
+    // 지금 무엇이 밀려오고 있는가. 보스전에는 보스 정보가 그 자리를
+    // 대신하므로 비운다.
+    // 다가오는 것은 가운데 배너가 알린다 — 여기서까지 예고를 겹쳐 쓰면
+    // 같은 말을 두 군데서 하느라 둘 다 안 읽힌다. 여기는 '지금'만 맡는다.
+    waveLabel.visible = phase === 'play' && !boss && !stageBossSpawned;
+    if (waveLabel.visible) {
+      waveLabel.text = `${ELEM_NAME[waveElem]} 무리`;
+      waveLabel.style.fill = ELEM_COLOR[waveElem];
+    }
+
     // 아머를 먹으면 뭘 얻었는지 알려준다 — 안 알려주면 뭐가 좋아졌는지 모른다
     if (armorBanner > 0 && armorGot && phase === 'play') {
       armorBanner -= dt;
@@ -5502,6 +5620,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       stageLabel.text = `${info.name}\n${info.desc}`;
       stageLabel.style.fill = info.color;
       stageLabel.alpha = Math.min(1, armorBanner / 0.5);
+    }
+
+    // 구간 예고 — 이게 이 모드에서 유일하게 "미리 알고 대비하는" 정보다.
+    // 아머 안내보다 뒤에 둬서 겹치면 이쪽이 이긴다(아머는 이미 먹은 것에
+    // 대한 사후 안내고, 이건 앞으로 올 것에 대한 경고다). 보스 경고는
+    // 더 아래에 있어 그쪽이 최우선이다.
+    if (waveBanner > 0 && phase === 'play' && !boss && !stageBossSpawned) {
+      const told = waveTold;
+      const e = told ? nextWaveElem : waveElem;
+      stageLabel.visible = true;
+      stageLabel.text = told ? `${ELEM_NAME[e]} 무리 접근` : `${ELEM_NAME[e]} 무리`;
+      stageLabel.style.fill = ELEM_COLOR[e];
+      // 예고는 깜빡여서 눈에 걸리게, 교대 직후 확인용 표시는 그냥 사라지게
+      stageLabel.alpha = told
+        ? (Math.floor(waveBanner * 6) % 2 === 0 ? 1 : 0.3)
+        : Math.min(1, waveBanner / 0.5);
     }
 
     // 기가 크래시 — 위력에 비해 밋밋하다는 피드백으로 손봤다. 발동 순간
