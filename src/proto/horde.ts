@@ -801,6 +801,77 @@ function pxCone(
   }
 }
 
+/**
+ * 굵은 선. stroke 는 비스듬한 선을 부드럽게 갈아 놓아서 도트와 안 맞는다.
+ * 선을 따라가며 정수 칸에 네모를 찍는다 — 계단이 남아야 한다.
+ * (겹치는 네모는 한 path 로 모아 한 번에 칠하므로 진해지지 않는다)
+ */
+function pxLine(
+  g: Graphics, x0: number, y0: number, x1: number, y1: number,
+  thick: number, step = 1,
+): void {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy);
+  const n = Math.max(1, Math.ceil(len / step));
+  const t = Math.max(step, Math.round(thick / step) * step);
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (dx * i) / n;
+    const y = y0 + (dy * i) / n;
+    g.rect(Math.round(x - t / 2), Math.round(y - t / 2), t, t);
+  }
+}
+
+/**
+ * 축을 따라가며 폭이 변하는 도트 조각. 마름모(거울)·화살촉(작살)처럼
+ * 진행 방향으로 뻗은 탄을 도트로 찍는다. halfAt 은 0(뒤끝)~1(앞끝)
+ * 위치를 받아 그 지점의 반폭을 돌려준다.
+ */
+function pxSpindle(
+  g: Graphics, x: number, y: number, dx: number, dy: number,
+  back: number, front: number, halfAt: (t: number) => number, step = 1,
+): void {
+  const len = back + front;
+  if (len < step) return;
+  const n = Math.max(1, Math.ceil(len / step));
+  const nx = -dy;
+  const ny = dx;
+  for (let i = 0; i <= n; i++) {
+    const d = -back + (len * i) / n;
+    const hw = halfAt((d + back) / len);
+    const cx = x + dx * d;
+    const cy = y + dy * d;
+    const m = Math.max(0, Math.round(hw / step));
+    for (let k = -m; k <= m; k++) {
+      g.rect(Math.round(cx + nx * k * step), Math.round(cy + ny * k * step), step, step);
+    }
+  }
+}
+
+/**
+ * 도트 호(띠). arc()+stroke 는 곡선을 부드럽게 갈아 놓아 참격이
+ * 캐릭터와 다른 결로 보인다. 각도를 따라가며 반지름 방향으로도
+ * 칸을 쌓아 계단진 띠를 만든다. rIn=rOut-두께 면 테두리, 안쪽까지
+ * 채우면 부채꼴이 된다.
+ */
+function pxArcBand(
+  g: Graphics, cx: number, cy: number, rIn: number, rOut: number,
+  a0: number, a1: number, step = 2,
+): void {
+  if (rOut < step) return;
+  const span = a1 - a0;
+  const n = Math.max(2, Math.ceil((Math.abs(span) * rOut) / step));
+  const lo = Math.max(0, rIn);
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + (span * i) / n;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    for (let r = lo; r <= rOut; r += step) {
+      g.rect(Math.round(cx + ca * r), Math.round(cy + sa * r), step, step);
+    }
+  }
+}
+
 function lighten(color: number, amount: number): number {
   const r = (color >> 16) & 255;
   const g = (color >> 8) & 255;
@@ -5311,116 +5382,117 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       if (shotLook === 'needle') {
         // 바늘 — 아주 가늘고 긴 침. 길이로 사거리를 읽게 한다
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 16, b.y - dy * 16).lineTo(b.x + dx * 4, b.y + dy * 4);
+          pxLine(bulletG, b.x - dx * 16, b.y - dy * 16, b.x + dx * 4, b.y + dy * 4, 5);
         }
-        bulletG.stroke({ color: 0x0a1024, width: 5, alpha: 0.55 });
+        bulletG.fill({ color: 0x0a1024, alpha: 0.55 });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 16, b.y - dy * 16).lineTo(b.x + dx * 4, b.y + dy * 4);
+          pxLine(bulletG, b.x - dx * 16, b.y - dy * 16, b.x + dx * 4, b.y + dy * 4, 3);
         }
-        bulletG.stroke({ color: shotColor, width: 3 });
+        bulletG.fill({ color: shotColor });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 6, b.y - dy * 6).lineTo(b.x + dx * 4, b.y + dy * 4);
+          pxLine(bulletG, b.x - dx * 6, b.y - dy * 6, b.x + dx * 4, b.y + dy * 4, 1);
         }
-        bulletG.stroke({ color: shotCore, width: 1 });
+        bulletG.fill({ color: shotCore });
       } else if (shotLook === 'nail') {
         // 못 — 굵고 짧은 대못. 머리가 뒤에 붙어 있어야 못으로 보인다
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 9, b.y - dy * 9).lineTo(b.x + dx * 3, b.y + dy * 3);
+          pxLine(bulletG, b.x - dx * 9, b.y - dy * 9, b.x + dx * 3, b.y + dy * 3, 8, 2);
         }
-        bulletG.stroke({ color: 0x0a1024, width: 9, alpha: 0.6 });
+        bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 8, b.y - dy * 8).lineTo(b.x + dx * 3, b.y + dy * 3);
+          pxLine(bulletG, b.x - dx * 8, b.y - dy * 8, b.x + dx * 3, b.y + dy * 3, 4, 2);
         }
-        bulletG.stroke({ color: shotColor, width: 5 });
+        bulletG.fill({ color: shotColor });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.rect(b.x - dx * 11 - 3, b.y - dy * 11 - 3, 6, 6);  // 못머리
+          bulletG.rect(Math.round(b.x - dx * 11) - 3, Math.round(b.y - dy * 11) - 3, 6, 6);  // 못머리
         }
         bulletG.fill({ color: shotCore });
       } else if (shotLook === 'lance') {
         // 거울 — 각진 빛 조각. 둥글게 하면 다른 넷과 구별이 안 된다
+        // 가운데가 제일 넓은 마름모
+        const diamond = (w: number) => (t: number) => w * (1 - Math.abs(t * 2 - 1));
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          const nx = -dy;
-          const ny = dx;
-          bulletG.moveTo(b.x + dx * 10, b.y + dy * 10)
-            .lineTo(b.x + nx * 4, b.y + ny * 4)
-            .lineTo(b.x - dx * 10, b.y - dy * 10)
-            .lineTo(b.x - nx * 4, b.y - ny * 4)
-            .closePath();
+          pxSpindle(bulletG, b.x, b.y, dx, dy, 10, 10, diamond(4));
         }
         bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          const nx = -dy;
-          const ny = dx;
-          bulletG.moveTo(b.x + dx * 8, b.y + dy * 8)
-            .lineTo(b.x + nx * 3, b.y + ny * 3)
-            .lineTo(b.x - dx * 8, b.y - dy * 8)
-            .lineTo(b.x - nx * 3, b.y - ny * 3)
-            .closePath();
+          pxSpindle(bulletG, b.x, b.y, dx, dy, 8, 8, diamond(3));
         }
         bulletG.fill({ color: shotColor });
-        for (const b of mine) bulletG.circle(b.x, b.y, 2);
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 2, 1, 1);
         bulletG.fill({ color: shotCore });
       } else if (shotLook === 'harpoon') {
         // 작살 — 촉 뒤로 줄이 끌린다. 줄이 없으면 그냥 화살촉이다
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 22, b.y - dy * 22).lineTo(b.x - dx * 6, b.y - dy * 6);
+          pxLine(bulletG, b.x - dx * 22, b.y - dy * 22, b.x - dx * 6, b.y - dy * 6, 1);
         }
-        bulletG.stroke({ color: shotColor, width: 1, alpha: 0.5 });
+        bulletG.fill({ color: shotColor, alpha: 0.5 });
+        // 뒤가 넓고 앞이 뾰족한 화살촉
+        const head = (w: number) => (t: number) => w * (1 - t);
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          const nx = -dy;
-          const ny = dx;
-          bulletG.moveTo(b.x + dx * 8, b.y + dy * 8)
-            .lineTo(b.x - dx * 4 + nx * 5, b.y - dy * 4 + ny * 5)
-            .lineTo(b.x - dx * 4 - nx * 5, b.y - dy * 4 - ny * 5)
-            .closePath();
+          pxSpindle(bulletG, b.x, b.y, dx, dy, 4, 8, head(5));
         }
         bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          const nx = -dy;
-          const ny = dx;
-          bulletG.moveTo(b.x + dx * 6, b.y + dy * 6)
-            .lineTo(b.x - dx * 3 + nx * 4, b.y - dy * 3 + ny * 4)
-            .lineTo(b.x - dx * 3 - nx * 4, b.y - dy * 3 - ny * 4)
-            .closePath();
+          pxSpindle(bulletG, b.x, b.y, dx, dy, 3, 6, head(4));
         }
         bulletG.fill({ color: shotColor });
       } else if (shotLook === 'ember') {
         // 불씨 — 날아가며 번진다. 뒤로 갈수록 커지고 옅어지는 불티
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
           for (let k = 1; k <= 3; k++) {
-            bulletG.circle(b.x - dx * k * 4, b.y - dy * k * 4, 1 + k * 1.4);
+            pxDisc(bulletG, b.x - dx * k * 4, b.y - dy * k * 4, 1 + k * 1.4, 1, 1);
           }
         }
         bulletG.fill({ color: shotColor, alpha: 0.3 });
-        for (const b of mine) bulletG.circle(b.x, b.y, 3);
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 3, 1, 1);
         bulletG.fill({ color: shotColor });
-        for (const b of mine) bulletG.circle(b.x, b.y, 1.5);
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 1.5, 1, 1);
         bulletG.fill({ color: shotCore });
       } else {
         // 반딧불 — 작은 유도탄. 꼬리가 휘어야 따라가는 게 보인다
+        bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          bulletG.moveTo(b.x - dx * 12, b.y - dy * 12).lineTo(b.x, b.y);
+          pxLine(bulletG, b.x - dx * 12, b.y - dy * 12, b.x, b.y, 2);
         }
-        bulletG.stroke({ color: shotColor, width: 2, alpha: 0.45 });
-        for (const b of mine) bulletG.circle(b.x, b.y, 3.5);
+        bulletG.fill({ color: shotColor, alpha: 0.45 });
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 3.5, 1, 1);
         bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
-        for (const b of mine) bulletG.circle(b.x, b.y, 2.5);
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 2.5, 1, 1);
         bulletG.fill({ color: shotColor });
-        for (const b of mine) bulletG.circle(b.x, b.y, 1.2);
+        bulletG.beginPath();
+        for (const b of mine) pxDisc(bulletG, b.x, b.y, 1.2, 1, 1);
         bulletG.fill({ color: shotCore });
       }
     }
@@ -5462,24 +5534,27 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (ac.look === 'ring') {
         // 종 — 휘두른 자리에서 퍼져 나가는 파문. 안이 비어야 '남은 충격'이지
         // 채우면 그냥 커지는 원이 된다
-        specialG.circle(ac.x, ac.y, r);
-        specialG.stroke({ color: ac.color, width: 5 - k * 3, alpha: (1 - k) * 0.7 });
-        specialG.circle(ac.x, ac.y, r * 0.72);
-        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.8 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, r - (5 - k * 3), r, 0, Math.PI * 2, 2);
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.75 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, r * 0.72 - 2, r * 0.72, 0, Math.PI * 2, 2);
+        specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.85 });
       } else if (ac.look === 'crescent') {
         // 사슬 — 길게 뻗는 얇은 낫. 부채꼴로 채우면 짧고 뭉툭해 보인다
-        specialG.moveTo(ac.x + Math.cos(a0) * r, ac.y + Math.sin(a0) * r)
-          .arc(ac.x, ac.y, r, a0, a1)
-          .arc(ac.x, ac.y, r * 0.66, a1, a0, true)
-          .closePath();
-        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.32 });
-        specialG.arc(ac.x, ac.y, r, a0, a1);
-        specialG.stroke({ color: 0xffffff, width: 3, alpha: (1 - k) * 0.95 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, r * 0.66, r, a0, a1, 3);
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.7 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, r - 5, r, a0, a1, 2);
+        specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.95 });
       } else {
-        specialG.moveTo(ac.x, ac.y).arc(ac.x, ac.y, r, a0, a1).closePath();
-        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.28 });
-        specialG.arc(ac.x, ac.y, r, a0, a1);
-        specialG.stroke({ color: 0xffffff, width: 2, alpha: (1 - k) * 0.9 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 3);
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.6 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, r - 4, r, a0, a1, 2);
+        specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.9 });
       }
     }
 
@@ -5510,26 +5585,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       for (const b of bullets) {
         if (b.shape === 'tracer' || b.color !== color || !onScreen(b.x, b.y)) continue;
         if (b.shape === 'blade') {
-          // 회전하는 마름모 — 톱날이 도는 게 보여야 한다
-          const c = Math.cos(b.angle) * b.r;
-          const s = Math.sin(b.angle) * b.r;
-          specialG.moveTo(b.x + c, b.y + s)
-            .lineTo(b.x - s, b.y + c)
-            .lineTo(b.x - c, b.y - s)
-            .lineTo(b.x + s, b.y - c)
-            .closePath();
+          // 회전하는 마름모 — 톱날이 도는 게 보여야 한다.
+          // 축 방향으로 한 번, 직각으로 한 번 겹쳐 네 귀가 뾰족하게 만든다.
+          const dxb = Math.cos(b.angle);
+          const dyb = Math.sin(b.angle);
+          const dia = (t: number) => b.r * (1 - Math.abs(t * 2 - 1));
+          pxSpindle(specialG, b.x, b.y, dxb, dyb, b.r, b.r, dia, 1);
+          pxSpindle(specialG, b.x, b.y, -dyb, dxb, b.r, b.r, dia, 1);
         } else if (b.shape === 'shard') {
-          // 고드름 — 날아가는 방향으로 길게 뻗은 침. 동그라미로 그리면
-          // 얼음 조각이 아니라 그냥 파란 점이 된다.
-          const c = Math.cos(b.angle);
-          const s = Math.sin(b.angle) * 0.8;
-          const len = b.r * 2.6;
-          const wid = b.r * 0.62;
-          specialG.moveTo(b.x + c * len, b.y + s * len)
-            .lineTo(b.x - s * wid, b.y + c * wid)
-            .lineTo(b.x - c * len * 0.42, b.y - s * len * 0.42)
-            .lineTo(b.x + s * wid, b.y - c * wid)
-            .closePath();
+          // 고드름 — 날아가는 방향으로 길게 뻗은 침. 앞이 뾰족하고
+          // 뒤가 잘린 모양이라야 얼음 조각으로 보인다.
+          const dxb = Math.cos(b.angle);
+          const dyb = Math.sin(b.angle) * 0.8;
+          pxSpindle(
+            specialG, b.x, b.y, dxb, dyb, b.r * 1.1, b.r * 2.6,
+            (t) => b.r * 0.62 * Math.min(1, (1 - t) * 2.2), 1,
+          );
         } else {
           // 모든 특수무기 탄이 여기를 지난다 — 도트로 찍어야 캐릭터와
           // 같은 결로 보인다. 작은 탄은 칸을 잘게, 큰 탄은 굵게.
@@ -5543,7 +5614,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       let core = false;
       for (const b of bullets) {
         if (b.shape !== 'orb' || b.color !== color || b.r < 3 || !onScreen(b.x, b.y)) continue;
-        specialG.circle(b.x, b.y, Math.max(1, b.r - 2));
+        if (!core) specialG.beginPath();
+        pxDisc(specialG, b.x, b.y, Math.max(1, b.r - 2), 1, b.r > 9 ? 2 : 1);
         core = true;
       }
       if (core) specialG.fill({ color: lighten(color, 0.6), alpha: 0.9 });
@@ -5552,25 +5624,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     let outline = false;
     for (const b of bullets) {
       if (b.shape === 'tracer' || b.r < 10 || !onScreen(b.x, b.y)) continue;
-      specialG.circle(b.x, b.y, b.r);
+      if (!outline) specialG.beginPath();
+      pxRing(specialG, b.x, b.y, b.r, 1, 2, 1);
       outline = true;
     }
-    if (outline) specialG.stroke({ color: 0xffffff, width: 1, alpha: 0.5 });
+    if (outline) specialG.fill({ color: 0xffffff, alpha: 0.5 });
 
     // 적 탄 — 내 탄과 헷갈리면 안 되므로 분홍 계열에 어두운 테두리
+    specialG.beginPath();
     for (const h of hostiles) {
       if (!onScreen(h.x, h.y)) continue;
-      specialG.circle(h.x, h.y, h.r + 2);
+      pxDisc(specialG, h.x, h.y, h.r + 2, 1, 1);
     }
     if (hostiles.length) specialG.fill({ color: 0x1a0a16, alpha: 0.8 });
+    specialG.beginPath();
     for (const h of hostiles) {
       if (!onScreen(h.x, h.y)) continue;
-      specialG.circle(h.x, h.y, h.r);
+      pxDisc(specialG, h.x, h.y, h.r, 1, 1);
     }
     if (hostiles.length) specialG.fill({ color: 0xff77c8 });
+    specialG.beginPath();
     for (const h of hostiles) {
       if (!onScreen(h.x, h.y)) continue;
-      specialG.circle(h.x, h.y, Math.max(1, h.r - 2));
+      pxDisc(specialG, h.x, h.y, Math.max(1, h.r - 2), 1, 1);
     }
     if (hostiles.length) specialG.fill({ color: 0xffe0f4 });
 
@@ -6028,8 +6104,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       bl.life -= dt;
       if (bl.life <= 0) { bolts.splice(i, 1); continue; }
       if (!onScreen(bl.x, bl.y)) continue;
-      specialG.moveTo(bl.x, bl.y - 60).lineTo(bl.x + 3, bl.y - 30).lineTo(bl.x - 2, bl.y - 14).lineTo(bl.x, bl.y);
-      specialG.stroke({ color: bl.color, width: 2, alpha: 0.9 });
+      const seg: [number, number][] = [
+        [bl.x, bl.y - 60], [bl.x + 3, bl.y - 30], [bl.x - 2, bl.y - 14], [bl.x, bl.y],
+      ];
+      specialG.beginPath();
+      for (let q = 0; q < seg.length - 1; q++) {
+        pxLine(specialG, seg[q][0], seg[q][1], seg[q + 1][0], seg[q + 1][1], 3, 1);
+      }
+      specialG.fill({ color: bl.color, alpha: 0.9 });
+      specialG.beginPath();
+      for (let q = 0; q < seg.length - 1; q++) {
+        pxLine(specialG, seg[q][0], seg[q][1], seg[q + 1][0], seg[q + 1][1], 1, 1);
+      }
+      specialG.fill({ color: 0xffffff, alpha: 0.95 });
     }
 
     // 폭발 파문
