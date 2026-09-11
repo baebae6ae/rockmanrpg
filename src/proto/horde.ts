@@ -926,6 +926,37 @@ function saveCleared(ids: string[]): void {
   }
 }
 
+/**
+ * 보스를 잡아 얻은 무기는 판이 끝나도 남는다 — 시리즈의 핵심 고리가
+ * "이 보스를 잡아 얻은 무기로 다음 보스를 공략한다" 이기 때문이다.
+ *
+ * 예전엔 이게 판 안에서만 유지되는 owned 에만 들어갔다. 그런데 스테이지
+ * 보스를 잡는 순간이 곧 그 판이 끝나는 순간이라, "무기 획득" 연출을
+ * 띄워 놓고 몇 초 뒤 reset() 의 owned.clear() 로 지워 버렸다 — 받자마자
+ * 잃으니 획득 자체가 아무 의미가 없었다.
+ *
+ * 레벨업으로 뽑는 특수무기·가챠 무기는 그대로 판 한정이다. 그쪽은
+ * 매 판 새로 짜는 드래프트라 남으면 안 된다.
+ */
+const ARSENAL_KEY = 'horde.arsenal';
+
+function loadArsenal(): [string, number][] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ARSENAL_KEY) ?? '[]') as [string, number][];
+    return Array.isArray(raw) ? raw.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveArsenal(entries: [string, number][]): void {
+  try {
+    localStorage.setItem(ARSENAL_KEY, JSON.stringify(entries));
+  } catch {
+    // 저장이 안 되는 환경이면 다음 판에 못 들고 갈 뿐이다
+  }
+}
+
 const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
@@ -1173,6 +1204,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const sfx = createSfx();
   const best = loadBest();
   const clearedStages = new Set<string>(loadCleared());
+  /** 보스를 잡아 영구히 얻은 무기 — 무기 id → 레벨 */
+  const arsenal = new Map<string, number>(loadArsenal());
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -3571,8 +3604,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const d = pullResult;
     pullResult = null;
     if (!d) return;
-    owned.set(d.id, (owned.get(d.id) ?? 0) + 1);
+    const lv = (owned.get(d.id) ?? 0) + 1;
+    owned.set(d.id, lv);
     cooldowns.set(d.id, 0);
+    // 보스 무기만 판을 넘겨 남는다. 가챠로 나온 레전드는 판 한정이다.
+    if (BOSS_WEAPONS.some((x) => x.id === d.id)) {
+      arsenal.set(d.id, lv);
+      saveArsenal([...arsenal]);
+    }
     if (d.id === 'rolling_shield') syncOrbs();
   }
 
@@ -3594,10 +3633,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 뽑기 후보 = 새 특수무기 + 보유 무기 강화 + 능력치.
     // 무기 쪽에 가중치를 크게 줘서 뽑기가 이 게임의 중심으로 읽히게 한다.
     const pool: { opt: PickOption; weight: number }[] = [];
+    // 슬롯 한도는 '레벨업으로 뽑은 특수무기' 에만 건다. 예전엔 owned.size
+    // 를 그대로 봤는데, 거기엔 가챠 무기·펫·보스 무기가 다 섞여 있어서
+    // 그런 걸 몇 개 얻고 나면 새 특수무기가 영영 안 나왔다.
+    const heldSpecials = SPECIALS.reduce((n, s) => n + ((owned.get(s.id) ?? 0) > 0 ? 1 : 0), 0);
     for (const def of SPECIALS) {
       const lv = owned.get(def.id) ?? 0;
       if (lv === 0) {
-        if (owned.size < MAX_SPECIALS) pool.push({ opt: { kind: 'weapon', def, lv: 0 }, weight: 4 });
+        if (heldSpecials < MAX_SPECIALS) pool.push({ opt: { kind: 'weapon', def, lv: 0 }, weight: 4 });
       } else if (lv < def.max) {
         pool.push({ opt: { kind: 'weapon', def, lv }, weight: 3 });
       }
@@ -3716,6 +3759,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     paused = false;
     owned.clear();
     cooldowns.clear();
+    // 지금까지 보스를 잡아 모은 무기를 들고 시작한다 — 판마다 새로 짜는
+    // 건 레벨업 드래프트 쪽이고, 이쪽은 스테이지를 깨서 쌓아 온 것이다.
+    for (const [id, lv] of arsenal) {
+      if (!ALL_WEAPONS.some((x) => x.id === id)) continue;
+      owned.set(id, lv);
+      cooldowns.set(id, 0);
+    }
     orbs.length = 0;
     bladeSpin = 0;
     comboStep = 0;
@@ -4039,6 +4089,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     };
     dbg.__hordeStageBoss = (): string | null => stageBoss?.id ?? null;
     dbg.__hordeClearedStages = (): string[] => [...clearedStages];
+    /** 보스를 잡아 모은 무기 — 판을 넘겨 남는 쪽이다 */
+    dbg.__hordeArsenal = (): [string, number][] => [...arsenal];
+    dbg.__hordeClearArsenal = (): void => { arsenal.clear(); saveArsenal([]); };
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
