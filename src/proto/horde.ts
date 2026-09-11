@@ -235,13 +235,22 @@ interface BossDef {
   drop: string;
 }
 
+/**
+ * 여덟 보스. 속성은 넷을 둘씩 고르게 나눠 가진다.
+ *
+ * 예전엔 톱니(saw_fang)와 칼바람(edge_gale)이 무속성이었다. 그런데
+ * elemMult 는 한쪽이라도 무속성이면 무조건 1배라, 이 둘이 나오는
+ * 스테이지에서는 상성이 통째로 꺼져 있었다 — 여덟 중 둘, 그러니까
+ * 네 판에 한 판은 약점도 저항도 없는 맹탕이었다는 뜻이다.
+ * 톱니는 도는 전기톱으로, 칼바람은 살을 에는 찬 바람으로 잡았다.
+ */
 const BOSS_DEFS: BossDef[] = [
   { id: 'bolt_hand', pattern: 'slam', color: 0xffe86b, elem: 'elec', drop: 'bolt_chain' },
   { id: 'water_shade', pattern: 'blink', color: 0x8ef0a0, elem: 'aqua', drop: 'shade_veil' },
-  { id: 'saw_fang', pattern: 'boomer', color: 0xc98cff, elem: 'none', drop: 'saw_return' },
+  { id: 'saw_fang', pattern: 'boomer', color: 0xc98cff, elem: 'elec', drop: 'saw_return' },
   { id: 'forge_core', pattern: 'charge', color: 0xff9a4c, elem: 'fire', drop: 'forge_ram' },
   { id: 'shell_wall', pattern: 'guard', color: 0x6ec8ff, elem: 'aqua', drop: 'shell_guard' },
-  { id: 'edge_gale', pattern: 'dasher', color: 0xff5c9c, elem: 'none', drop: 'edge_cut' },
+  { id: 'edge_gale', pattern: 'dasher', color: 0xff5c9c, elem: 'ice', drop: 'edge_cut' },
   { id: 'frost_eye', pattern: 'sniper', color: 0xdcf4ff, elem: 'ice', drop: 'frost_lance' },
   { id: 'flame_ring', pattern: 'barrier', color: 0xff5c5c, elem: 'fire', drop: 'flame_orbit' },
 ];
@@ -766,13 +775,16 @@ function pxRing(
 /**
  * 뿜어 나가는 부채꼴.
  *
- * 처음엔 축을 따라가며 띠를 하나씩 놓았는데, 층마다 격자가 어긋나
- * 줄무늬(모아레)가 생기고 좌표에 step/2 가 섞여 다시 소수가 됐다.
- * 그냥 화면 칸을 훑으면서 부채꼴 안에 드는 칸만 찍는다 — 격자가
- * 하나뿐이라 어긋날 일이 없다.
+ * 처음엔 축을 따라 띠를 하나씩 놓았다가 층마다 격자가 어긋나 줄무늬가
+ * 생겨서, 화면 칸을 전부 훑는 방식으로 바꿨다. 그런데 그건 사거리가
+ * 길어질수록 훑는 칸이 제곱으로 늘어난다 — 화염 방사(사거리 100 이상)
+ * 에서 프레임당 수만 번이 돌아 30fps 가 20fps 로 내려앉았다.
  *
- * band 는 축에서 떨어진 정도(0=한가운데, 1=가장자리)의 범위다. 같은
- * 부채꼴을 안쪽/바깥쪽으로 나눠 다른 색으로 칠하려고 쓴다.
+ * 그래서 축·수직 좌표로 훑되, 찍을 때만 전역 격자에 맞춘다. 훑는 양은
+ * 부채꼴 넓이에 비례할 뿐이고, 격자는 하나뿐이라 층끼리 어긋나지도
+ * 않는다. 칸보다 촘촘히(sub) 뽑아야 반올림 뒤에 틈이 안 생긴다.
+ *
+ * band 는 축에서 떨어진 정도(0=한가운데, 1=가장자리)의 범위다.
  */
 function pxCone(
   g: Graphics, x: number, y: number, angle: number, reach: number,
@@ -783,20 +795,16 @@ function pxCone(
   const sa = Math.sin(angle);
   const x0 = Math.round(x);
   const y0 = Math.round(y);
-  // 훑을 범위 — 부채꼴 끝의 반폭까지 넉넉히 잡는다
-  const maxHw = 4 + reach * spread;
-  const ext = Math.ceil((reach + maxHw) / step) * step;
-  for (let gy = -ext; gy <= ext; gy += step) {
-    for (let gx = -ext; gx <= ext; gx += step) {
-      // 세로가 눌린 좌표계라 판정할 때 되돌린다 (다른 판정부와 같은 규칙)
-      const uy = gy / 0.78;
-      const along = gx * ca + uy * sa;
-      if (along < 0 || along > reach) continue;
-      const perp = Math.abs(-gx * sa + uy * ca);
-      const hw = 4 + along * spread;
-      const t = perp / hw;
-      if (t < bandLo || t >= bandHi) continue;
-      g.rect(x0 + gx, y0 + gy, step, step);
+  const sub = step * 0.7;
+  for (let a = 0; a <= reach; a += sub) {
+    const hw = 4 + a * spread;
+    const hi = hw * bandHi;
+    const lo = hw * bandLo;
+    for (let pp = -hi; pp <= hi; pp += sub) {
+      if (Math.abs(pp) < lo) continue;
+      const wx = x0 + ca * a - sa * pp;
+      const wy = y0 + (sa * a + ca * pp) * 0.78;
+      g.rect(Math.round(wx / step) * step, Math.round(wy / step) * step, step, step);
     }
   }
 }
@@ -1402,7 +1410,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const hostiles: Hostile[] = [];
   const heals: Heal[] = [];
   let boss: Boss | null = null;
-  let bossAt = 70;
+  /**
+   * 보스가 나오는 시각. 예전엔 70초였는데, 이 장르의 재미는 전부
+   * "내 빌드가 완성되는 순간" 에 있고 70초로는 무기 슬롯 네 칸을
+   * 채우기도 전에 판이 끝난다. 카드를 스무 장쯤 뽑아 화력이 화면을
+   * 덮는 구간까지 가 봐야 이 모드가 재미있는지 아닌지를 판단할 수 있다.
+   *
+   * 적 체력 곡선(grow)은 주석에 "5분 지점 기준" 이라고 적혀 있을 만큼
+   * 원래 몇 분짜리 판을 상정하고 만들어져 있었다 — 짧았던 건 이 값뿐이다.
+   */
+  let bossAt = 210;
   let bossBanner = 0;
   let bossKills = 0;
   /** 보스 문이 열리고 이름·체력바가 차오르는 연출 — 이 시간 동안은 세계가 멈춘다 */
@@ -1453,10 +1470,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let fireAcc = 0;
   let surgeAt = 32;
   /**
-   * 한 구간의 길이. 보스가 70초에 나오니 판 하나에 구간이 셋 들어간다 —
+   * 한 구간의 길이. 보스가 210초에 나오니 판 하나에 구간이 일곱 들어간다.
    * 더 짧게 자르면 대비할 틈이 없고, 더 길면 구간 안에서 다시 지루해진다.
    */
-  const WAVE_LEN = 22;
+  const WAVE_LEN = 30;
   /** 다음 구간을 몇 초 전에 예고하는가 — 레벨업 카드 한 번 뽑을 여유 */
   const WAVE_TELL = 5;
   let waveElem: Element = 'elec';
@@ -1945,8 +1962,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const m = elemMult(elem, b.def.elem);
     amount *= m;
     if (m >= WEAK_MULT) {
-      spawnPart(b.x, b.y - 14, 4, ELEM_COLOR[elem], 200);
-      b.flash = 0.1;
+      // 약점이 터지는 순간은 이 모드에서 제일 중요한 피드백이다 —
+      // 알갱이 네 개로는 3배가 들어갔는지 알 수가 없다. 파문·섬광·
+      // 히트스톱까지 얹어 몸으로 알게 한다.
+      spawnPart(b.x, b.y - 14, 10, ELEM_COLOR[elem], 260);
+      rings.push({ x: b.x, y: b.y - 14, r: 26, life: 0.24, max: 0.24, color: ELEM_COLOR[elem] });
+      b.flash = 0.14;
+      hitstop = Math.max(hitstop, 0.03);
+      shake = Math.max(shake, 3);
+    } else if (m < 1) {
+      // 반대로 저항이 걸리면 튕기는 느낌을 줘서 "이 무기는 아니다" 를 알린다
+      spawnPart(b.x, b.y - 14, 2, 0x9fb0dd, 70);
     }
     // 은신 중엔 못 맞히고, 방패를 든 동안은 대부분 튕긴다 —
     // "지금은 때릴 때가 아니다"를 몸으로 알게 하는 구간이다
@@ -4050,7 +4076,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hostiles.length = 0;
     heals.length = 0;
     if (boss) { foeLayer.removeChild(boss.view); boss = null; }
-    bossAt = 70;
+    bossAt = 210;
     bossBanner = 0;
     bossKills = 0;
     newRecord = false;
@@ -4790,6 +4816,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 꼴이 된다.
     if (!stageBossSpawned && !boss && stageBoss && time >= bossAt) {
       stageBossSpawned = true;
+      // 보스가 나오면 몰려오는 잡몹도 그 보스의 속성으로 바뀐다.
+      // 보스의 속성이 데미지 배율 한 줄로만 존재하면 "속성이 있다"는 게
+      // 숫자로만 남는다 — 화면이 보스 색으로 물들어야 눈에 보인다.
+      if (stageBoss.elem !== 'none') {
+        waveElem = stageBoss.elem;
+        waveBanner = 2.4;
+      }
       bossIntroT = BOSS_INTRO_DUR;
       bossIntroTicks = 0;
       void spawnBoss(stageBoss, false);
@@ -5405,13 +5438,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          pxLine(bulletG, b.x - dx * 9, b.y - dy * 9, b.x + dx * 3, b.y + dy * 3, 8, 2);
+          pxLine(bulletG, b.x - dx * 9, b.y - dy * 9, b.x + dx * 3, b.y + dy * 3, 8, 1);
         }
         bulletG.fill({ color: 0x0a1024, alpha: 0.6 });
         bulletG.beginPath();
         for (const b of mine) {
           const [dx, dy] = dir(b);
-          pxLine(bulletG, b.x - dx * 8, b.y - dy * 8, b.x + dx * 3, b.y + dy * 3, 4, 2);
+          pxLine(bulletG, b.x - dx * 8, b.y - dy * 8, b.x + dx * 3, b.y + dy * 3, 4, 1);
         }
         bulletG.fill({ color: shotColor });
         bulletG.beginPath();
@@ -5535,25 +5568,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 종 — 휘두른 자리에서 퍼져 나가는 파문. 안이 비어야 '남은 충격'이지
         // 채우면 그냥 커지는 원이 된다
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, r - (5 - k * 3), r, 0, Math.PI * 2, 2);
+        pxArcBand(specialG, ac.x, ac.y, r - (5 - k * 3), r, 0, Math.PI * 2, 1);
         specialG.fill({ color: ac.color, alpha: (1 - k) * 0.75 });
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, r * 0.72 - 2, r * 0.72, 0, Math.PI * 2, 2);
+        pxArcBand(specialG, ac.x, ac.y, r * 0.72 - 2, r * 0.72, 0, Math.PI * 2, 1);
         specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.85 });
       } else if (ac.look === 'crescent') {
         // 사슬 — 길게 뻗는 얇은 낫. 부채꼴로 채우면 짧고 뭉툭해 보인다
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, r * 0.66, r, a0, a1, 3);
+        pxArcBand(specialG, ac.x, ac.y, r * 0.66, r, a0, a1, 2);
         specialG.fill({ color: ac.color, alpha: (1 - k) * 0.7 });
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, r - 5, r, a0, a1, 2);
+        pxArcBand(specialG, ac.x, ac.y, r - 5, r, a0, a1, 1);
         specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.95 });
       } else {
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 3);
+        pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 2);
         specialG.fill({ color: ac.color, alpha: (1 - k) * 0.6 });
         specialG.beginPath();
-        pxArcBand(specialG, ac.x, ac.y, r - 4, r, a0, a1, 2);
+        pxArcBand(specialG, ac.x, ac.y, r - 4, r, a0, a1, 1);
         specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.9 });
       }
     }
@@ -5604,7 +5637,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         } else {
           // 모든 특수무기 탄이 여기를 지난다 — 도트로 찍어야 캐릭터와
           // 같은 결로 보인다. 작은 탄은 칸을 잘게, 큰 탄은 굵게.
-          pxDisc(specialG, b.x, b.y, b.r, 1, b.r > 9 ? 3 : 2);
+          pxDisc(specialG, b.x, b.y, b.r, 1, b.r > 9 ? 2 : 1);
         }
         any = true;
       }
@@ -5615,7 +5648,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       for (const b of bullets) {
         if (b.shape !== 'orb' || b.color !== color || b.r < 3 || !onScreen(b.x, b.y)) continue;
         if (!core) specialG.beginPath();
-        pxDisc(specialG, b.x, b.y, Math.max(1, b.r - 2), 1, b.r > 9 ? 2 : 1);
+        pxDisc(specialG, b.x, b.y, Math.max(1, b.r - 2), 1, 1);
         core = true;
       }
       if (core) specialG.fill({ color: lighten(color, 0.6), alpha: 0.9 });
@@ -5625,7 +5658,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     for (const b of bullets) {
       if (b.shape === 'tracer' || b.r < 10 || !onScreen(b.x, b.y)) continue;
       if (!outline) specialG.beginPath();
-      pxRing(specialG, b.x, b.y, b.r, 1, 2, 1);
+      pxRing(specialG, b.x, b.y, b.r, 1, 1, 2);
       outline = true;
     }
     if (outline) specialG.fill({ color: 0xffffff, alpha: 0.5 });
@@ -5696,7 +5729,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const a = Math.min(1, k * 2.2);
       // 굵은 칸부터 잔 칸으로 세 겹 — 가장자리가 계단으로 남아야 도트로 읽힌다
       specialG.beginPath();
-      pxDisc(specialG, z.x, z.y, z.r, 0.78, 3);
+      pxDisc(specialG, z.x, z.y, z.r, 0.78, 2);
       specialG.fill({ color: 0x1b4f8c, alpha: a * 0.62 });
       specialG.beginPath();
       pxDisc(specialG, z.x, z.y, z.r * 0.66, 0.78, 2);
@@ -5704,7 +5737,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 일렁이는 테두리
       const wob = 1 + Math.sin(animClock * 4 + z.x * 0.05) * 0.05;
       specialG.beginPath();
-      pxRing(specialG, z.x, z.y, z.r * wob, 0.78, 2, 1);
+      pxRing(specialG, z.x, z.y, z.r * wob, 0.78, 1, 2);
       specialG.fill({ color: 0xbfe8ff, alpha: a * 0.55 });
       // 떠오르는 물방울 — 파티클과 같은 결로 정수 칸에 찍는다
       specialG.beginPath();
@@ -5734,7 +5767,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       ];
       for (const [lo, hi, alpha, col] of bands) {
         specialG.beginPath();
-        pxCone(specialG, j.x, j.y, j.angle, reach, 0.5, 3, lo, hi);
+        pxCone(specialG, j.x, j.y, j.angle, reach, 0.34, 2, lo, hi);
         specialG.fill({ color: col, alpha: alpha * (0.45 + k * 0.55) });
       }
       // 끝에서 흩어지는 알갱이
@@ -5759,7 +5792,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const a = Math.min(1, kt.life / 2.2);
       const fl = 0.86 + Math.sin(animClock * 17 + kt.x * 0.3) * 0.14;
       specialG.beginPath();
-      pxDisc(specialG, kt.x, kt.y, kt.r * (0.75 + a * 0.35) * fl, 0.78, 3);
+      pxDisc(specialG, kt.x, kt.y, kt.r * (0.75 + a * 0.35) * fl, 0.78, 2);
       specialG.fill({ color: 0x8c1a44, alpha: a * 0.34 });
       specialG.beginPath();
       pxDisc(specialG, kt.x, kt.y, kt.r * 0.72 * fl, 0.78, 2);
@@ -6126,7 +6159,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (rg.life <= 0) { rings.splice(i, 1); continue; }
       const k = 1 - rg.life / rg.max;
       specialG.beginPath();
-      pxRing(specialG, rg.x, rg.y, rg.r * (0.45 + k * 0.55), 0.78, 2, 1);
+      pxRing(specialG, rg.x, rg.y, rg.r * (0.45 + k * 0.55), 0.78, 1, 2);
       specialG.fill({ color: rg.color, alpha: (1 - k) * 0.9 });
     }
 
