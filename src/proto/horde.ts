@@ -104,6 +104,15 @@ const ELEM_NAME: Record<Element, string> = {
   none: '무', elec: '전기', aqua: '수', fire: '화', ice: '빙',
 };
 
+/**
+ * 위 ELEM_NAME 은 보스 이름표처럼 자리가 빠듯한 곳에 쓰는 약칭이라
+ * '수·화·빙' 한 글자와 '전기' 두 글자가 섞여 있다. 그대로 문장에 넣으면
+ * "화 무리 접근" 처럼 읽히므로, 문장에 들어갈 자리에는 이쪽을 쓴다.
+ */
+const ELEM_WORD: Record<Element, string> = {
+  none: '무속성', elec: '전기', aqua: '물', fire: '불', ice: '얼음',
+};
+
 /** 상성 배율 — 3배는 눈에 확 띄어야 "골라 쓴다"는 판단이 생긴다 */
 const WEAK_MULT = 3;
 const RESIST_MULT = 0.55;
@@ -1122,7 +1131,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const cardG = new Graphics();
   const cardTexts: Text[] = [];
   const cardBadges: Text[] = [];
+  /** 카드마다 그 무기의 속성과, 다가오는 무리에 대한 상성을 적는다 */
+  const cardElems: Text[] = [];
   ui.addChild(cardG);
+  /**
+   * 레벨업 카드가 화면을 덮는 동안에는 HUD 의 구간 표시가 안 보인다 —
+   * 하필 "무엇을 고를까"를 판단하는 바로 그 순간에 판단 근거가 사라지는
+   * 셈이라, 카드 화면 위에 다시 적어 준다.
+   */
+  const pickWaveLabel = new Text({ text: '', style: { ...mono, fontSize: 10, fill: 0xcfe0ff } });
+  pickWaveLabel.anchor.set(0.5);
+  pickWaveLabel.visible = false;
+  ui.addChild(pickWaveLabel);
   const charBtnLabel = new Text({ text: '다른 캐릭터로', style: { ...mono, fontSize: 9, fill: 0xc9d6ff } });
   charBtnLabel.anchor.set(0.5);
   charBtnLabel.visible = false;
@@ -1138,7 +1158,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     badge.anchor.set(0.5);
     badge.visible = false;
     cardBadges.push(badge);
-    ui.addChild(name, desc, badge);
+    const el = new Text({ text: '', style: { ...mono, fontSize: 8, fill: 0xcfe0ff } });
+    el.anchor.set(0, 0.5);
+    el.visible = false;
+    cardElems.push(el);
+    ui.addChild(name, desc, badge, el);
   }
   // cardG 는 이 둘보다 뒤에 붙었으므로 그대로 두면 어두운 판이 글자를 덮는다.
   // 다시 addChild 해서 맨 위로 올린다.
@@ -2546,6 +2570,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           vx: Math.cos(a) * 95, vy: Math.sin(a) * 95 * 0.8,
           life: 1.7, dmg: 7 + 4 * lv, pierce: 999,
           shape: 'orb', color: 0x9fe8ff, r: 18 + 3 * lv, spin: 9,
+          elem: 'ice',
         });
       },
     },
@@ -2566,6 +2591,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           life: 1.1, dmg: 0, pierce: 0,
           shape: 'orb', color: 0xff8a5c, r: 5, spin: 7,
           boomR: 34 + 7 * lv, boomDmg: 22 + 11 * lv,
+          elem: 'fire',
         });
       },
     },
@@ -2589,6 +2615,125 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           bolts.push({ x: f.x, y: f.y - 8, life: 0.14, color: 0xffe86b });
           blast(f.x, f.y - 8, 20, dmg, 0xffe86b, 'elec');
         }
+      },
+    },
+
+    // ---- 속성별 두 번째 선택지.
+    // 구간마다 화면을 지배하는 속성이 바뀌는데(waveWeights) 정작 뽑기
+    // 풀에 그 속성 무기가 없으면 예고를 보고도 할 수 있는 게 없다.
+    // 특히 물은 하나도 없어서 불 구간에 아예 답이 없었다.
+    // 같은 속성이라도 동작이 겹치면 고를 이유가 없으니 전부 다르게 둔다.
+    {
+      id: 'bubble_burst',
+      elem: 'aqua',
+      name: '버블 버스트',
+      color: 0x6ec8ff,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '퍼져 나가며 터지는 물방울' : `${3 + lv + 1}발 · 폭발 ${10 + 6 * (lv + 1)}`),
+      interval: (lv) => 1.15 - 0.1 * lv,
+      fire: (lv) => {
+        const n = 3 + lv;
+        const t = nearestFoe(px, py);
+        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        for (let i = 0; i < n; i++) {
+          const a = base + (i - (n - 1) / 2) * 0.26;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * 120, vy: Math.sin(a) * 120 * 0.8,
+            life: 1.4, dmg: 0, pierce: 0,
+            shape: 'orb', color: 0x6ec8ff, r: 5, spin: 3,
+            boomR: 16 + 4 * lv, boomDmg: 10 + 6 * lv,
+            elem: 'aqua',
+          });
+        }
+        sfx.shot('charge');
+      },
+    },
+    {
+      id: 'torrent',
+      elem: 'aqua',
+      name: '격류',
+      color: 0x4fd6e8,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '꿰뚫고 지나가는 물줄기' : `위력 ${9 + 5 * (lv + 1)} · 관통 ${3 + lv + 1}`),
+      interval: (lv) => 0.42 - 0.04 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        addBullet({
+          x: px, y: py - 10,
+          vx: Math.cos(a) * 330, vy: Math.sin(a) * 330 * 0.8,
+          life: 0.8, dmg: 9 + 5 * lv, pierce: 3 + lv,
+          shape: 'tracer', color: 0x4fd6e8, r: 6,
+          elem: 'aqua',
+        });
+        sfx.shot('rapid');
+      },
+    },
+    {
+      // 사거리가 짧은 대신 간격이 아주 촘촘하다 — 붙어서 녹이는 무기다.
+      // 초당 열 번 가까이 나가므로 여기서는 소리를 내지 않는다.
+      id: 'flame_jet',
+      elem: 'fire',
+      name: '화염 방사',
+      color: 0xff9a4c,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '가까이 퍼붓는 불길' : `위력 ${5 + 3 * (lv + 1)} · 사거리 ${60 + 8 * (lv + 1)}`),
+      interval: (lv) => 0.16 - 0.012 * lv,
+      fire: (lv) => {
+        const t = nearestFoe(px, py);
+        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        const a = base + (Math.random() - 0.5) * 0.5;
+        const reach = 60 + 8 * lv;
+        addBullet({
+          x: px, y: py - 10,
+          vx: Math.cos(a) * reach * 2.6, vy: Math.sin(a) * reach * 2.6 * 0.8,
+          life: 0.38, dmg: 5 + 3 * lv, pierce: 2,
+          shape: 'orb', color: 0xff9a4c, r: 7, spin: 5,
+          elem: 'fire',
+        });
+      },
+    },
+    {
+      id: 'icicle',
+      elem: 'ice',
+      name: '고드름',
+      color: 0xdcf4ff,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '쏟아지는 얼음 조각' : `${3 + lv + 1}발 · 위력 ${8 + 5 * (lv + 1)}`),
+      interval: (lv) => 0.85 - 0.08 * lv,
+      fire: (lv) => {
+        const n = 3 + lv;
+        const t = nearestFoe(px, py);
+        const base = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+        for (let i = 0; i < n; i++) {
+          const a = base + (Math.random() - 0.5) * 0.34;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(a) * 300, vy: Math.sin(a) * 300 * 0.8,
+            life: 0.9, dmg: 8 + 5 * lv, pierce: 1,
+            shape: 'blade', color: 0xdcf4ff, r: 4, spin: 12,
+            elem: 'ice',
+          });
+        }
+        sfx.shot('rapid');
+      },
+    },
+    {
+      // 트라이어드 썬더가 '멀리 있는 놈을 골라 때리는' 쪽이라, 이쪽은
+      // 반대로 붙은 놈을 떼어내는 자기 중심 방전으로 잡는다.
+      id: 'shock_field',
+      elem: 'elec',
+      name: '전격 지대',
+      color: 0xffe86b,
+      max: 5,
+      desc: (lv) => (lv === 0 ? '몸에서 터지는 방전' : `반경 ${34 + 7 * (lv + 1)} · 위력 ${14 + 9 * (lv + 1)}`),
+      interval: (lv) => 1.6 - 0.14 * lv,
+      fire: (lv) => {
+        const rr = 34 + 7 * lv;
+        rings.push({ x: px, y: py - 10, r: rr, life: 0.22, max: 0.22, color: 0xffe86b });
+        blast(px, py - 10, rr, 14 + 9 * lv, 0xffe86b, 'elec');
+        sfx.hit();
       },
     },
   ];
@@ -3031,6 +3176,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 * 0.8,
             life: 1.6, dmg, pierce: 2,
             shape: 'orb', color: 0xff5c5c, r: 6, back: 0.5,
+            elem: 'fire',
           });
         }
         sfx.shot('rapid');
@@ -3292,7 +3438,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         spawnPart(h.x, h.y, 4, 0x9fd0ff, 150);
         sfx.hit();
         // 튕긴 자리에 작은 반격
-        blast(h.x, h.y, 18, dmg, 0x6ec8ff);
+        blast(h.x, h.y, 18, dmg, 0x6ec8ff, 'aqua');
       }
     }
 
@@ -5606,9 +5752,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 대신하므로 비운다.
     // 다가오는 것은 가운데 배너가 알린다 — 여기서까지 예고를 겹쳐 쓰면
     // 같은 말을 두 군데서 하느라 둘 다 안 읽힌다. 여기는 '지금'만 맡는다.
+    if (phase !== 'pick') pickWaveLabel.visible = false;
     waveLabel.visible = phase === 'play' && !boss && !stageBossSpawned;
     if (waveLabel.visible) {
-      waveLabel.text = `${ELEM_NAME[waveElem]} 무리`;
+      waveLabel.text = `${ELEM_WORD[waveElem]} 무리`;
       waveLabel.style.fill = ELEM_COLOR[waveElem];
     }
 
@@ -5630,7 +5777,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const told = waveTold;
       const e = told ? nextWaveElem : waveElem;
       stageLabel.visible = true;
-      stageLabel.text = told ? `${ELEM_NAME[e]} 무리 접근` : `${ELEM_NAME[e]} 무리`;
+      stageLabel.text = told ? `${ELEM_WORD[e]} 무리 접근` : `${ELEM_WORD[e]} 무리`;
       stageLabel.style.fill = ELEM_COLOR[e];
       // 예고는 깜빡여서 눈에 걸리게, 교대 직후 확인용 표시는 그냥 사라지게
       stageLabel.alpha = told
@@ -5943,11 +6090,38 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       name.style.fill = on ? 0xffffff : 0x9fb0dd;
       name.position.set(x + cw / 2, cy + 43);
       desc.position.set(x + cw / 2, cy + 66);
+
+      // 속성과, 곧 상대할 무리에 대한 상성. 이게 없으면 구간 예고를
+      // 보고도 어느 카드가 답인지 알 수가 없다. 가운데 배지와 겹치지
+      // 않게 왼쪽 끝에 붙인다.
+      const el = cardElems[i];
+      const we = o.kind === 'weapon' ? o.def.elem ?? 'none' : 'none';
+      if (we === 'none') {
+        el.visible = false;
+      } else {
+        // 바깥의 facing(캐릭터가 보는 방향)과 이름이 겹치지 않게 한다
+        const incoming = waveTold ? nextWaveElem : waveElem;
+        const mult = elemMult(we, incoming);
+        const tag = mult > 1 ? ' ▲' : mult < 1 ? ' ▼' : '';
+        el.visible = true;
+        el.text = ELEM_WORD[we] + tag;
+        el.style.fill = mult > 1 ? ELEM_COLOR[we] : mult < 1 ? 0x7a86ab : ELEM_COLOR[we];
+        el.alpha = on ? 1 : 0.7;
+        el.position.set(x + 12, cy + 18);
+      }
     }
     for (let i = pickList.length; i < 3; i++) {
       cardTexts[i * 2].text = '';
       cardTexts[i * 2 + 1].text = '';
       cardBadges[i].visible = false;
+      cardElems[i].visible = false;
     }
+
+    // 지금/곧 상대할 무리 — 카드 더미 바로 위에 둔다
+    const facingElem = waveTold ? nextWaveElem : waveElem;
+    pickWaveLabel.visible = true;
+    pickWaveLabel.text = `${waveTold ? '곧' : '지금'} ${ELEM_WORD[facingElem]} 무리`;
+    pickWaveLabel.style.fill = ELEM_COLOR[facingElem];
+    pickWaveLabel.position.set(W / 2, Math.max(14, y0 - 16));
   }
 }
