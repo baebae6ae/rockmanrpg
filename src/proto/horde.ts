@@ -139,6 +139,13 @@ const SPAWN_WEIGHT: Record<FoeKind, number> = {
 const SPAWN_TOTAL = KIND_LIST.reduce((a, k) => a + SPAWN_WEIGHT[k], 0);
 
 /**
+ * 잡몹 체력 배율의 상한. 대략 120초쯤에 닿고, 그 뒤로는 체력이 아니라
+ * 머릿수만으로 압박한다 — 원래 이 파일이 "난이도는 체력이 아니라
+ * 머릿수가 끌고 간다" 고 적어 둔 방침 그대로다.
+ */
+const GROW_CAP = 18;
+
+/**
  * 구간(웨이브)마다 한 속성이 화면을 지배한다.
  *
  * 예전엔 이 비율이 처음부터 끝까지 고정이었다 — 1초째 화면도 60초째
@@ -1829,7 +1836,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 킬 수가 줄고 → 레벨이 안 오르고 → 화력이 멈춰서 교착에 빠진다.
     // "너무 어렵다" 피드백을 받고 곡선을 조금 눕혔다. 계수를 낮췄을 뿐
     // 모양(선형+2차)은 그대로다 — 5분 지점 기준 체력이 대략 20% 낮아진다.
-    const grow = 1 + time * 0.045 + time * time * 0.00095;
+    // 다만 2차식을 끝까지 두면 후반이 수학적으로 못 따라가는 판이 된다.
+    // 보스를 210초로 미루고 나서 드러났다 — 70초 대비 210초에 "따라가려면
+    // 필요한 DPS" 가 14.5배로 뛰는데(체력 8.8→52배 × 스폰 22.6→55/초),
+    // 그 사이 플레이어 화력은 레벨 11→23 으로 기껏 서너 배다. 실측에서도
+    // 후반 킬 속도가 12/초인데 스폰이 55/초라 필요량의 17% 밖에 안 됐다.
+    // 곡선 모양은 그대로 두고 상한만 씌운다 — 초·중반 손맛은 건드리지
+    // 않으면서 후반 폭주만 잘린다. 난이도를 만지려면 여기 GROW_CAP 이다.
+    const grow = Math.min(GROW_CAP, 1 + time * 0.045 + time * time * 0.00095);
     const view = takeView(kind);
     const scale = def.scale * (elite ? 1.6 : 1);
     view.scale.set(scale, scale);
@@ -4153,7 +4167,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 너무 좁고 약해서 근접이 이 장르에서 성립을 안 했다 — 반경 42→60,
       // 부채꼴 153°→194°(반원보다 넓게), 위력도 한 단 더 올렸다.
       w.interval = 0.42;
-      w.dmg = 12 + Math.round(si.power * 0.75);
+      // 근접은 사거리를 포기하는 대신 한 방이 굵어야 한다. 화면에 적이
+      // 170 마리까지 차는 판에서 그 한가운데로 걸어 들어가는 위험값이다.
+      w.dmg = Math.round((12 + Math.round(si.power * 0.75)) * 1.35);
       w.shots = 1; w.spread = 0; w.pierce = 0;
       // 넓이를 맞춰 둔 값이라 셋 다 초당 위력이 같다 — SIG 주석 참고
       w.arcR = sig.arcR ?? 60;
@@ -4175,7 +4191,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     w.spread *= sig.spreadMul ?? 1;
     if (sig.shots !== undefined) w.shots = sig.shots;
     if (sig.pierce !== undefined) w.pierce = sig.pierce;
-    shotLife = 0.5 * (sig.rangeMul ?? 1);
+    // 사거리 바닥값. 0.5 였을 때는 탄속 350 기준 175px 밖에 못 나가서,
+    // 적이 뿌려지는 거리(가로 175 · 세로 290)에 닿지도 않았다. 사방에서
+    // 몰려오는 모드에서 화면 절반에 손이 안 닿으면 원거리가 원거리가
+    // 아니다. 바닥을 올리되 rangeMul 비율은 그대로 둔다 — 바늘이 멀리
+    // 쏘고 불씨가 붙어서 쏘는 대원 색깔까지 지워 버리면 안 된다.
+    shotLife = 0.9 * (sig.rangeMul ?? 1);
 
     applyArmor();
     for (const k of Object.keys(taken)) delete taken[k];
