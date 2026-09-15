@@ -1244,7 +1244,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // petBackG 는 foeLayer 보다 아래다 — 궤도 뒤쪽(위쪽)을 도는 펫은
   // 플레이어에 가려야 "돌고 있다"가 입체로 읽힌다.
   const petBackG = new Graphics();
-  world.addChild(groundLayer, animG, gemG, lungeG, petBackG, foeLayer, bulletG, specialG, partG);
+  // 플레이어 전용 레이어. 예전엔 hero 가 foeLayer 안에서 적들과 함께
+  // y 값으로 정렬됐다 — 사방에서 몰려오는 모드라 항상 적의 절반가량
+  // (플레이어보다 아래에 있는 전부)이 플레이어 위에 그려지고 있었다.
+  // 플레이어는 항상 최상단이어야 한다(이 장르의 공통 규칙).
+  const playerLayer = new Container();
+  world.addChild(groundLayer, animG, gemG, lungeG, petBackG, foeLayer, playerLayer, bulletG, specialG, partG);
 
   // 배경 — 스테이지 테마는 stage_bg.ts 에 있다.
   // 판이 진행되면서 구역이 바뀌므로 정지 배경 한 장으로 끝나지 않는다.
@@ -1410,7 +1415,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: "'Silkscreen', monospace", fontSize: 7, fill: 0xffd85c } });
   fireLabel.anchor.set(0.5);
   fireLabel.visible = false;
-  ui.addChild(padG, dashLabel, fireLabel);
+  const etankLabel = new Text({ text: 'E-TANK', style: { fontFamily: "'Silkscreen', monospace", fontSize: 7, fill: 0x8ef0a0 } });
+  etankLabel.anchor.set(0.5);
+  etankLabel.visible = false;
+  ui.addChild(padG, dashLabel, fireLabel, etankLabel);
 
   // ------------------------------------------------------------ 상태
   const foes: Foe[] = [];
@@ -1556,11 +1564,22 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const DASH_BTN = { x: W - 44, y: H - 44, r: 27 };
   /** 차지 버튼 — 누르고 있으면 모이고 떼면 나간다. 대시 위에 둔다. */
   const FIRE_BTN = { x: W - 52, y: H - 104, r: 25 };
+  /**
+   * E탱크 버튼. 예전엔 키보드 'up' 눌렀을 때만 터졌는데, 'up' 은 이동
+   * 입력과 같은 키라 위로 걸어가기만 해도 조용히 소모됐다. 게다가 이
+   * 화면은 시작하자마자 input.disableTouch() 를 불러서(아래) 터치에서는
+   * 전역 Input 의 버튼이 전부 안 먹는다 — 터치로는 아예 쓸 방법이
+   * 없었다. 이동과 안 겹치는 별도 버튼으로 뺀다.
+   */
+  const ETANK_BTN = { x: 40, y: H - 44, r: 22 };
   let stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
   let dashId: number | null = null;
   let touchDash = false;
   let fireId: number | null = null;
   let touchFire = false;
+  /** E탱크는 누르는 순간 한 번만 터지는 탭이다 — 눌려 있는 동안 계속
+      쓰면 안 되므로 gachaTap 과 같은 방식으로 소비하고 바로 끈다 */
+  let touchETank = false;
   let touchMode = false;
 
   // 브라우저가 드래그를 스크롤/확대 제스처로 가져가면 pointercancel 이 나거나
@@ -1634,6 +1653,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     } else if (Math.hypot(p.x - FIRE_BTN.x, p.y - FIRE_BTN.y) <= FIRE_BTN.r * 1.25) {
       fireId = e.pointerId;
       touchFire = true;
+    } else if (Math.hypot(p.x - ETANK_BTN.x, p.y - ETANK_BTN.y) <= ETANK_BTN.r * 1.25) {
+      touchETank = true;
     } else if (stick === null) {
       stick = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
     }
@@ -4031,12 +4052,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 고른 캐릭터로 갈아끼운다 — 시트·색·기본 능력치가 전부 여기서 정해진다 */
   function setCharacter(def: HordeChar): void {
     charDef = def;
-    if (hero) foeLayer.removeChild(hero);
+    if (hero) playerLayer.removeChild(hero);
     hero = new AnimView(charSheets.get(def.id)!);
     hero.play('idle');
     heroScale = def.sprite_scale ?? 1;
     hero.scale.set(heroScale, heroScale);
-    foeLayer.addChild(hero);
+    playerLayer.addChild(hero);
 
     const si = SHOTS.get(def.id)!;
     shotColor = si.color;
@@ -4477,6 +4498,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     };
     /** 캡슐을 주우러 갈 필요 없이 즉시 장착 — 피해 감쇄 검증용 */
     dbg.__hordeGiveArmor = (slot: ArmorSlot): void => { armor.add(slot); applyArmor(); };
+    /** E탱크 발동 경로(키/터치) 검증용 — 뽑기 운을 기다리지 않고 지급 */
+    dbg.__hordeGiveETank = (): void => { eTanks = Math.min(E_TANK_MAX, eTanks + 1); };
     /** takeDmg() 가 실제로 잡몹 접촉에 걸리는지 확인용 */
     dbg.__hordeTakeDmg = (raw: number): number => takeDmg(raw);
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
@@ -4846,7 +4869,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     hv.scale.y = heroScale;
     hv.update(app.ticker.deltaMS);
     hv.position.set(Math.round(px), Math.round(py));
-    hv.alpha = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0.4 : 1;
+    // 예전엔 무적 중 alpha 를 0.4까지 낮췄다 — 피격 직후 0.82초, 정확히
+    // 도망쳐야 하는 그 순간에 플레이어가 반투명해지는 거꾸로 된 피드백
+    // 이었다. 존재는 100% 유지하고 색 반짝임만으로 상태를 알린다.
+    hv.alpha = 1;
+    hv.tint = iframe > 0 && Math.floor(iframe * 24) % 2 === 0 ? 0x8fd0ff : 0xffffff;
     // 세이버 차지 돌진 — 회전베기라는 걸 알아보게 몸이 통째로 돈다
     hv.rotation = lungeMoveT > 0
       ? (1 - lungeMoveT / LUNGE_MOVE_DUR) * Math.PI * 2 * 2.5 * facing
@@ -5014,8 +5041,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    // --- E탱크 — 모아뒀다가 직접 터뜨린다
-    if (input.pressed('up') && eTanks > 0 && hp < maxHp) {
+    // --- E탱크 — 모아뒀다가 직접 터뜨린다.
+    // 'jump' 는 이 phase('play') 에서 다른 어디에도 안 쓰인다 — 메뉴
+    // 화면들의 확인 버튼으로만 쓰이므로 이동과 절대 안 겹친다.
+    const wantETank = input.pressed('jump') || touchETank;
+    touchETank = false;
+    if (wantETank && eTanks > 0 && hp < maxHp) {
       eTanks--;
       hp = maxHp;
       for (let r = 0; r < 3; r++) {
@@ -5146,7 +5177,6 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         }
       }
     }
-    hv.zIndex = py + 0.5;
 
     // 적을 격자에 담는다. 탄 700발 × 적 200마리를 전수 비교하면 프레임이
     // 반토막 난다 — 탄은 자기 주변 칸만 본다. 밀어내기도 같은 격자를 쓴다.
@@ -6611,7 +6641,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       centerLabel.text = '';
       subLabel.text = '';
       hintLabel.text = eTanks > 0 && hp < maxHp * 0.5
-        ? (touchMode ? 'E탱크 있음 — 위로 밀어 사용' : 'E탱크 있음 — ↑ 로 사용')
+        ? (touchMode ? 'E탱크 있음 — 초록 버튼으로 사용' : 'E탱크 있음 — Z 로 사용')
         : time < 9 ? (touchMode ? '끌어서 이동 · CHARGE 길게 눌러 차지' : '방향키 이동 · X 길게 눌러 차지') : '';
     }
 
@@ -6627,6 +6657,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     padG.clear();
     dashLabel.visible = touchMode && phase === 'play';
     fireLabel.visible = touchMode && phase === 'play';
+    etankLabel.visible = false;
     if (fireLabel.visible) fireLabel.position.set(FIRE_BTN.x, FIRE_BTN.y);
     if (touchMode && phase === 'play') {
       // 대시 — 쿨다운 회복률을 쐐기로 채운다. 다 차면 테두리가 확 밝아진다.
@@ -6648,6 +6679,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         accent: chargeLevel === 2 ? 0xfff2c0 : 0xffd85c,
         fill01: chargeFrac, ready: chargeReady, pressed: fireId !== null,
       });
+
+      // E탱크 — 쓸 게 있을 때만 그린다. 0개인데 버튼이 떠 있으면 눌러도
+      // 반응 없는 죽은 버튼이 화면을 차지하게 된다.
+      etankLabel.visible = eTanks > 0;
+      if (eTanks > 0) {
+        etankLabel.position.set(ETANK_BTN.x, ETANK_BTN.y);
+        etankLabel.alpha = hp < maxHp ? 0.95 : 0.5;
+        drawTouchButton(padG, ETANK_BTN.x, ETANK_BTN.y, ETANK_BTN.r, {
+          accent: 0x8ef0a0, fill01: 1, ready: hp < maxHp, pressed: false,
+        });
+      }
 
       if (stick) {
         padG.circle(stick.ox, stick.oy, STICK.radius).fill({ color: 0xffffff, alpha: 0.06 });
