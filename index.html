@@ -10,13 +10,21 @@
     <meta name="theme-color" content="#0a0a12" />
     <!-- 아이폰 사파리는 manifest 의 아이콘을 "홈 화면에 추가"에 안 쓰고 이 태그를 본다 -->
     <link rel="apple-touch-icon" href="/rockmanrpg/icon-192.png" />
-    <!-- 시스템 monospace 는 밋밋하다 — 픽셀 게임다운 도트 서체를 쓴다 -->
+    <!-- 시스템 monospace 는 밋밋하다 — 픽셀 게임다운 도트 서체를 쓴다.
+         Silkscreen 은 라틴 전용이라 한글 글리프가 없다 — "캐릭터 선택"
+         같은 한글 UI 전부가 이 폰트 자체가 아니라 그 뒤에 적어 둔
+         monospace 폴백(안티에일리어싱 벡터체)으로 그려지고 있었다.
+         Galmuri(SIL OFL, 한글 도트 폰트)를 CSS font-family 뒤에 이어
+         붙이면, 브라우저가 글자 단위로 Silkscreen 에 없는 글리프만
+         자동으로 Galmuri 로 넘긴다 — 영문·숫자는 Silkscreen 그대로,
+         한글만 도트로 그려진다. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css" />
     <style>
       :root {
         color-scheme: dark;

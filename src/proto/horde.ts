@@ -1171,8 +1171,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 도트 서체가 실제로 쓰일 수 있게 준비될 때까지 기다린다 — 안 그러면
   // Text 를 만드는 순간 폴백(시스템 monospace)으로 한 번 그려지고, 폰트가
   // 늦게 도착해도 다시 안 그려져서 계속 밋밋한 채로 남는다.
+  // Galmuri9 도 같이 기다린다 — 한글 전용 폴백이라 안 기다리면 한글
+  // 텍스트만 계속 벡터체로 남는 같은 문제가 재발한다.
   try {
     await document.fonts.load('9px Silkscreen');
+    await document.fonts.load('9px Galmuri9');
     await document.fonts.ready;
   } catch {
     // 폰트를 못 받아도 폴백(monospace)으로 계속 진행한다
@@ -1315,7 +1318,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // ------------------------------------------------------------ HUD
   const hudBar = new Graphics();
   ui.addChild(hudBar);
-  const mono = { fontFamily: "'Silkscreen', monospace", fontSize: 9, fill: 0xcfe0ff } as const;
+  // Silkscreen 은 라틴 전용이라 한글 글리프가 없다 — 지금까지 이 화면의
+  // 한글(캐릭터 이름, 카드 설명, 힌트…) 이 Silkscreen 자체가 아니라 그
+  // 뒤의 monospace 폴백(안티에일리어싱 벡터체)으로 그려지고 있었다.
+  // Galmuri9(한글 도트 폰트)를 사이에 끼우면 브라우저가 글자 단위로
+  // 빠진 글리프만 자동으로 넘긴다 — 영문·숫자는 Silkscreen, 한글만
+  // Galmuri9 로 그려진다.
+  const mono = { fontFamily: "'Silkscreen', 'Galmuri9', monospace", fontSize: 9, fill: 0xcfe0ff } as const;
 
   const timeLabel = new Text({ text: '', style: { ...mono, fontSize: 13, fill: 0xffffff } });
   timeLabel.anchor.set(0.5, 0);
@@ -1420,13 +1429,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   input.disableTouch();
   const padG = new Graphics();
-  const dashLabel = new Text({ text: 'DASH', style: { fontFamily: "'Silkscreen', monospace", fontSize: 8, fill: 0x8ef0ff } });
+  const dashLabel = new Text({ text: 'DASH', style: { fontFamily: "'Silkscreen', 'Galmuri9', monospace", fontSize: 8, fill: 0x8ef0ff } });
   dashLabel.anchor.set(0.5);
   dashLabel.visible = false;
-  const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: "'Silkscreen', monospace", fontSize: 7, fill: 0xffd85c } });
+  const fireLabel = new Text({ text: 'CHARGE', style: { fontFamily: "'Silkscreen', 'Galmuri9', monospace", fontSize: 7, fill: 0xffd85c } });
   fireLabel.anchor.set(0.5);
   fireLabel.visible = false;
-  const etankLabel = new Text({ text: 'E-TANK', style: { fontFamily: "'Silkscreen', monospace", fontSize: 7, fill: 0x8ef0a0 } });
+  const etankLabel = new Text({ text: 'E-TANK', style: { fontFamily: "'Silkscreen', 'Galmuri9', monospace", fontSize: 7, fill: 0x8ef0a0 } });
   etankLabel.anchor.set(0.5);
   etankLabel.visible = false;
   ui.addChild(padG, dashLabel, fireLabel, etankLabel);
