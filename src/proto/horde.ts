@@ -613,9 +613,6 @@ interface Upgrade {
   apply: () => void;
 }
 
-/** 파티클은 이 색들만 쓴다 — 색이 고정이라야 색깔별 배치 그리기가 가능하다 */
-const PART_COLORS = [0xfff0a0, 0xff9a4c, 0xffc45c, 0xfff2c0, 0xff5c5c, 0x8ef0ff, 0xffffff];
-
 const GRID_CELL = 34;
 const GRID_W = Math.ceil(ARENA_W / GRID_CELL);
 const GRID_H = Math.ceil(ARENA_H / GRID_CELL);
@@ -1227,6 +1224,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const specialG = new Graphics();
   /** 이번 프레임에 화면에 떠 있는 특수무기 탄 색 — 매 프레임 새로 만들지 않는다 */
   const specialColors = new Set<number>();
+  /**
+   * 파티클 색도 예전엔 하드코딩 7개짜리 PART_COLORS 목록만 돌며 그렸다 —
+   * 그 목록에 없는 색은 배열에 멀쩡히 살아 움직이면서 화면에만 안 나왔다.
+   * ELEM_COLOR 다섯 값이 전부 이 목록에 없어서, 약점이 터졌을 때 뜨는
+   * 스파크(hurtFoe/hurtBoss)가 하나도 안 보이고 있었다 — 이 모드에서
+   * 제일 중요한 피드백이라고 적어 둔 바로 그것이다. 탄과 같은 방식으로
+   * 고친다: 화면에 떠 있는 파티클에서 색을 직접 모은다.
+   */
+  const partColors = new Set<number>();
   const partG = new Graphics();
   // animG 는 바닥 바로 위여야 한다 — 아래에 두면 흐르는 쇳물도 눈발도
   // 바닥에 가려서 안 보인다.
@@ -3197,7 +3203,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
+      // 실제 피해는 이미 화속성으로 들어가고 있었다(아래 dash 처리의
+      // hurtFoe(..., 'fire')) — elem 을 안 적어서 카드에 속성 배지만
+      // 안 뜨고 있었다.
       id: 'charge_kick',
+      elem: 'fire',
       name: '차지 킥',
       color: 0xff5c9c,
       rarity: 'R',
@@ -3376,7 +3386,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       },
     },
     {
+      // 준 보스(saw_fang)가 전기 속성이라 이 무기도 전기다 — 예전엔 이
+      // 대응이 코드 어디에도 없어서 톱니를 잡아도 상성 고리에 빈 칸이
+      // 남았다(보스 8종 중 2종이 무속성으로 새던 문제).
       id: 'saw_return',
+      elem: 'elec',
       name: '되돌아오는 톱',
       color: 0xc98cff,
       rarity: 'SR',
@@ -3396,6 +3410,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             life: 2.6, dmg, pierce: 99,
             shape: 'blade', color: 0xc98cff, r: 7, spin: 20,
             back: 0.42, boomerang: true,
+            elem: 'elec',
           });
         }
         sfx.shot('saber');
@@ -3430,7 +3445,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 상시 발동 — 아래 updateLegends 에서 처리한다
     },
     {
+      // 준 보스(edge_gale)가 얼음 속성이라 이 무기도 얼음이다. saw_return
+      // 과 같은 이유로 elem 을 붙인다 — 실제 피해는 대시 처리 쪽
+      // addBullet 호출에서 넘긴다(아래 참조).
       id: 'edge_cut',
+      elem: 'ice',
       name: '칼금',
       color: 0xff5c9c,
       rarity: 'SR',
@@ -4448,11 +4467,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeClearArsenal = (): void => { arsenal.clear(); saveArsenal([]); };
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
+    /** 무기 조준을 거치지 않고 보스에 상성 피해를 직접 넣는다 — 약점/저항
+        피드백(파티클·링·히트스톱)이 실제로 뜨는지 확인할 때 쓴다 */
+    dbg.__hordeHurtBoss = (dmg: number, elem: Element): void => { hurtBoss(dmg, elem); };
     dbg.__hordeRide = (): void => { ridePods.push({ x: px + 20, y: py, bob: 0 }); };
     dbg.__hordeCapsule = (): void => {
       const left = (['head', 'body', 'arm', 'foot'] as ArmorSlot[]).filter((k) => !armor.has(k));
       if (left.length) capsules.push({ x: px + 20, y: py, slot: left[0], bob: 0 });
     };
+    /** 캡슐을 주우러 갈 필요 없이 즉시 장착 — 피해 감쇄 검증용 */
+    dbg.__hordeGiveArmor = (slot: ArmorSlot): void => { armor.add(slot); applyArmor(); };
+    /** takeDmg() 가 실제로 잡몹 접촉에 걸리는지 확인용 */
+    dbg.__hordeTakeDmg = (raw: number): number => takeDmg(raw);
     dbg.__hordeGiveCoins = (n: number): void => { coins += n; };
     dbg.__hordeSetHp = (v: number): void => { hp = v; };
     dbg.__hordeForceLevelUp = (): void => { levelUp(); };
@@ -4732,6 +4758,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             vy: Math.sin(base + (i - (n - 1) / 2) * 0.26) * 400 * 0.8,
             life: 0.7, dmg: 24 + 14 * pe, pierce: 4,
             shape: 'blade', color: 0xff5c9c, r: 9, spin: 26,
+            elem: 'ice',
           });
         }
       }
@@ -5096,7 +5123,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       const rr = f.def.r * f.scale + PLAYER_R;
       if (iframe <= 0 && dx * dx + dy * dy < rr * rr) {
-        hp -= f.def.touch * (f.elite ? 1.7 : 1);
+        // 잡몹 접촉이 이 게임 피해의 대부분을 차지하는데(보스 접촉·적탄은
+        // 이미 takeDmg 를 거친다), 여기만 hp 를 직접 깎고 있었다 —
+        // 보디 파츠(30% 감소)와 라이드 아머(75% 감소)가 몸으로는 잡히는데
+        // 정작 제일 흔한 피해원에는 한 번도 적용된 적이 없었다.
+        hp -= takeDmg(f.def.touch * (f.elite ? 1.7 : 1));
         iframe = 0.82;
         hitstop = 0.055;
         shake = 8;
@@ -5401,7 +5432,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       p.vx *= 0.9;
       p.vy *= 0.9;
     }
-    for (const color of PART_COLORS) {
+    partColors.clear();
+    for (const p of parts) partColors.add(p.color);
+    for (const color of partColors) {
       for (let tier = 0; tier < 2; tier++) {
         let any = false;
         for (const p of parts) {
@@ -6299,6 +6332,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       frozen: foes.reduce((n, f) => n + (f.slow > 0 ? 1 : 0), 0),
       zones: zones.length,
       specColors: specialColors.size,
+      // ELEM_COLOR 값이 실제로 파티클 화면에 뜨는지 확인용 — PART_COLORS
+      // 허용목록 버그(약점 스파크가 안 보이던 것)를 고친 뒤 검증할 때 썼다.
+      partColorsHex: [...partColors].map((c) => c.toString(16)),
     };
     dbg.__hordePick = phase === 'pick'
       ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
