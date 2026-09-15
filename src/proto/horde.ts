@@ -1157,6 +1157,17 @@ const SHORT_NAMES = new Map<string, string>();
 }
 
 export async function runHordeProto(app: Application, input: Input): Promise<void> {
+  /**
+   * 튜닝·검증용 훅과 계측을 배포본에서 통째로 뺀다. 지금까지 이게
+   * 게이팅 없이 항상 붙어 있었다 — ① 매 프레임 도는 계측 하나
+   * (dbg.__hordeStat 조립)가 owned/foes 를 매번 새로 map·reduce·join
+   * 해서 순수 오버헤드였고, ② __hordeGiveWeapon·__hordeSetHp 같은
+   * 훅은 누구나 브라우저 콘솔에서 그대로 부를 수 있어 배포본에 남길
+   * 이유가 없었다. 개발 서버(vite dev)이거나 ?debug 쿼리가 있을
+   * 때만 켠다.
+   */
+  const DEBUG = import.meta.env.DEV || new URLSearchParams(location.search).has('debug');
+
   // 도트 서체가 실제로 쓰일 수 있게 준비될 때까지 기다린다 — 안 그러면
   // Text 를 만드는 순간 폴백(시스템 monospace)으로 한 번 그려지고, 폰트가
   // 늦게 도착해도 다시 안 그려져서 계속 밋밋한 채로 남는다.
@@ -4474,7 +4485,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   }
 
   // 튜닝용 훅 — 매 프레임 다시 만들면 쓸데없는 할당이 된다. 한 번만 붙인다.
-  {
+  if (DEBUG) {
     const dbg = window as unknown as Record<string, unknown>;
     dbg.__hordeNextStage = (): void => { useTheme(themeIndex + 1); stageBanner = 2.2; };
     // id 를 주면 그 보스를 강제로 등장시킨다 — 70초 농사 시간을 기다리지
@@ -6346,52 +6357,57 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       hx += 14;
     }
 
-    // 튜닝용 계측 — 화면만 보고 "적당히 많네" 하고 넘기면 밀도를 못 맞춘다
-    const dbg = window as unknown as Record<string, unknown>;
-    dbg.__hordeTime = time;
-    dbg.__hordeDead = phase === 'dead';
-    dbg.__hordeStageClear = phase === 'stage_clear';
-    dbg.__hordePhase = phase;
-    dbg.__hordeStat = {
-      foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp),
-      shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS),
-      wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
-      face: facing,
-      anim: hero?.current ?? '',
-      style: w.style,
-      dmg: w.dmg,
-      char: charDef.id,
-      stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
-      coins,
-      pity: pityCount,
-      kick: kickTrail.length,
-      frozen: foes.reduce((n, f) => n + (f.slow > 0 ? 1 : 0), 0),
-      zones: zones.length,
-      specColors: specialColors.size,
-      // ELEM_COLOR 값이 실제로 파티클 화면에 뜨는지 확인용 — PART_COLORS
-      // 허용목록 버그(약점 스파크가 안 보이던 것)를 고친 뒤 검증할 때 썼다.
-      partColorsHex: [...partColors].map((c) => c.toString(16)),
-    };
-    dbg.__hordePick = phase === 'pick'
-      ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
-      : null;
-    dbg.__hordePickIndex = pickIndex;
-    dbg.__hordeTheme = theme.id;
-    dbg.__hordeGacha = phase === 'gacha';
-    dbg.__hordeBossSelect = phase === 'boss_select' ? bossPickList.map((d) => d.id) : null;
-    dbg.__hordeBossIntro = bossIntroT;
-    dbg.__hordeArmor = [...armor].join(',');
-    dbg.__hordeETank = eTanks;
-    dbg.__hordeCaps = capsules.length;
-    dbg.__hordeRideT = Math.round(rideT);
-    dbg.__hordePos = [Math.round(px), Math.round(py)];
-    dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
-    dbg.__hordeHostiles = hostiles.length;
-    dbg.__hordeBullets = bullets.map((b) => ({
-      x: Math.round(b.x), y: Math.round(b.y),
-      vx: Math.round(b.vx), vy: Math.round(b.vy),
-      r: b.r, spin: b.spin, homing: b.homing, angle: +b.angle.toFixed(2),
-    }));
+    // 튜닝용 계측 — 화면만 보고 "적당히 많네" 하고 넘기면 밀도를 못 맞춘다.
+    // 매 프레임 owned/foes/bullets 를 통째로 map·reduce·join 하므로
+    // (특히 __hordeBullets 는 탄 700발까지 매번 새 객체 700개) 배포본에는
+    // 안 남긴다.
+    if (DEBUG) {
+      const dbg = window as unknown as Record<string, unknown>;
+      dbg.__hordeTime = time;
+      dbg.__hordeDead = phase === 'dead';
+      dbg.__hordeStageClear = phase === 'stage_clear';
+      dbg.__hordePhase = phase;
+      dbg.__hordeStat = {
+        foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp),
+        shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS),
+        wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
+        face: facing,
+        anim: hero?.current ?? '',
+        style: w.style,
+        dmg: w.dmg,
+        char: charDef.id,
+        stick: stick ? `${Math.round(stick.x - stick.ox)},${Math.round(stick.y - stick.oy)}` : null,
+        coins,
+        pity: pityCount,
+        kick: kickTrail.length,
+        frozen: foes.reduce((n, f) => n + (f.slow > 0 ? 1 : 0), 0),
+        zones: zones.length,
+        specColors: specialColors.size,
+        // ELEM_COLOR 값이 실제로 파티클 화면에 뜨는지 확인용 — PART_COLORS
+        // 허용목록 버그(약점 스파크가 안 보이던 것)를 고친 뒤 검증할 때 썼다.
+        partColorsHex: [...partColors].map((c) => c.toString(16)),
+      };
+      dbg.__hordePick = phase === 'pick'
+        ? pickList.map((o) => (o.kind === 'stat' ? o.up.id : o.def.id))
+        : null;
+      dbg.__hordePickIndex = pickIndex;
+      dbg.__hordeTheme = theme.id;
+      dbg.__hordeGacha = phase === 'gacha';
+      dbg.__hordeBossSelect = phase === 'boss_select' ? bossPickList.map((d) => d.id) : null;
+      dbg.__hordeBossIntro = bossIntroT;
+      dbg.__hordeArmor = [...armor].join(',');
+      dbg.__hordeETank = eTanks;
+      dbg.__hordeCaps = capsules.length;
+      dbg.__hordeRideT = Math.round(rideT);
+      dbg.__hordePos = [Math.round(px), Math.round(py)];
+      dbg.__hordeBoss = boss ? { name: boss.name, hp: Math.round(boss.hp), max: boss.maxHp, elem: boss.def.elem, label: bossLabel.text } : null;
+      dbg.__hordeHostiles = hostiles.length;
+      dbg.__hordeBullets = bullets.map((b) => ({
+        x: Math.round(b.x), y: Math.round(b.y),
+        vx: Math.round(b.vx), vy: Math.round(b.vy),
+        r: b.r, spin: b.spin, homing: b.homing, angle: +b.angle.toFixed(2),
+      }));
+    }
 
     // 스테이지 진입 배너 — 어떤 구역에 누구를 잡으러 왔는지 시작하자마자 보여준다
     stageLabel.visible = stageBanner > 0 && phase === 'play';
