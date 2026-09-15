@@ -4150,6 +4150,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossAt = 210;
     bossBanner = 0;
     bossKills = 0;
+    // 보스 문 연출이 열리는 도중(체력바가 칸칸이 차는 그 몇 초) 죽어서
+    // 재도전하면, boss 는 null 로 지워지는데 bossIntroT 는 안 지워져서
+    // 새 판 시작하자마자 보스도 없이 문 열리는 효과음(sfx.reelTick)이
+    // 돌고 있었다 — 위 update 의 bossIntroT 체크가 boss 존재를 안 본다.
+    bossIntroT = 0;
+    bossIntroTicks = 0;
     newRecord = false;
     coins = 2;
     pityCount = 0;
@@ -4173,6 +4179,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     orbs.length = 0;
     bladeSpin = 0;
     comboStep = 0;
+    // 판 한정 타이머·연출 상태 ~20개가 reset() 에서 빠져 있었다. 선언부에
+    // 새 let 을 추가해도 컴파일러가 아무 말을 안 해 주니 손으로 미러링
+    // 해야 하는데, 그 미러링이 여기저기서 어긋나 있었다 — 이 시점의 값이
+    // 전부 새 판 시작 프레임에 그대로 새어 들어간다.
+    chargeT = 0; chargeLevel = 0; burstT = 0;
+    gigaFlash = 0;
+    novaTimer = 0; novaAngle = 0; novaDmg = 0;
+    // 죽는 순간 미끼(decoy)를 세워 둔 채였다면, lureX/lureY 가 이걸
+    // 계속 참조해 새 판의 적들이 지난 판 아레나 좌표(죽은 자리)로
+    // 끌려간다 — 실제 게임플레이에 영향을 주는 값이라 꼭 지워야 한다.
+    decoy = null;
+    stingT = 0; stingDmg = 0;
+    beamT = 0; beamAngle = 0; beamDmg = 0;
+    flameT = 0; flameR = 0; flameSpan = 0;
+    orbitAngle = 0;
+    petAngle = 0;
+    droneAngle = 0;
+    rushLeapT = 0; rushLeapX = 0;
+    // 세이버 차지 돌진 — 남아 있으면 새 판 시작 첫 프레임에 캐릭터가
+    // 지난 판 목적지 쪽으로 몸이 홱 꺾인다.
+    lungeMoveT = 0; chargeBeamT = 0;
+    slashLungeFromX = 0; slashLungeFromY = 0;
+    slashLungeToX = 0; slashLungeToY = 0; slashLungeWidth = 0;
     px = ARENA_W / 2; py = ARENA_H / 2;
     // 캐릭터마다 체력과 탄이 다르다. 검증해 둔 곡선에서 크게 벗어나지 않도록
     // 원본 수치를 그대로 쓰지 않고 좁은 폭으로만 반영한다.
@@ -4493,6 +4522,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeSpawnBoss = (id?: string): void => {
       void spawnBoss(id ? BOSS_DEFS.find((d) => d.id === id) : undefined);
     };
+    /** __hordeSpawnBoss 는 문 연출(bossIntroT)을 안 거치는 지름길이라
+        따로 둔다 — reset() 이 이 상태를 실제로 지우는지 검증할 때 씀 */
+    dbg.__hordeForceBossIntro = (): void => { bossIntroT = BOSS_INTRO_DUR; bossIntroTicks = 3; };
     dbg.__hordeOpenBossSelect = (): void => { openBossSelect(); };
     dbg.__hordeChooseBoss = (id: string): void => {
       const i = bossPickList.findIndex((d) => d.id === id);
