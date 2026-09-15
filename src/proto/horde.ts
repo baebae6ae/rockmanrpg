@@ -1789,7 +1789,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       apply: () => { baseMagnet += 40; applyArmor(); },
     },
     {
-      id: 'armor', name: '수리 팩', desc: '최대체력 +20, 전량 회복', max: 99,
+      // max 가 99(사실상 무한)였다 — 다른 카드가 전부 자기 상한에
+      // 걸리는 후반이 오면(rapid/spread 는 9, drone 은 4 …) 뽑기 풀에
+      // 이 카드만 남는다. 그러면 레벨업이 "무료 전량회복 버튼"이 되어
+      // 그 뒤로는 죽을 일이 없어진다. 다른 능력치 카드들과 같은 자릿수
+      // 상한을 줘서 무한 반복을 막는다 — 전량 회복 자체는 "수리 팩"
+      // 이라는 이름값에 맞는 보상이라 그대로 둔다.
+      id: 'armor', name: '수리 팩', desc: '최대체력 +20, 전량 회복', max: 5,
       apply: () => { maxHp += 20; hp = maxHp; },
     },
   ];

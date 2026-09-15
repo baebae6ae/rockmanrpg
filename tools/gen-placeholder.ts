@@ -11,7 +11,7 @@
  * 실행: npm run gen:placeholder
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -23,6 +23,22 @@ import { FOES, MOBS, MOB_DRAWERS, type Anim, type FoeAct } from './lib/foe.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_CHARS = resolve(ROOT, 'assets/generated/characters');
 const OUT_ENEMIES = resolve(ROOT, 'assets/generated/enemies');
+const REAL_CHARS = resolve(ROOT, 'assets/sprites/characters');
+const REAL_ENEMIES = resolve(ROOT, 'assets/sprites/enemies');
+
+/**
+ * 진짜 스프라이트(assets/sprites/…)가 이미 있는 id 는 임시 도트를 만들
+ * 필요가 없다 — sheet.ts 의 resolvePaths() 가 sprites 를 항상 먼저
+ * 찾으므로 generated 쪽은 로드조차 안 된다. 그런데도 여기서 계속
+ * 새로 구웠다 — 9명 전원이 이미 진짜 스프라이트가 있는데도 매 빌드마다
+ * 대형 PNG 를 다시 만들어 Vite 의 eager glob(assets/generated/**)에
+ * 잡히고, 아예 로드되지 않는 채로 배포 번들에만 얹혔다. 실측: 9캐릭터
+ * 전원이 dist 에 두 번씩(sprites 본체 + generated 사장품) 들어가
+ * 있었다.
+ */
+function hasRealSheet(baseDir: string, id: string): boolean {
+  return existsSync(resolve(baseDir, id, `${id}.png`)) && existsSync(resolve(baseDir, id, `${id}.json`));
+}
 
 const CANVAS = 64;
 const COLUMNS = 8;
@@ -290,26 +306,30 @@ function mobSheet(def: typeof MOBS[number]): { png: Buffer; meta: SheetMeta } {
 // ---------------------------------------------------------------- 실행
 
 let total = 0;
+let skipped = 0;
 
 for (const crew of CREW) {
+  if (hasRealSheet(REAL_CHARS, crew.id)) { skipped++; continue; }
   const { png, meta } = buildCrewSheet(crew);
   writeSheet(OUT_CHARS, crew.id, png, meta);
   total++;
 }
 
 for (const mob of MOBS) {
+  if (hasRealSheet(REAL_ENEMIES, mob.id)) { skipped++; continue; }
   const { png, meta } = mobSheet(mob);
   writeSheet(OUT_ENEMIES, mob.id, png, meta);
   total++;
 }
 
 for (const foe of FOES) {
+  if (hasRealSheet(REAL_ENEMIES, foe.id)) { skipped++; continue; }
   const { png, meta } = bossSheet(foe);
   writeSheet(OUT_ENEMIES, foe.id, png, meta);
   total++;
 }
 
-console.log(`임시 도트 ${total}개 생성 → assets/generated/`);
+console.log(`임시 도트 ${total}개 생성 → assets/generated/` + (skipped ? ` (진짜 스프라이트 있는 ${skipped}개는 건너뜀)` : ''));
 
 function writeSheet(dirBase: string, id: string, png: Buffer, meta: SheetMeta): void {
   const dir = resolve(dirBase, id);
