@@ -365,6 +365,8 @@ function stripComments(src: string): string {
 
 const hordeSrc = stripComments(readFileSync(resolve(ROOT, 'src/proto/horde.ts'), 'utf8'));
 const stageBgSrc = stripComments(readFileSync(resolve(ROOT, 'src/proto/stage_bg.ts'), 'utf8'));
+// BOSS_DEFS/THEME_FOR_ELEM 은 순수 데이터라 horde_balance.ts 로 옮겨졌다
+const balanceSrc = stripComments(readFileSync(resolve(ROOT, 'src/proto/horde_balance.ts'), 'utf8'));
 
 /** start 위치의 여는 괄호와 짝이 맞는 닫는 괄호까지, 괄호 내부를 포함해 반환한다 */
 function balancedBlock(text: string, start: number): string {
@@ -475,10 +477,11 @@ try {
 
   // 보스가 주는 무기가 실제로 존재하고, 보스 본인의 속성과 일치하는지
   // (saw_return/edge_cut/charge_kick 에서 이게 어긋나 있던 버그의 재발 방지)
+  // BOSS_DEFS 는 순수 데이터라 horde_balance.ts 에 있다.
   // 'const BOSS_DEFS: BossDef[] = [...]' — 타입 표기의 '[]' 를 배열 리터럴로
   // 착각하지 않도록 '=' 뒤에서부터 '[' 를 찾는다
-  const bossDefsEq = hordeSrc.indexOf('=', hordeSrc.indexOf('const BOSS_DEFS'));
-  const bossDefs = topLevelChunks(balancedBlock(hordeSrc, hordeSrc.indexOf('[', bossDefsEq)).slice(1, -1))
+  const bossDefsEq = balanceSrc.indexOf('=', balanceSrc.indexOf('const BOSS_DEFS'));
+  const bossDefs = topLevelChunks(balancedBlock(balanceSrc, balanceSrc.indexOf('[', bossDefsEq)).slice(1, -1))
     .filter((c) => c.startsWith('{'))
     .map((obj) => {
       const fields = topLevelChunks(obj.slice(1, -1));
@@ -489,10 +492,10 @@ try {
   for (const boss of bossDefs) {
     const weapon = boss.drop ? bossWeaponsById.get(boss.drop) : undefined;
     if (!boss.drop || !weapon) {
-      fail('horde.ts', `보스 '${boss.id}' 가 주는 무기가 BOSS_WEAPONS 에 없다: ${boss.drop}`);
+      fail('horde_balance.ts', `보스 '${boss.id}' 가 주는 무기가 BOSS_WEAPONS 에 없다: ${boss.drop}`);
     } else if (weapon.elem !== boss.elem) {
       fail(
-        'horde.ts',
+        'horde_balance.ts',
         `보스 '${boss.id}'(${boss.elem}) 가 주는 무기 '${boss.drop}' 의 속성이 다르다: ${weapon.elem ?? '(없음)'}`,
       );
     }
@@ -507,10 +510,10 @@ try {
     if (!legendIds.has(id)) fail('horde.ts', `PET_ORDER 가 LEGENDS 에 없는 무기를 가리킨다: ${id}`);
   }
 
-  // 속성별 스테이지 테마 인덱스가 실제 THEMES 배열 범위 안인지
-  const themeForElem = parseFlatObjectKeys(hordeSrc, 'THEME_FOR_ELEM').map((elem) => {
+  // 속성별 스테이지 테마 인덱스가 실제 THEMES 배열 범위 안인지 (이것도 horde_balance.ts)
+  const themeForElem = parseFlatObjectKeys(balanceSrc, 'THEME_FOR_ELEM').map((elem) => {
     const chunk = topLevelChunks(
-      balancedBlock(hordeSrc, hordeSrc.indexOf('{', hordeSrc.indexOf('const THEME_FOR_ELEM'))).slice(1, -1),
+      balancedBlock(balanceSrc, balanceSrc.indexOf('{', balanceSrc.indexOf('const THEME_FOR_ELEM'))).slice(1, -1),
     ).find((c) => c.startsWith(`${elem}:`));
     return { elem, idx: Number(chunk?.split(':')[1]) };
   });
@@ -519,7 +522,7 @@ try {
   if (themeCount === 0) fail('stage_bg.ts', 'THEMES 배열을 못 찾았다');
   for (const { elem, idx } of themeForElem) {
     if (!Number.isInteger(idx) || idx < 0 || idx >= themeCount) {
-      fail('horde.ts', `THEME_FOR_ELEM.${elem} 이 THEMES 범위를 벗어난다: ${idx} (THEMES 는 ${themeCount}개)`);
+      fail('horde_balance.ts', `THEME_FOR_ELEM.${elem} 이 THEMES 범위를 벗어난다: ${idx} (THEMES 는 ${themeCount}개)`);
     }
   }
 
