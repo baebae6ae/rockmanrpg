@@ -66,9 +66,12 @@ export const FOES: FoeDef[] = [
       const b = Math.round(a.bob);
       for (let i = 0; i <= 34; i++) {
         const t = i / 34;
-        const half = Math.round(6 + 9 * Math.abs(Math.cos(t * Math.PI)) * (t > 0.5 ? 1 : 0.8));
+        let half = Math.round(6 + 9 * Math.abs(Math.cos(t * Math.PI)) * (t > 0.5 ? 1 : 0.8));
+        // 옷자락 끝을 매끈한 원뿔이 아니라 해진 자락처럼 들쭉날쭉하게 끊는다 —
+        // 매끈한 삼각형은 실루엣만으로는 그냥 고깔이지 유령으로 안 읽힌다.
+        if (t > 0.78) half = Math.round(half * (0.35 + 0.65 * Math.abs(Math.sin(i * 1.7))));
         const sway = Math.round(Math.sin(t * 3.2 + a.spin * 6.28) * 2);
-        f.rect(-half + sway, i + 3 + b, half * 2, 1, t > 0.62 ? M.suit : M.metal);
+        if (half > 0) f.rect(-half + sway, i + 3 + b, half * 2, 1, t > 0.62 ? M.suit : M.metal);
       }
       f.rect(-14, 0, 28, 3, M.trim); f.rect(-10, 2, 20, 1, M.metal);
       const hy = 28 + b;
@@ -113,6 +116,9 @@ export const FOES: FoeDef[] = [
       for (const [hx, fx] of [[-12, -18], [12, 18]] as const) legJoint(f, hx, 9 - open, fx, 6);
       if (open > 1) { f.rect(13, 6 + b, 9, 7, M.metal); f.rect(13, 12 + b, 9, 1, M.accent); eye(f, 16, 8 + b, 5, 4, Math.round(a.hurt * 3)); }
       f.rect(-14, 5 + b, 28, 5, M.metal); f.rect(-14, 5 + b, 28, 1, M.accent);
+      // 등딱지 능선 — 매끈한 띠 하나만 있으면 상자 뚜껑으로 보인다.
+      // 돌기 몇 개로 실루엣 위쪽을 깨서 거북 등딱지처럼 읽히게 한다.
+      for (const sx of [-10, -3, 4, 11]) { f.rect(sx, 3 + b, 3, 3, M.metal); f.set(sx + 1, 2 + b, M.accent); }
       for (let i = 0; i < 22; i++) { const t = i / 21; const half = Math.round(14 * Math.sqrt(Math.max(0, 1 - t * t))); f.rect(-half, 10 + i + b - open, half * 2, 1, i % 5 === 4 ? M.metal : M.suit); }
       f.rect(-14, 10 + b - open, 28, 1, M.accent);
       if (open > 1) f.rect(-9, 9 + b, 18, open, M.trim);
@@ -142,6 +148,14 @@ export const FOES: FoeDef[] = [
       const b = Math.round(a.bob), cy = 30 + b;
       for (const [hx, fx] of [[-11, -16], [0, 0], [11, 16]] as const) legJoint(f, hx, cy - 13, fx, 4);
       f.disc(0, cy, 16, M.suit); f.disc(0, cy, 13, M.metal);
+      // 완전한 원판은 레이더 접시로 보인다 — 테두리에 성에 결정을 몇 개
+      // 돋워 눈(眼)보다 성에·서릿발에 가깝게 실루엣을 깬다.
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2 + 0.3;
+        const x0 = Math.round(Math.cos(ang) * 14), y0 = cy + Math.round(Math.sin(ang) * 14);
+        const x1 = Math.round(Math.cos(ang) * 19), y1 = cy + Math.round(Math.sin(ang) * 19);
+        f.line(x0, y0, x1, y1, 2, M.metal);
+      }
       const shrink = Math.round(a.wind * 4); f.disc(0, cy, 9 - shrink, M.trim); f.disc(0, cy, 6 - shrink, M.glow); f.disc(1, cy + 1, 2, M.accent);
       f.rect(-16, cy + 11, 32, 1, M.accent); f.rect(-16, cy - 12, 32, 1, M.accent);
       if (a.hurt > 0.5) f.rect(-14, cy - 3, 28, 7, M.trim);
@@ -153,6 +167,9 @@ export const FOES: FoeDef[] = [
     draw: (f, a) => {
       const b = Math.round(a.bob), cy = 26 + b;
       f.disc(0, cy, 15, M.suit); f.disc(0, cy, 11, M.metal); f.rect(-15, cy, 30, 1, M.accent); f.rect(-11, cy - 11, 22, 1, M.accent);
+      // 불꽃 혓바닥을 몇 개 세워 보았지만, 이미 도는 잔불 다섯 개(아래
+      // r 루프)와 겹치니 꽃잎처럼 어지러워졌다 — 본체는 매끈한 원판 그대로
+      // 두고, 잔불 궤도가 실루엣을 깨는 역할을 전담하게 둔다.
       eye(f, -7, cy - 3, 14, 7, Math.round(a.hurt * 5));
       const r = 24 + a.wind * 4 + a.strike * 10;
       for (let i = 0; i < 5; i++) { const ang = (i / 5 + a.spin) * Math.PI * 2; const ox = Math.cos(ang) * r; const oy = cy + Math.sin(ang) * r * 0.85; f.disc(ox, oy, 5, M.metal); f.disc(ox, oy, 3, M.glow); }
