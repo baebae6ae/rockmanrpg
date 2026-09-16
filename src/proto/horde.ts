@@ -2604,7 +2604,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    */
   function releaseCharge(lv: number): void {
     const t = nearestFoe(px, py);
-    const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+    let a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
+    // 도끼(파고들기)·사슬(더 멀리 베기)은 세이버답게 부채꼴로 지나가므로,
+    // 단순 최근접이 아니라 그 경로에 제일 많이 걸리는 방향으로 겨눈다
+    if (w.style === 'saber' && (chargeLook === 'reap' || chargeLook === 'lunge')) {
+      const reach = (chargeLook === 'reap' ? w.arcR * 1.3 : w.arcR * 1.7) + 24;
+      a = bestSaberAngle(reach, w.arcSpan) ?? a;
+    }
     const full = lv === 2;
     const mult = full ? 1 : 0.5;
     // 세이버는 근접이라 위험을 감수한 만큼, 다 찬 차지는 확실히 세게 흔들린다
@@ -2726,6 +2732,44 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   }
 
   /**
+   * 세이버는 부채꼴이라 "가장 가까운 한 점"을 겨누면 낭비가 크다 — 뭉친
+   * 쪽이 조준 각에서 10도만 벗어나 있어도 부채꼴 절반이 허공을 벤다.
+   * 사거리 안의 적들을 하나씩 후보 각도로 놓고, 그 각도로 휘둘렀을 때
+   * span 안에 몇 마리가 걸리는지 세어 제일 많이 걸리는 방향을 고른다.
+   * 보스는 잡몹 여럿보다 값어치가 크므로 가중치를 얹는다.
+   */
+  function bestSaberAngle(reach: number, span: number): number | null {
+    const half = span / 2;
+    const cand: { x: number; y: number; weight: number }[] = [];
+    for (const f of foes) {
+      const dx = f.x - px;
+      const dy = (f.y - 8 - (py - 10)) / 0.78;
+      if (dx * dx + dy * dy <= reach * reach) cand.push({ x: dx, y: dy, weight: 1 });
+    }
+    if (boss) {
+      const dx = boss.x - px;
+      const dy = (boss.y - 14 - (py - 10)) / 0.78;
+      if (dx * dx + dy * dy <= reach * reach) cand.push({ x: dx, y: dy, weight: 3 });
+    }
+    if (cand.length === 0) return null;
+
+    let bestAngle = 0;
+    let bestScore = -1;
+    for (const c of cand) {
+      const angle = Math.atan2(c.y, c.x);
+      let score = 0;
+      for (const o of cand) {
+        let d = Math.atan2(o.y, o.x) - angle;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        if (Math.abs(d) <= half) score += o.weight;
+      }
+      if (score > bestScore) { bestScore = score; bestAngle = angle; }
+    }
+    return bestAngle;
+  }
+
+  /**
    * 옵션 유닛 발사 — 세이버는 탄이 없는 근접 방식이라, 이 호출이 shoot() 의
    * 세이버 분기 안(early return 뒤)에 있으면 세이버 캐릭터는 옵션 유닛을
    * 뽑아도 영원히 발동하지 않는다. 도는 것만 보이고 아무 것도 안 쏘는
@@ -2758,7 +2802,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     fireDrones(base);
 
     if (w.style === 'saber') {
-      swingSaber(base);
+      const aim = bestSaberAngle(w.arcR + 24, w.arcSpan) ?? base;
+      swingSaber(aim);
       sfx.shot('saber');
       return;
     }
