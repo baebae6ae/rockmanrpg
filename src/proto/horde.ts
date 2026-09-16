@@ -1139,6 +1139,32 @@ function saveArsenal(entries: [string, number][]): void {
   }
 }
 
+/**
+ * 위 무기고(arsenal)는 "지금까지 모은 것 전부"고, 이건 그중 "이번 판에
+ * 실제로 들고 나가는 하나"다. 여덟을 다 모아도 한 판엔 하나만 쓰게
+ * 해야 "뭘 챙길지" 고민이 남는다 — 다 모으면 그냥 전부 켜 두는 판이면
+ * 그 순간부터 고를 이유가 없어진다.
+ */
+const EQUIPPED_KEY = 'horde.equipped';
+
+function loadEquipped(): string | null {
+  try {
+    const raw = localStorage.getItem(EQUIPPED_KEY);
+    return typeof raw === 'string' && raw ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveEquipped(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(EQUIPPED_KEY, id);
+    else localStorage.removeItem(EQUIPPED_KEY);
+  } catch {
+    // 저장 실패해도 이번 판 진행에는 지장 없다
+  }
+}
+
 const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
@@ -1422,6 +1448,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const clearedStages = new Set<string>(loadCleared());
   /** 보스를 잡아 영구히 얻은 무기 — 무기 id → 레벨 */
   const arsenal = new Map<string, number>(loadArsenal());
+  /** 무기고 중 이번 판에 실제로 장착해 owned 에 들어가는 하나. 없으면 null */
+  let equippedWeapon: string | null = loadEquipped();
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -1548,7 +1576,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   /** 레벨업 카드 한 장 — 능력치이거나 특수무기(신규/강화)다 */
   type PickOption =
     | { kind: 'stat'; up: Upgrade }
-    | { kind: 'weapon'; def: SpecialDef; lv: number };
+    | { kind: 'weapon'; def: SpecialDef; lv: number }
+    /** 무기고에 있지만 이번 판엔 장착 안 한 보스 무기로 갈아탄다 */
+    | { kind: 'swap'; def: SpecialDef; lv: number };
 
   let pickIndex = 0;
   let pickList: PickOption[] = [];
@@ -4063,6 +4093,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (BOSS_WEAPONS.some((x) => x.id === d.id)) {
       arsenal.set(d.id, lv);
       saveArsenal([...arsenal]);
+      // 방금 새로 얻었으니 이번 판엔 바로 이걸 장착해 준다 — "Weapon Get"
+      // 연출 직후에 정작 못 쓰면 허탈하다. 장착은 하나뿐이라 기존 걸 내린다.
+      if (equippedWeapon !== d.id) {
+        if (equippedWeapon) { owned.delete(equippedWeapon); cooldowns.delete(equippedWeapon); }
+        equippedWeapon = d.id;
+        saveEquipped(equippedWeapon);
+      }
     }
     if (d.id === 'rolling_shield') syncOrbs();
   }
@@ -4100,6 +4137,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     for (const u of UPGRADES) {
       if (u.only && !u.only.includes(w.style)) continue;
       if ((taken[u.id] ?? 0) < u.max) pool.push({ opt: { kind: 'stat', up: u }, weight: 3 });
+    }
+    // 무기고에 장착 안 한 보스 무기가 있으면, 지금 장착한 것과 갈아탈
+    // 기회를 하나 끼워 준다 — 이게 "고정 속성이라 못 바꾼다" 는 불만 없이
+    // 상성을 바꿔 쓰게 해 주는 유일한 창구다. 하나만 후보로 걸어 카드
+    // 세 장을 무기고 목록으로 도배하지 않는다.
+    const swapCandidates = [...arsenal.keys()].filter((id) => id !== equippedWeapon);
+    if (swapCandidates.length) {
+      const pickId = swapCandidates[Math.floor(Math.random() * swapCandidates.length)];
+      const def = BOSS_WEAPONS.find((x) => x.id === pickId);
+      if (def) pool.push({ opt: { kind: 'swap', def, lv: arsenal.get(pickId)! }, weight: 2 });
     }
 
     pickList = [];
@@ -4151,6 +4198,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (o.kind === 'stat') {
       taken[o.up.id] = (taken[o.up.id] ?? 0) + 1;
       o.up.apply();
+    } else if (o.kind === 'swap') {
+      // 장착 하나뿐이라 기존 걸 내리고 무기고에서 고른 걸 올린다
+      if (equippedWeapon) { owned.delete(equippedWeapon); cooldowns.delete(equippedWeapon); }
+      equippedWeapon = o.def.id;
+      saveEquipped(equippedWeapon);
+      owned.set(o.def.id, o.lv);
+      cooldowns.set(o.def.id, 0);
     } else {
       owned.set(o.def.id, (owned.get(o.def.id) ?? 0) + 1);
       if (o.def.id === 'rolling_shield') syncOrbs();
@@ -4223,12 +4277,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     paused = false;
     owned.clear();
     cooldowns.clear();
-    // 지금까지 보스를 잡아 모은 무기를 들고 시작한다 — 판마다 새로 짜는
-    // 건 레벨업 드래프트 쪽이고, 이쪽은 스테이지를 깨서 쌓아 온 것이다.
-    for (const [id, lv] of arsenal) {
-      if (!ALL_WEAPONS.some((x) => x.id === id)) continue;
-      owned.set(id, lv);
-      cooldowns.set(id, 0);
+    // 무기고에 여덟을 다 모아 놔도 이번 판엔 그중 장착한 하나만 들고
+    // 시작한다 — 전부 자동으로 켜 두면 다 모은 다음부턴 고를 게 없다.
+    // 레벨업 드래프트(레벨업 카드)와 달리 이건 스테이지를 깨서 쌓아 온
+    // 것이라 판이 끝나도 무기고 자체는 남지만, 장착은 매 판 하나뿐이다.
+    if (equippedWeapon && !arsenal.has(equippedWeapon)) equippedWeapon = null;
+    if (!equippedWeapon && arsenal.size) {
+      equippedWeapon = [...arsenal.keys()][arsenal.size - 1];
+      saveEquipped(equippedWeapon);
+    }
+    if (equippedWeapon && ALL_WEAPONS.some((x) => x.id === equippedWeapon)) {
+      owned.set(equippedWeapon, arsenal.get(equippedWeapon)!);
+      cooldowns.set(equippedWeapon, 0);
     }
     orbs.length = 0;
     bladeSpin = 0;
@@ -6830,14 +6890,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       cardRects.push({ x, y: cy, w: cw, h: ch });
       const o = pickList[i];
       const isNew = o.kind === 'weapon' && o.lv === 0;
+      const hasDef = o.kind === 'weapon' || o.kind === 'swap';
       drawPanel(cardG, x, cy, cw, ch, {
         fill: on ? 0x1e3266 : 0x11172e,
-        accent: o.kind === 'weapon' ? o.def.color : 0x8ef0ff,
+        accent: hasDef ? o.def.color : 0x8ef0ff,
         active: on,
       });
 
-      // 무기 카드는 위쪽에 그 무기 색의 띠를 둘러 능력치 카드와 구분한다
-      if (o.kind === 'weapon') {
+      // 무기·교체 카드는 위쪽에 그 무기 색의 띠를 둘러 능력치 카드와 구분한다
+      if (hasDef) {
         cardG.rect(x + 10, cy + 3, cw - 20, 4).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
       }
 
@@ -6848,6 +6909,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         name.text = o.up.name;
         desc.text = o.up.desc;
         badge.text = '';
+      } else if (o.kind === 'swap') {
+        name.text = o.def.name;
+        desc.text = `무기고 교체 · ${o.def.desc(o.lv)}`;
+        badge.text = '교체';
+        badge.style.fill = 0xc9a8ff;
+        badge.position.set(x + cw / 2, cy + 18);
       } else {
         name.text = o.def.name;
         desc.text = o.def.desc(o.lv);
@@ -6864,7 +6931,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 보고도 어느 카드가 답인지 알 수가 없다. 가운데 배지와 겹치지
       // 않게 왼쪽 끝에 붙인다.
       const el = cardElems[i];
-      const we = o.kind === 'weapon' ? o.def.elem ?? 'none' : 'none';
+      const we = hasDef ? o.def.elem ?? 'none' : 'none';
       if (we === 'none') {
         el.visible = false;
       } else {
