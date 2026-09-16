@@ -268,6 +268,41 @@ const BOSS_DEFS: BossDef[] = [
  */
 const THEME_FOR_ELEM: Record<Element, number> = { elec: 0, aqua: 1, ice: 1, fire: 2, none: 3 };
 
+/**
+ * 저주 — 시간이 지나야만 세지는 지금의 곡선은 플레이어가 손댈 여지가
+ * 없다. 처음부터 더 어렵게 시작하고 싶어도 방법이 없고, 반대로 느긋하게
+ * 하고 싶어도 시간이 지나면 무조건 세진다. 스테이지를 고를 때 미리
+ * "이번 판은 이만큼 세게, 대신 이만큼 더 번다" 를 직접 정하게 한다 —
+ * 세 단계 다 강제는 아니고, 0단계(없음)가 지금까지의 기본값 그대로다.
+ */
+interface CurseTier {
+  name: string;
+  desc: string;
+  mobHp: number;
+  spawnRate: number;
+  bossHp: number;
+  playerHp: number;
+  reward: number;
+}
+const CURSE_TIERS: CurseTier[] = [
+  { name: '저주 없음', desc: '기본 난이도', mobHp: 1, spawnRate: 1, bossHp: 1, playerHp: 1, reward: 1 },
+  {
+    name: '저주 I · 균열 진동', desc: '적 체력 +15% · 스폰 +10% — 보상 ×1.2',
+    mobHp: 1.15, spawnRate: 1.1, bossHp: 1.1, playerHp: 1, reward: 1.2,
+  },
+  {
+    name: '저주 II · 균열 폭주', desc: '적 체력 +35% · 스폰 +25% · 보스 체력 +20% — 보상 ×1.45',
+    mobHp: 1.35, spawnRate: 1.25, bossHp: 1.2, playerHp: 1, reward: 1.45,
+  },
+  {
+    name: '저주 III · 균열 붕괴', desc: '적 체력 +60% · 스폰 +45% · 보스 체력 +40% · 최대체력 -15% — 보상 ×1.8',
+    mobHp: 1.6, spawnRate: 1.45, bossHp: 1.4, playerHp: 0.85, reward: 1.8,
+  },
+];
+const CURSE_COLOR = [0x8a97c4, 0xffe86b, 0xff9a4c, 0xff5c5c];
+/** 스테이지 선택 화면 힌트 줄은 폭이 270px 뿐이라 desc 전문은 못 들어간다 */
+const CURSE_SHORT = ['없음', 'I', 'II', 'III'];
+
 
 interface EnemyLite { id: string; name?: string }
 const ENEMY_NAMES: Record<string, string> = {};
@@ -1165,6 +1200,25 @@ function saveEquipped(id: string | null): void {
   }
 }
 
+const CURSE_KEY = 'horde.curse';
+
+function loadCurseTier(max: number): number {
+  try {
+    const n = Number(localStorage.getItem(CURSE_KEY));
+    return Number.isInteger(n) && n >= 0 && n <= max ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveCurseTier(tier: number): void {
+  try {
+    localStorage.setItem(CURSE_KEY, String(tier));
+  } catch {
+    // 저장 실패해도 이번 판 진행에는 지장 없다
+  }
+}
+
 const styleOf = (c: HordeChar): Style => (STYLES.get(c.id) as Style) ?? 'charge';
 
 /**
@@ -1450,6 +1504,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const arsenal = new Map<string, number>(loadArsenal());
   /** 무기고 중 이번 판에 실제로 장착해 owned 에 들어가는 하나. 없으면 null */
   let equippedWeapon: string | null = loadEquipped();
+  /** 0 = 저주 없음. 스테이지 선택 화면에서 직접 고르고, 고른 값은 다음 판에도 이어진다 */
+  let curseTier = loadCurseTier(CURSE_TIERS.length - 1);
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -1661,6 +1717,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       return;
     }
     if (phase === 'boss_select') {
+      if (inside(CURSE_BTN)) {
+        curseTier = (curseTier + 1) % CURSE_TIERS.length;
+        saveCurseTier(curseTier);
+        return;
+      }
       for (let i = 0; i < bossSelRects.length && i < bossPickList.length; i++) {
         if (!inside(bossSelRects[i])) continue;
         // 캐릭터 선택과 같은 두 단계. 여기는 설명을 못 읽어서가 아니라
@@ -1937,7 +1998,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     foes.push({
       mode: 0, timer: Math.random() * 1.2, ax: 0, ay: 0,
       kind, x, y, kx: 0, ky: 0, slow: 0,
-      hp: def.hp * grow * (elite ? 5.5 : 1),
+      hp: def.hp * grow * (elite ? 5.5 : 1) * CURSE_TIERS[curseTier].mobHp,
       def, scale, elite, flash: 0, view, alive: true,
     });
   }
@@ -1971,7 +2032,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     kills++;
     spawnPart(f.x, f.y - 8, f.elite ? 26 : 9, f.elite ? 0xffc45c : 0xff9a4c, f.elite ? 190 : 130);
     if (f.elite) {
-      coins += 2;
+      coins += Math.round(2 * CURSE_TIERS[curseTier].reward);
       sfx.coin();
       // E탱크는 드물어야 아껴 쓴다
       if (eTanks < E_TANK_MAX && Math.random() < 0.22) {
@@ -1987,7 +2048,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     const drops = f.elite ? 8 : 1;
     for (let i = 0; i < drops; i++) {
-      pushGem(f.x, f.y - 6, f.def.xp * (f.elite ? 3 : 1));
+      pushGem(f.x, f.y - 6, f.def.xp * (f.elite ? 3 : 1) * CURSE_TIERS[curseTier].reward);
     }
     shake = Math.max(shake, f.elite ? 6 : 1.2);
     sfx.kill();
@@ -2181,7 +2242,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const a = Math.random() * Math.PI * 2;
     // 보스도 잡몹과 같은 비율로 눕힌다 — 여기만 그대로 두면 무기를
     // 다 갖춰도 첫 보스보다 마지막 보스가 불균형하게 벅차진다.
-    const maxHp = Math.round(200 + time * 40);
+    const maxHp = Math.round((200 + time * 40) * CURSE_TIERS[curseTier].bossHp);
     boss = {
       id, name: ENEMY_NAMES[id] ?? id,
       x: clamp(px + Math.cos(a) * 190, 40, ARENA_W - 40),
@@ -2465,7 +2526,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function killBoss(): void {
     const b = boss;
     if (!b) return;
-    for (let i = 0; i < 26; i++) pushGem(b.x, b.y - 8, 4);
+    for (let i = 0; i < 26; i++) pushGem(b.x, b.y - 8, 4 * CURSE_TIERS[curseTier].reward);
     spawnPart(b.x, b.y - 10, 60, 0xffc45c, 220);
     rings.push({ x: b.x, y: b.y - 10, r: 70, life: 0.5, max: 0.5, color: 0xffd05c });
     shake = 14;
@@ -2492,7 +2553,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       );
       phase = 'gacha';
     } else {
-      coins += COINS_PER_PULL;
+      coins += Math.round(COINS_PER_PULL * CURSE_TIERS[curseTier].reward);
       sfx.coin();
       // 무기를 못 주는 경우(이미 판 안에서 이 보스를 또 잡은 경우)에도
       // 스테이지 보스라면 클리어는 클리어다 — 가챠 없이 바로 결과로 간다.
@@ -4321,7 +4382,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 원본 수치를 그대로 쓰지 않고 좁은 폭으로만 반영한다.
     // 1.2 → 1.3. 아홉 전원에게 균일하게 걸리는 값이라 캐릭터 간 격차는
     // 안 건드리면서 전반적인 생존 여유만 넓힌다.
-    maxHp = Math.round(charDef.base_stats.hp * 1.3);
+    maxHp = Math.round(charDef.base_stats.hp * 1.3 * CURSE_TIERS[curseTier].playerHp);
     hp = maxHp;
     iframe = 0;
     dashTimer = 0; dashCd = 0;
@@ -4499,6 +4560,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   const BOSS_CELL_W = Math.floor(W / BOSS_SEL_COLS);
   const BOSS_CELL_H = 96;
   const BOSS_SEL_TOP = 54;
+  /** 하단 힌트 줄 전체를 저주 단계 전환 버튼으로 겸용한다 — 격자 밑에
+      새 칸을 만들 자리가 없다 */
+  const CURSE_BTN = { x: 0, y: H - 40, w: W, h: 32 };
   const bossSelViews: AnimView[] = [];
   const bossSelNames: Text[] = [];
   const bossSelWeak: Text[] = [];
@@ -4603,10 +4667,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 제목 밑줄 — 텍스트 하나만 둥 떠 있으면 화면 헤더로 안 읽힌다
     bossSelG.rect(W / 2 - 60, 40, 120, 2).fill({ color: 0x8ef0ff, alpha: 0.7 });
 
+    // 저주 단계 — 격자 밑 힌트 줄을 통째로 버튼 삼는다. 강해질수록
+    // 테두리가 붉어져서, 숫자를 안 읽어도 "지금 얼마나 세게 걸었는지" 가
+    // 색으로 먼저 들어온다.
+    const curse = CURSE_TIERS[curseTier];
+    const curseColor = CURSE_COLOR[curseTier];
+    bossSelG
+      .rect(CURSE_BTN.x + 14, CURSE_BTN.y, CURSE_BTN.w - 28, CURSE_BTN.h - 6)
+      .fill({ color: curseColor, alpha: 0.1 })
+      .stroke({ color: curseColor, alpha: 0.55, width: 1 });
+
     const picked = bossPickList[bossSelIndex];
-    bossSelHint.text = picked
-      ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ ${touchMode ? '다시 눌러서' : '눌러서'} 출발`
-      : '';
+    const goHint = picked ? `${ENEMY_NAMES[picked.id] ?? picked.id} ▸ ${touchMode ? '다시 눌러서' : '눌러서'} 출발` : '';
+    const curseHint = curseTier === 0
+      ? `[${touchMode ? '탭' : 'X'}] 저주 없음 — 눌러서 걸기`
+      : `[${touchMode ? '탭' : 'X'}] 저주 ${CURSE_SHORT[curseTier]} · 보상 ×${curse.reward}`;
+    bossSelHint.text = `${curseHint}\n${goHint}`;
+    bossSelHint.style.fill = curseColor;
   }
 
   /**
@@ -4640,6 +4717,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         따로 둔다 — reset() 이 이 상태를 실제로 지우는지 검증할 때 씀 */
     dbg.__hordeForceBossIntro = (): void => { bossIntroT = BOSS_INTRO_DUR; bossIntroTicks = 3; };
     dbg.__hordeOpenBossSelect = (): void => { openBossSelect(); };
+    dbg.__hordeCurseTier = (tier?: number): number => {
+      if (tier !== undefined) { curseTier = tier; saveCurseTier(curseTier); }
+      return curseTier;
+    };
     dbg.__hordeChooseBoss = (id: string): void => {
       const i = bossPickList.findIndex((d) => d.id === id);
       if (i >= 0) { bossSelIndex = i; chooseBoss(); }
@@ -4732,6 +4813,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (input.pressed('up')) bossSelIndex = (bossSelIndex + bossPickList.length - BOSS_SEL_COLS) % bossPickList.length;
       if (input.pressed('down')) bossSelIndex = (bossSelIndex + BOSS_SEL_COLS) % bossPickList.length;
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) chooseBoss();
+      if (input.pressed('menu') || input.pressed('weapon')) {
+        curseTier = (curseTier + 1) % CURSE_TIERS.length;
+        saveCurseTier(curseTier);
+      }
       bossSelLayer.visible = true;
       drawBossSelect(app.ticker.deltaMS);
       draw(dt);
@@ -5043,7 +5128,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       : 0;
 
     // ---- 스폰
-    const rate = Math.min(55, 1.6 + time * 0.3);
+    const rate = Math.min(55, 1.6 + time * 0.3) * CURSE_TIERS[curseTier].spawnRate;
     spawnAcc += rate * dt;
     while (spawnAcc >= 1) { spawnAcc -= 1; spawnFoe(false); }
 
@@ -6517,6 +6602,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         foes: foes.length, bullets: bullets.length, lv: level, kills, hp: Math.round(hp),
         shots: w.shots, itv: +w.interval.toFixed(3), fps: Math.round(app.ticker.FPS),
         wep: [...owned].map(([id, l]) => `${id}${l}`).join(','),
+        curse: curseTier,
         face: facing,
         anim: hero?.current ?? '',
         style: w.style,
