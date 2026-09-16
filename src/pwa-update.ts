@@ -11,6 +11,13 @@
  * 감지하므로, 화면이 다시 보일 때마다 업데이트 여부를 확인한다.
  */
 if ('serviceWorker' in navigator) {
+  // controllerchange 는 "새 배포로 갈아탈 때" 뿐 아니라, 이 탭이 서비스
+  // 워커 없이 처음 열려서 최초 설치가 막 끝났을 때도 똑같이 뜬다. 이걸
+  // 구분 안 하면 사이트에 처음 들어온 모든 사람이 몇 초 플레이하자마자
+  // 아무 이유 없이 새로고침을 한 번 겪는다 — 갈아탈 "옛 버전" 자체가
+  // 없었으니 원래 다시 부를 필요가 없는 새로고침이다.
+  const hadController = !!navigator.serviceWorker.controller;
+
   navigator.serviceWorker.getRegistration().then((reg) => {
     if (!reg) return;
     document.addEventListener('visibilitychange', () => {
@@ -18,10 +25,12 @@ if ('serviceWorker' in navigator) {
     });
   });
 
-  let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloaded) return;
-    reloaded = true;
-    location.reload();
-  });
+  if (hadController) {
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
+  }
 }
