@@ -1864,6 +1864,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     f.hp -= amount * m;
     f.flash = 0.07;
     f.view.tint = m >= WEAK_MULT ? 0xffffa0 : 0xff5c5c;
+    // 기본 타격 스파크 — 예전엔 약점(3배)일 때만 알갱이가 튀고, 훨씬
+    // 잦은 중립·저항 타격은 살짝 붉어지는 것 말고 아무 반응이 없었다.
+    // 맞는 순간 자체가 안 보이면 무기가 다 밋밋하게 느껴진다.
+    spawnPart(fx ?? f.x, fy ?? f.y - 8, 1, elem === 'none' ? 0xfff2c0 : ELEM_COLOR[elem], 90);
     if (m >= WEAK_MULT) {
       // 약점이 터졌다는 걸 눈으로 알려준다 — 안 보이면 상성이 있는 줄도 모른다
       spawnPart(fx ?? f.x, fy ?? f.y - 8, 3, ELEM_COLOR[elem], 200);
@@ -1892,6 +1896,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     } else if (m < 1) {
       // 반대로 저항이 걸리면 튕기는 느낌을 줘서 "이 무기는 아니다" 를 알린다
       spawnPart(b.x, b.y - 14, 2, 0x9fb0dd, 70);
+    } else {
+      // 상성이 없는 보통 타격도 최소한의 스파크는 튀어야 한다 —
+      // 지금까지는 약점·저항이 아니면 아무 반응이 없었다.
+      spawnPart(b.x, b.y - 14, 2, elem === 'none' ? 0xfff2c0 : ELEM_COLOR[elem], 110);
     }
     // 은신 중엔 못 맞히고, 방패를 든 동안은 대부분 튕긴다 —
     // "지금은 때릴 때가 아니다"를 몸으로 알게 하는 구간이다
