@@ -656,12 +656,18 @@ function pxArcBand(
   const span = a1 - a0;
   const n = Math.max(2, Math.ceil((Math.abs(span) * rOut) / step));
   const lo = Math.max(0, rIn);
+  // pxCone 처럼 좌표를 step 격자에 맞춰 반올림한다. 그냥 절대좌표를
+  // 반올림하면(예전 방식) 각도·반지름 표본마다 딱 안 맞게 어긋난
+  // 네모가 찍혀서, 넓게 채운 부채꼴(불씨 차지 등)이 나뭇결처럼
+  // 얼룩덜룩하게 보였다 — 겹치거나 빈 틈이 표본마다 불규칙했다.
   for (let i = 0; i <= n; i++) {
     const a = a0 + (span * i) / n;
     const ca = Math.cos(a);
     const sa = Math.sin(a);
     for (let r = lo; r <= rOut; r += step) {
-      g.rect(Math.round(cx + ca * r), Math.round(cy + sa * r), step, step);
+      const wx = cx + ca * r;
+      const wy = cy + sa * r;
+      g.rect(Math.round(wx / step) * step, Math.round(wy / step) * step, step, step);
     }
   }
 }
@@ -5751,12 +5757,19 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         pxArcBand(specialG, ac.x, ac.y, r - 5, r, a0, a1, 1);
         specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.95 });
       } else {
+        // 채운 부채꼴이라 반투명만 얹으면 바닥 타일색에 씻겨 탁해진다
+        // (물대포·화염 방사에서 고친 것과 같은 문제) — 어두운 바탕을
+        // 먼저 깔고 그 위에 색을 올린다. 불씨 차지가 특히 이 방식(채운
+        // 큰 부채꼴)이라 누렇게 뜬 갈색으로 보였다.
         specialG.beginPath();
         pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 2);
-        specialG.fill({ color: ac.color, alpha: (1 - k) * 0.6 });
+        specialG.fill({ color: 0x0a0a12, alpha: (1 - k) * 0.85 });
+        specialG.beginPath();
+        pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 2);
+        specialG.fill({ color: ac.color, alpha: (1 - k) * 1.0 });
         specialG.beginPath();
         pxArcBand(specialG, ac.x, ac.y, r - 4, r, a0, a1, 1);
-        specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.9 });
+        specialG.fill({ color: 0xffffff, alpha: (1 - k) * 0.95 });
       }
     }
 
