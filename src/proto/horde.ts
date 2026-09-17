@@ -2517,25 +2517,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 작살 — 꿰어서 끌고 온다. 흩어진 것을 한 줄로 모으는 게 목적이다
         chargeBeam(a, full ? 460 : 300, full ? 13 : 10, Math.round(base * (full ? 5 : 2.5)), 300);
         break;
-      case 'burst': {
-        // 불씨 — 코앞에서 여러 발을 한꺼번에 몰아 쏘고, 이어서 잠깐
-        // 발사 간격이 무너져 평타가 연달아 튀어나온다. 조준해서 겨누는
-        // 무기가 아니라 몰아붙이는 물량이 이 대원의 정체성이다.
-        const n = full ? 6 : 3;
-        const dmg = Math.round(base * (full ? 1.7 : 1.15));
-        for (let i = 0; i < n; i++) {
-          const spread = (i - (n - 1) / 2) * 0.1;
-          const ang = a + spread;
-          addBullet({
-            x: px, y: py - 10,
-            vx: Math.cos(ang) * 260, vy: Math.sin(ang) * 260 * 0.78,
-            dmg, life: 0.85, color: shotColor, r: 3, elem: w.elem,
-          });
-          spawnPart(px + Math.cos(ang) * 9, py - 10 + Math.sin(ang) * 7, 2, shotCore, 130);
-        }
-        burstT = full ? 0.6 : 0.3;
+      case 'burst':
+        // 불씨 — 여기서 따로 탄을 쏘지 않는다. 한꺼번에 여러 발을
+        // 만들어 내보내면 같은 순간, 같은 지점에서 겹쳐 찍혀서 오히려
+        // 채운 부채꼴처럼 뭉쳐 보인다(실제로 그렇게 보여서 되돌렸다).
+        // 대신 평타 간격만 잠깐 무너뜨린다 — 이미 있는 평타가 실제
+        // 시간차를 두고 한 발씩 튀어나가니, 뭉치지 않고 진짜 연사처럼
+        // 갈라져 보인다. 이게 원래(개편 전) 방식 그대로다.
+        burstT = full ? 0.9 : 0.45;
         break;
-      }
       case 'volley': {
         // 반딧불 — 보이는 것 전부에게 한 발씩. 겨눌 필요가 없다
         // 사방으로 흩뿌리고 유도에 맡긴다 — 여기서 표적을 직접 배정하면
