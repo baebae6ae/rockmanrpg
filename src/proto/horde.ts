@@ -4587,6 +4587,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeFreezeFlame = (): void => {
       for (const f of flames) { f.life = 5; f.max = 5; }
       for (const j of jets) { j.life = 5; j.max = 5; }
+      for (const b of bolts) b.life = 3;
+      for (const rg of rings) { rg.max = 3; rg.life = 3; }
+      for (const ac of arcs) { ac.max = 3; ac.life = 3; }
     };
     dbg.__hordeTestWeapon = (id: string, lv = 1): unknown => {
       const d = ALL_WEAPONS.find((x) => x.id === id);
