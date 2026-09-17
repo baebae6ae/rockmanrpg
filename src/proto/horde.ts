@@ -1400,6 +1400,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   let pickIndex = 0;
   let pickList: PickOption[] = [];
+  /** 카드가 뜨자마자 남은 유예 시간. 차지/대시를 정신없이 누르다가 레벨업
+      화면이 튀어나오면, 그 순간 화면에 막 눌려 있던 손가락이 카드를 그대로
+      확정시켜 버린다. dead/stage_clear 화면의 0.5초 유예와 같은 처방이다. */
+  let pickOpenT = 0;
   let deadTimer = 0;
   /** 이번 판이 목표로 하는 스테이지의 보스. 캐릭터 선택 뒤 스테이지
       선택에서 정해지고, 판이 끝날 때까지 안 바뀐다(재도전에도 유지). */
@@ -1498,6 +1502,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       return;
     }
     if (phase === 'pick') {
+      // 화면이 뜨자마자의 유예 — 차지/대시를 누르고 있던 손가락이 그대로
+      // 카드를 찍어 버리는 걸 막는다.
+      if (pickOpenT > 0) return;
       for (let i = 0; i < cardRects.length && i < pickList.length; i++) {
         if (!inside(cardRects[i])) continue;
         pickIndex = i;
@@ -4014,6 +4021,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (!pickList.length) return;
     pickIndex = 0;
     phase = 'pick';
+    pickOpenT = 0.35;
     sfx.level();
   }
 
@@ -4681,9 +4689,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     if (phase === 'pick') {
+      if (pickOpenT > 0) pickOpenT -= dt;
       if (input.pressed('left')) pickIndex = (pickIndex + pickList.length - 1) % pickList.length;
       if (input.pressed('right')) pickIndex = (pickIndex + 1) % pickList.length;
-      if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) choosePick();
+      if (pickOpenT <= 0 && (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash'))) choosePick();
       drawPick();
       draw(dt);
       input.endFrame();
