@@ -6225,23 +6225,30 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    // 차지 — 모이는 게 몸에 보여야 언제 놓을지 판단할 수 있다
+    // 차지 — 모이는 게 몸에 보여야 언제 놓을지 판단할 수 있다.
+    // 아홉 캐릭터 전부가 매 차지마다 몇 초씩 보는 이펙트인데, 여태
+    // PixiJS 네이티브 circle()/stroke() 그대로였다 — 정작 방출 순간
+    // 이펙트는 도트로 다 바꿔놓고, 정작 제일 오래 보이는 이 부분만
+    // 매끈한 원으로 남아 있었다.
     if (chargeT > 0 && phase === 'play') {
       const k = Math.min(1, chargeT / CHARGE_STEP[1]);
       const c = chargeLevel === 2 ? 0xfff2c0 : chargeLevel === 1 ? 0x9fe8ff : 0x6ec8ff;
       // 빨려드는 고리
       for (let i = 0; i < 3; i++) {
         const ph = ((animClock * 1.8 + i / 3) % 1);
-        specialG.circle(px, py - 10, 8 + (1 - ph) * 34 * (0.5 + k))
-          .stroke({ color: c, width: 1 + k, alpha: ph * 0.65 });
+        specialG.beginPath();
+        pxRing(specialG, px, py - 10, 8 + (1 - ph) * 34 * (0.5 + k), 0.78, 2, 1 + Math.round(k));
+        specialG.fill({ color: c, alpha: ph * 0.65 });
       }
       // 속심
-      specialG.circle(px, py - 10, 5 + k * 9)
-        .fill({ color: c, alpha: 0.28 + k * 0.3 });
+      specialG.beginPath();
+      pxDisc(specialG, px, py - 10, 5 + k * 9, 0.78, 1);
+      specialG.fill({ color: c, alpha: 0.28 + k * 0.3 });
       if (chargeLevel > 0) {
         const puls = 0.6 + Math.sin(animClock * (chargeLevel === 2 ? 26 : 15)) * 0.35;
-        specialG.circle(px, py - 10, 6 + chargeLevel * 5)
-          .fill({ color: 0xffffff, alpha: puls * 0.5 });
+        specialG.beginPath();
+        pxDisc(specialG, px, py - 10, 6 + chargeLevel * 5, 0.78, 1);
+        specialG.fill({ color: 0xffffff, alpha: puls * 0.5 });
         // 최대는 튀는 불꽃까지
         if (chargeLevel === 2 && Math.random() < 0.5) {
           spawnPart(px, py - 10, 1, 0xfff2c0, 120);
