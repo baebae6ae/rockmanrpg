@@ -4479,6 +4479,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     dbg.__hordeChoosePick = (index: number): void => {
       if (phase === 'pick' && pickList[index]) { pickIndex = index; choosePick(); }
     };
+    /** 구간 전환 타이밍을 강제로 앞당긴다 — 30초짜리 웨이브를 실제로
+        기다리지 않고 예고/전환 UI 를 즉시 재현해 확인하기 위한 훅 */
+    dbg.__hordeForceWaveEnd = (secondsLeft: number): void => { waveEnd = time + secondsLeft; };
     dbg.__hordeStageBoss = (): string | null => stageBoss?.id ?? null;
     dbg.__hordeClearedStages = (): string[] => [...clearedStages];
     /** 보스를 잡아 모은 무기 — 판을 넘겨 남는 쪽이다 */
@@ -6414,6 +6417,26 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (waveLabel.visible) {
       waveLabel.text = `${ELEM_WORD[waveElem]} 무리`;
       waveLabel.style.fill = ELEM_COLOR[waveElem];
+
+      // 소형 보석 아이콘 — 글자색만으로는 한눈에 안 들어온다. 늘 곁에
+      // 두면 지금 무리 속성을 보자마자 상성 무기를 떠올릴 수 있다.
+      const gemX = W / 2 - 38, gemY = 34;
+      hudBar.circle(gemX, gemY, 4).fill({ color: 0x000000, alpha: 0.4 });
+      hudBar.circle(gemX, gemY, 3).fill({ color: ELEM_COLOR[waveElem] });
+      hudBar.circle(gemX - 1, gemY - 1, 1).fill({ color: 0xffffff, alpha: 0.8 });
+
+      // 구간 남은 시간 막대 — 가운데 큰 예고 배너는 5초짜리 스침이라
+      // 놓치면 다음 예고까지 30초를 못 본다. 이건 늘 떠 있다.
+      const barW = 52, barX = W / 2 - barW / 2, barY = 41;
+      const remain = clamp(waveEnd - time, 0, WAVE_LEN);
+      const fillW = Math.round((barW * remain) / WAVE_LEN);
+      hudBar.rect(barX, barY, barW, 3).fill({ color: 0x000000, alpha: 0.4 });
+      hudBar.rect(barX, barY, fillW, 3)
+        .fill({ color: ELEM_COLOR[waveElem], alpha: waveTold ? (Math.floor(time * 8) % 2 === 0 ? 1 : 0.4) : 0.85 });
+      if (waveTold) {
+        // 곧 올 속성 색이 빈 자리부터 스며든다 — 뭐가 오는지 색으로 미리 보여준다
+        hudBar.rect(barX + fillW, barY, barW - fillW, 3).fill({ color: ELEM_COLOR[nextWaveElem], alpha: 0.55 });
+      }
     }
 
     // 아머를 먹으면 뭘 얻었는지 알려준다 — 안 알려주면 뭐가 좋아졌는지 모른다
