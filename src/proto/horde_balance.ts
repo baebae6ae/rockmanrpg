@@ -264,10 +264,19 @@ const CURSE_TIERS: CurseTier[] = [
     name: '저주 III · 균열 붕괴', desc: '적 체력 +60% · 스폰 +45% · 보스 체력 +40% · 최대체력 -15% — 보상 ×1.8',
     mobHp: 1.6, spawnRate: 1.45, bossHp: 1.4, playerHp: 0.85, reward: 1.8,
   },
+  /**
+   * 4단계는 아무나 못 고른다 — 여덟 스테이지를 전부 깨고 무기고를 다
+   * 채운 뒤에만 열린다(horde.ts 의 allClear 판정). 파밍이 끝난 다음에도
+   * 목표가 하나 남아 있어야 "다 모았으니 이제 뭐 하지" 가 안 생긴다.
+   */
+  {
+    name: '저주 IV · 균열 그 자체', desc: '적 체력 +90% · 스폰 +70% · 보스 체력 +65% · 최대체력 -25% — 보상 ×2.4',
+    mobHp: 1.9, spawnRate: 1.7, bossHp: 1.65, playerHp: 0.75, reward: 2.4,
+  },
 ];
-const CURSE_COLOR = [0x8a97c4, 0xffe86b, 0xff9a4c, 0xff5c5c];
+const CURSE_COLOR = [0x8a97c4, 0xffe86b, 0xff9a4c, 0xff5c5c, 0xd88cff];
 /** 스테이지 선택 화면 힌트 줄은 폭이 270px 뿐이라 desc 전문은 못 들어간다 */
-const CURSE_SHORT = ['없음', 'I', 'II', 'III'];
+const CURSE_SHORT = ['없음', 'I', 'II', 'III', 'IV'];
 
 export type { FoeKind, KindDef, Behavior, Element, BossPattern, BossDef, CurseTier };
 export {

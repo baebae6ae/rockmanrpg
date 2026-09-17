@@ -1253,6 +1253,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let equippedWeapon: string | null = loadEquipped();
   /** 0 = 저주 없음. 스테이지 선택 화면에서 직접 고르고, 고른 값은 다음 판에도 이어진다 */
   let curseTier = loadCurseTier(CURSE_TIERS.length - 1);
+  /**
+   * 여덟 스테이지를 전부 한 번씩 깨고 무기고도 여덟 개를 다 채웠는지 —
+   * 파밍이 끝난 다음에도 "저주 IV" 라는 목표 하나를 남겨 두는 기준이다.
+   * BOSS_WEAPONS 는 이 함수보다 뒤에서 선언되지만, 실제 호출은 전부
+   * 초기화가 끝난 뒤(입력에 반응할 때)라 문제없다.
+   */
+  function allStagesClear(): boolean {
+    return clearedStages.size >= BOSS_DEFS.length && arsenal.size >= BOSS_WEAPONS.length;
+  }
+  /** 저주 단계 순환 — 4단계(저주 IV)는 allStagesClear() 전까지는 순환에서 빠진다 */
+  function cycleCurseTier(): void {
+    const max = allStagesClear() ? CURSE_TIERS.length - 1 : CURSE_TIERS.length - 2;
+    curseTier = (curseTier + 1) % (max + 1);
+    saveCurseTier(curseTier);
+  }
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
   const unlock = (): void => sfx.unlock();
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -1465,8 +1480,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     if (phase === 'boss_select') {
       if (inside(CURSE_BTN)) {
-        curseTier = (curseTier + 1) % CURSE_TIERS.length;
-        saveCurseTier(curseTier);
+        cycleCurseTier();
         return;
       }
       for (let i = 0; i < bossSelRects.length && i < bossPickList.length; i++) {
@@ -4411,8 +4425,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
     for (let i = bossPickList.length; i < BOSS_DEFS.length; i++) bossSelViews[i].visible = false;
 
-    // 제목 밑줄 — 텍스트 하나만 둥 떠 있으면 화면 헤더로 안 읽힌다
-    bossSelG.rect(W / 2 - 60, 40, 120, 2).fill({ color: 0x8ef0ff, alpha: 0.7 });
+    // 제목 밑줄 — 텍스트 하나만 둥 떠 있으면 화면 헤더로 안 읽힌다.
+    // 전부 클리어했으면 금색으로 바꾸고 배지를 붙여, 파밍이 끝난 뒤에도
+    // "다 잡았다" 는 걸 매번 이 화면에서 확인할 수 있게 한다.
+    const cleared = allStagesClear();
+    bossSelTitle.text = cleared ? '스테이지 선택 · 완전제압' : '스테이지 선택';
+    bossSelG.rect(W / 2 - 60, 40, 120, 2).fill({ color: cleared ? 0xffd85c : 0x8ef0ff, alpha: 0.7 });
 
     // 저주 단계 — 격자 밑 힌트 줄을 통째로 버튼 삼는다. 강해질수록
     // 테두리가 붉어져서, 숫자를 안 읽어도 "지금 얼마나 세게 걸었는지" 가
@@ -4487,6 +4505,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     /** 보스를 잡아 모은 무기 — 판을 넘겨 남는 쪽이다 */
     dbg.__hordeArsenal = (): [string, number][] => [...arsenal];
     dbg.__hordeClearArsenal = (): void => { arsenal.clear(); saveArsenal([]); };
+    /** 저주 IV 해금 조건(전 스테이지 클리어 + 무기고 완성)을 즉시 재현한다 */
+    dbg.__hordeForceAllClear = (): void => {
+      for (const d of BOSS_DEFS) { clearedStages.add(d.id); arsenal.set(d.drop, 1); }
+      saveCleared([...clearedStages]);
+      saveArsenal([...arsenal]);
+    };
+    dbg.__hordeAllClear = (): boolean => allStagesClear();
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     /** 무기 조준을 거치지 않고 보스에 상성 피해를 직접 넣는다 — 약점/저항
@@ -4570,10 +4595,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (input.pressed('up')) bossSelIndex = (bossSelIndex + bossPickList.length - BOSS_SEL_COLS) % bossPickList.length;
       if (input.pressed('down')) bossSelIndex = (bossSelIndex + BOSS_SEL_COLS) % bossPickList.length;
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) chooseBoss();
-      if (input.pressed('menu') || input.pressed('weapon')) {
-        curseTier = (curseTier + 1) % CURSE_TIERS.length;
-        saveCurseTier(curseTier);
-      }
+      if (input.pressed('menu') || input.pressed('weapon')) cycleCurseTier();
       bossSelLayer.visible = true;
       drawBossSelect(app.ticker.deltaMS);
       draw(dt);
