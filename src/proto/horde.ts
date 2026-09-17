@@ -6498,9 +6498,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 소형 보석 아이콘 — 글자색만으로는 한눈에 안 들어온다. 늘 곁에
       // 두면 지금 무리 속성을 보자마자 상성 무기를 떠올릴 수 있다.
       const gemX = W / 2 - 38, gemY = 34;
-      hudBar.circle(gemX, gemY, 4).fill({ color: 0x000000, alpha: 0.4 });
-      hudBar.circle(gemX, gemY, 3).fill({ color: ELEM_COLOR[waveElem] });
-      hudBar.circle(gemX - 1, gemY - 1, 1).fill({ color: 0xffffff, alpha: 0.8 });
+      hudBar.beginPath();
+      pxDisc(hudBar, gemX, gemY, 4, 1, 1);
+      hudBar.fill({ color: 0x000000, alpha: 0.4 });
+      hudBar.beginPath();
+      pxDisc(hudBar, gemX, gemY, 3, 1, 1);
+      hudBar.fill({ color: ELEM_COLOR[waveElem] });
+      hudBar.rect(gemX - 1, gemY - 1, 1, 1).fill({ color: 0xffffff, alpha: 0.8 });
 
       // 구간 남은 시간 막대 — 가운데 큰 예고 배너는 5초짜리 스침이라
       // 놓치면 다음 예고까지 30초를 못 본다. 이건 늘 떠 있다.
