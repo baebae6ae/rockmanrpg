@@ -4583,6 +4583,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
      * 무기 하나를 딱 한 번 발사시키고 실제로 무엇이 생겼는지 돌려준다.
      * "골랐는데 아무것도 안 나간다" 류를 눈으로 좇지 않고 가려내려는 용도다.
      */
+    dbg.__hordeJetsFlames = (): unknown => ({ jets: [...jets], flames: [...flames] });
+    dbg.__hordeFreezeFlame = (): void => {
+      for (const f of flames) { f.life = 5; f.max = 5; }
+      for (const j of jets) { j.life = 5; j.max = 5; }
+    };
     dbg.__hordeTestWeapon = (id: string, lv = 1): unknown => {
       const d = ALL_WEAPONS.find((x) => x.id === id);
       if (!d) return { found: false };
@@ -5899,21 +5904,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 물대포 / 화염 방사 — 뿜어져 나가는 부채꼴.
     // 삼각형 하나로 그리면 '종이 조각' 이라, 폭이 다른 세 겹을 겹치고
     // 끝쪽에 알갱이를 뿌려서 뿜어나가는 덩어리로 만든다.
+    //
+    // 예전엔 바깥 두 겹의 알파가 낮아(0.55·0.8) 바닥 타일 색이 그대로
+    // 비쳐 보여서, 빨강·주황이 죽은 살구색으로 탁해져 보였다 — 그래서
+    // "그림판" 소리가 나왔다. 먼저 어두운 밑칠로 바닥을 가리고, 그
+    // 위에 색을 훨씬 불투명하게 얹는다.
     for (const j of [...jets, ...flames]) {
       if (!onScreen(j.x, j.y)) continue;
       const k = Math.max(0, j.life / j.max);
       // 한 격자로 한 번만 훑고, 축에서 떨어진 정도로 안/바깥을 갈라
       // 다른 색을 칠한다. 층마다 따로 그리면 격자가 어긋나 줄이 진다.
       const reach = j.reach * (0.9 + k * 0.1);
+      specialG.beginPath();
+      pxCone(specialG, j.x, j.y, j.angle, reach, 0.34, 2, 0, 1.0);
+      specialG.fill({ color: 0x0a0a12, alpha: 0.85 });
       const bands: [number, number, number, number][] = [
-        [0.5, 1.0, 0.55, j.palette[0]],
-        [0.2, 0.5, 0.8, j.palette[1]],
-        [0.0, 0.2, 1.0, j.palette[2]],
+        [0.5, 1.0, 1, j.palette[0]],
+        [0.2, 0.5, 1, j.palette[1]],
+        [0.0, 0.2, 1, j.palette[2]],
       ];
       for (const [lo, hi, alpha, col] of bands) {
         specialG.beginPath();
         pxCone(specialG, j.x, j.y, j.angle, reach, 0.34, 2, lo, hi);
-        specialG.fill({ color: col, alpha: alpha * (0.45 + k * 0.55) });
+        specialG.fill({ color: col, alpha });
       }
       // 끝에서 흩어지는 알갱이
       specialG.beginPath();
