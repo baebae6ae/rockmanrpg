@@ -1505,6 +1505,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 화면이 뜨자마자의 유예 — 차지/대시를 누르고 있던 손가락이 그대로
       // 카드를 찍어 버리는 걸 막는다.
       if (pickOpenT > 0) return;
+      // 카드가 세 장일 땐 맨 아래 카드가 차지 버튼 자리와 화면상 겹친다.
+      // 그 자리를 짚은 손가락은 카드가 아니라 여전히 차지/대시/이탱크를
+      // 노린 것으로 본다 — 안 그러면 정신없이 누르던 손가락이 우연히
+      // 그 자리에 있던 카드를 확정시켜 버린다. 유예 시간만으론
+      // "그 지점을 계속 짚는" 경우를 못 막는다.
+      if (Math.hypot(p.x - DASH_BTN.x, p.y - DASH_BTN.y) <= DASH_BTN.r * 1.25) return;
+      if (Math.hypot(p.x - FIRE_BTN.x, p.y - FIRE_BTN.y) <= FIRE_BTN.r * 1.25) return;
+      if (Math.hypot(p.x - ETANK_BTN.x, p.y - ETANK_BTN.y) <= ETANK_BTN.r * 1.25) return;
       for (let i = 0; i < cardRects.length && i < pickList.length; i++) {
         if (!inside(cardRects[i])) continue;
         pickIndex = i;
@@ -2471,13 +2479,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
    */
   function releaseCharge(lv: number): void {
     const t = nearestFoe(px, py);
-    let a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
-    // 도끼(파고들기)·사슬(더 멀리 베기)은 세이버답게 부채꼴로 지나가므로,
-    // 단순 최근접이 아니라 그 경로에 제일 많이 걸리는 방향으로 겨눈다
-    if (w.style === 'saber' && (chargeLook === 'reap' || chargeLook === 'lunge')) {
-      const reach = (chargeLook === 'reap' ? w.arcR * 1.3 : w.arcR * 1.7) + 24;
-      a = bestSaberAngle(reach, w.arcSpan) ?? a;
-    }
+    // 도끼·사슬 차지는 밀집 방향이 아니라 최근접을 그대로 겨눈다. 한
+    // 판에 몇 번 안 쓰는 큰 동작이라 "바로 옆의 적을 놔두고 더 먼
+    // 무리를 향해 튀어 나간다" 가 한 번만 보여도 고장난 것처럼 느껴진다.
+    // 밀집 방향 겨냥(bestSaberAngle)은 매 프레임 반복되는 평타 스윙에만
+    // 남긴다 — 거긴 계속 다시 휘두르니 한 번의 방향이 크게 안 중요하다.
+    const a = t ? Math.atan2(t.y - 8 - (py - 10), t.x - px) : facing > 0 ? 0 : Math.PI;
     const full = lv === 2;
     const mult = full ? 1 : 0.5;
     // 세이버는 근접이라 위험을 감수한 만큼, 다 찬 차지는 확실히 세게 흔들린다
