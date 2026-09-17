@@ -12,8 +12,18 @@
 
 type Ctx = AudioContext;
 
+/** horde.ts 의 Element 와 값이 같다 — 순환 참조를 피하려고 여기서 따로 적는다 */
+type SfxElem = 'none' | 'elec' | 'aqua' | 'fire' | 'ice';
+
 export interface Sfx {
-  shot(style: 'charge' | 'rapid' | 'saber'): void;
+  /**
+   * elem 을 주면 발사음 위에 속성 색깔을 살짝 얹는다 — 지금까지는 방식
+   * (charge/rapid/saber) 세 가지 소리를 스무 개 넘는 무기가 그대로
+   * 나눠 썼다. 전기는 지지직대는 고음, 물은 웅얼대는 하강음, 불은
+   * 잡음 섞인 훅, 얼음은 맑은 종소리를 짧게 겹쳐 무기 정체성이 귀로도
+   * 들리게 한다.
+   */
+  shot(style: 'charge' | 'rapid' | 'saber', elem?: SfxElem): void;
   hit(): void;
   kill(): void;
   hurt(): void;
@@ -145,7 +155,7 @@ export function createSfx(): Sfx {
       return muted;
     },
 
-    shot(style): void {
+    shot(style, elem): void {
       if (!ensure()) return;
       if (style === 'rapid') {
         // 연사는 실제 발사 간격(0.075초)보다 성기게 울려야 소음이 안 된다
@@ -160,6 +170,13 @@ export function createSfx(): Sfx {
         noise(0.14, 0.16, 2400, 600);
         tone('triangle', 900, 420, 0.1, 0.05);
       }
+      // 방식음 위에 짧게 얹는 속성 색 — 게이트를 따로 안 둔다. 이미 위
+      // gate('shot', ...) 를 통과했을 때만 여기 오므로 방식음과 같은
+      // 빈도로만 울린다.
+      if (elem === 'elec') tone('square', 3400, 2600, 0.03, 0.03);
+      else if (elem === 'aqua') tone('sine', 700, 260, 0.09, 0.045);
+      else if (elem === 'fire') noise(0.07, 0.07, 1400, 500);
+      else if (elem === 'ice') tone('triangle', 2200, 2600, 0.07, 0.035);
     },
 
     hit(): void {

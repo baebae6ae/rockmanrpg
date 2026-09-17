@@ -2919,7 +2919,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           x: px, y: py - 10, angle: a, reach, life: 0.22, max: 0.22, color: 0x6ec8ff,
           palette: [0x2a6fc4, 0x4fb8ff, 0xd6f2ff],
         });
-        sfx.shot('charge');
+        sfx.shot('charge', 'aqua');
       },
     },
     {
@@ -2992,7 +2992,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           });
         }
         spawnPart(px, py - 10, 2, 0xdcf4ff, 70);
-        sfx.shot('rapid');
+        sfx.shot('rapid', 'ice');
       },
     },
     {
@@ -3385,7 +3385,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           });
         }
         spawnPart(px, py - 10, 4, 0xc98cff, 120);
-        sfx.shot('saber');
+        sfx.shot('saber', 'elec');
       },
     },
     {
@@ -3465,7 +3465,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           if (along > 0 && along < 420 && perp < 26) hurtBoss(dmg, 'ice');
         }
         shake = Math.max(shake, 5);
-        sfx.shot('charge');
+        sfx.shot('charge', 'ice');
       },
     },
     {
@@ -3490,7 +3490,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             elem: 'fire',
           });
         }
-        sfx.shot('rapid');
+        sfx.shot('rapid', 'fire');
       },
     },
   ];
