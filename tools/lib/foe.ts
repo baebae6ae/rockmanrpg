@@ -185,6 +185,8 @@ export const MOB_DRAWERS: Record<MobKind, (f: F, phase: number) => void> = {
     const swing = Math.round(Math.sin(ph * Math.PI * 2) * 3), bob = Math.round(Math.abs(Math.cos(ph * Math.PI * 2)));
     f.rect(-7 + swing, 0, 5, 7, M.trim); f.rect(2 - swing, 0, 5, 7, M.trim);
     const by = 6 + bob; f.rect(-9, by, 18, 14, M.suit); bevel(f, -9, by, 18, 14); f.rect(-9, by, 18, 1, M.metal);
+    // 어깨 장갑판 — 매끈한 상자 몸통 위 모서리에 각진 어깨를 얹는다
+    f.rect(-11, by - 1, 4, 4, M.metal); f.rect(7, by - 1, 4, 4, M.metal);
     for (let i = -6; i <= 6; i += 4) f.rect(i, by + 2, 1, 2, M.metal); eye(f, -4, by + 5, 8, 4);
     f.rect(0, by + 14, 1, 4, M.metal); f.rect(-1, by + 18, 3, 2, M.accent);
   },
@@ -201,7 +203,10 @@ export const MOB_DRAWERS: Record<MobKind, (f: F, phase: number) => void> = {
   },
   hopper: (f, ph) => {
     const crouch = Math.round(Math.max(0, Math.sin(ph * Math.PI * 2)) * 3); f.rect(-7, 0, 5, 4 + crouch, M.trim); f.rect(2, 0, 5, 4 + crouch, M.trim);
-    const by = 5 + crouch; f.disc(0, by + 6, 8, M.suit); f.disc(0, by + 6, 5, M.metal); eye(f, -4, by + 5, 8, 4); f.rect(-1, by + 13, 2, 4, M.accent);
+    const by = 5 + crouch; f.disc(0, by + 6, 8, M.suit); f.disc(0, by + 6, 5, M.metal);
+    // 매끈한 공 옆구리에 돌기 두 개 — 완두콩이 아니라 작은 짐승으로 읽히게
+    f.rect(-9, by + 4, 2, 3, M.suit); f.rect(7, by + 4, 2, 3, M.suit);
+    eye(f, -4, by + 5, 8, 4); f.rect(-1, by + 13, 2, 4, M.accent);
   },
   drone: (f, ph) => {
     const y = 12 + Math.round(Math.sin(ph * Math.PI * 2) * 2); f.rect(-11, y + 9, 22, 2, M.metal); f.rect(-2, y + 8, 4, 2, M.trim); f.rect(-7, y, 14, 9, M.suit); bevel(f, -7, y, 14, 9); f.rect(-7, y, 14, 1, M.metal); eye(f, -5, y + 3, 10, 4); f.rect(6, y + 3, 11, 3, M.metal); f.rect(16, y + 3, 2, 3, M.glow); f.rect(-4, y - 3, 3, 3, M.trim); f.rect(2, y - 3, 3, 3, M.trim);
