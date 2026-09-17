@@ -2725,6 +2725,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           });
         }
         bladeSpin += 0.5;
+        // 나가는 순간 자체는 표시가 없어서 몸에서 톱날이 갈려 나온다는
+        // 게 안 느껴졌다 — 빠르게 도는 무기라 화려하게 말고 짧게만 튄다
+        spawnPart(px, py - 10, 3, 0xd8e2f0, 90);
       },
     },
     {
@@ -2752,6 +2755,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             life: 2.4, dmg: 26 + 12 * lv, pierce: 0,
             shape: 'orb', color: 0xffa8dc, r: 5, homing: 5.5,
           });
+          // 발사구 섬광 — 유도탄이 몸통 아무 데서나 스윽 나오면 발사가
+          // 아니라 그냥 생겨난 것처럼 보인다
+          spawnPart(px + Math.cos(a) * 6, py - 10 + Math.sin(a) * 5, 2, 0xffa8dc, 100);
         }
       },
     },
@@ -2773,6 +2779,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           shape: 'orb', color: 0x9fe8ff, r: 18 + 3 * lv, spin: 9,
           elem: 'ice',
         });
+        // 소환되는 순간 바람을 그러모으는 소용돌이 — 안 그러면 그냥
+        // 색칠한 원반이 몸에서 쓱 밀려나가는 것처럼 보인다
+        for (let i = 0; i < 8; i++) {
+          const wa = (i / 8) * Math.PI * 2;
+          rings.push({
+            x: px + Math.cos(wa) * 14, y: py - 10 + Math.sin(wa) * 11,
+            r: 4, life: 0.22, max: 0.22, color: 0x9fe8ff,
+          });
+        }
       },
     },
     {
@@ -2794,6 +2809,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           boomR: 34 + 7 * lv, boomDmg: 22 + 11 * lv,
           elem: 'fire',
         });
+        // 폭발은 이미 화려하다(blast()) — 발사 순간에도 포신에서 튀는
+        // 불티를 남겨 "던졌다" 를 확실히 보여준다
+        spawnPart(px + Math.cos(a) * 8, py - 10 + Math.sin(a) * 6, 3, 0xffc48a, 110);
       },
     },
     {
@@ -2973,6 +2991,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             angle: a, elem: 'ice', slow: 0.8 + 0.2 * lv,
           });
         }
+        spawnPart(px, py - 10, 2, 0xdcf4ff, 70);
         sfx.shot('rapid');
       },
     },
@@ -3365,6 +3384,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             elem: 'elec',
           });
         }
+        spawnPart(px, py - 10, 4, 0xc98cff, 120);
         sfx.shot('saber');
       },
     },
@@ -4819,6 +4839,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             elem: 'ice',
           });
         }
+        spawnPart(px, py - 10, 3, 0xff5c9c, 110);
       }
     }
 
@@ -5287,6 +5308,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      // 큰 구슬 탄(토네이도 등)은 그 자리에 멈춘 원반처럼 보이지 않게
+      // 날아가는 동안 잔여물을 흩뿌려 궤적을 남긴다
+      if (b.shape === 'orb' && b.r > 12 && Math.random() < 0.5) {
+        spawnPart(b.x - b.vx * 0.02, b.y - b.vy * 0.02, 1, b.color, 40);
+      }
       b.life -= dt;
       if (b.life <= 0 || b.x < -20 || b.x > ARENA_W + 20 || b.y < -20 || b.y > ARENA_H + 20) {
         if (b.boomR > 0) blast(b.x, b.y, b.boomR, b.boomDmg, b.color, b.elem);
@@ -6118,8 +6144,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const shellDraw = owned.get('shell_guard') ?? 0;
     if (shellDraw && phase === 'play') {
       const rr = 28 + 5 * shellDraw;
-      specialG.circle(px, py - 10, rr)
-        .stroke({ color: 0x6ec8ff, width: 2, alpha: 0.4 + Math.sin(animClock * 5) * 0.12 });
+      specialG.beginPath();
+      pxRing(specialG, px, py - 10, rr, 1, 1, 2);
+      specialG.fill({ color: 0x6ec8ff, alpha: 0.4 + Math.sin(animClock * 5) * 0.12 });
       for (let i = 0; i < 6; i++) {
         const a = orbitAngle * 0.7 + (i / 6) * Math.PI * 2;
         specialG.rect(
@@ -6128,7 +6155,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       }
     }
 
-    // 크림슨 오빗 — 주위를 도는 구슬
+    // 크림슨 오빗 — 주위를 도는 구슬. 매끈한 원 두 겹만 겹쳐서 그냥
+    // 색칠한 클립아트 공으로 보였다 — 도트 원으로 바꾸고 뒤로 잔불
+    // 꼬리를 남겨 불덩이가 도는 것처럼 보이게 한다.
     const orbitLv = owned.get('flame_orbit') ?? 0;
     if (orbitLv && phase === 'play') {
       const n = 2 + orbitLv;
@@ -6136,8 +6165,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         const a = orbitAngle + (i / n) * Math.PI * 2;
         const ox = px + Math.cos(a) * 30;
         const oy = py - 10 + Math.sin(a) * 24;
-        specialG.circle(ox, oy, 5).fill({ color: 0xff5c5c, alpha: 0.9 });
-        specialG.circle(ox, oy, 2).fill({ color: 0xffd0d0, alpha: 0.95 });
+        const ta = a - 0.3;
+        const tx = px + Math.cos(ta) * 30;
+        const ty = py - 10 + Math.sin(ta) * 24;
+        specialG.beginPath();
+        pxDisc(specialG, tx, ty, 3, 1, 1);
+        specialG.fill({ color: 0xff5c5c, alpha: 0.32 });
+        specialG.beginPath();
+        pxDisc(specialG, ox, oy, 5, 1, 1);
+        specialG.fill({ color: 0xff5c5c, alpha: 0.9 });
+        specialG.beginPath();
+        pxDisc(specialG, ox, oy, 2, 1, 1);
+        specialG.fill({ color: 0xffd0d0, alpha: 0.95 });
       }
     }
 
@@ -6242,12 +6281,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.fill({ color: 0x8ef0ff, alpha: 0.95 });
     }
 
-    // 실드 구슬
+    // 실드 구슬 — 매끈한 원(스트로크 포함)이라 도트 화면에서 유독 붕
+    // 뜬 클립아트로 보였다. 다른 탄과 같은 도트 원 + 테두리 + 속심으로 바꾼다.
     for (const o of orbs) {
       const ox = px + Math.cos(o.angle) * 36;
       const oy = py - 12 + Math.sin(o.angle) * 24;
-      specialG.circle(ox, oy, 6).fill({ color: 0x6ec8ff, alpha: 0.9 });
-      specialG.circle(ox, oy, 6).stroke({ color: 0xdff2ff, width: 1, alpha: 0.8 });
+      specialG.beginPath();
+      pxDisc(specialG, ox, oy, 6, 1, 1);
+      specialG.fill({ color: 0x6ec8ff, alpha: 0.9 });
+      specialG.beginPath();
+      pxRing(specialG, ox, oy, 6, 1, 1, 1);
+      specialG.fill({ color: 0xdff2ff, alpha: 0.85 });
+      specialG.beginPath();
+      pxDisc(specialG, ox, oy, 2, 1, 1);
+      specialG.fill({ color: 0xffffff, alpha: 0.65 });
     }
 
     // 번개 — 내리꽂히는 세로 선
