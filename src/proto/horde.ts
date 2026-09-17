@@ -278,7 +278,7 @@ type ChargeLook =
   | 'thread'   // 바늘 — 화면 끝까지 가는 실 한 줄
   | 'split'    // 거울 — 세 갈래로 갈라지는 빛
   | 'reel'     // 작살 — 꿰어서 끌고 온다
-  | 'flame'    // 불씨 — 코앞을 태우는 부채꼴
+  | 'burst'    // 불씨 — 짧게 연사가 폭주해 여러 발이 몰아 나간다
   | 'volley'   // 반딧불 — 보이는 적 전부에게 유도탄
   | 'lunge'    // 도끼 — 조준선을 따라 파고드는 돌진 연참
   | 'quake'    // 종 — 제자리에서 세 번 퍼지는 파문
@@ -329,7 +329,7 @@ const SIG: Record<string, Sig> = {
   // 꿰뚫어 여럿을 한 줄로 눕힌다 — 많이 뚫는 대신 하나에겐 약하다
   harpoon: { shot: 'harpoon', pierce: 9, dmgMul: 0.74, charge: 'reel' },
   // 가까이 붙어야 제 몫을 한다 — 사거리를 절반으로 깎고 발수를 늘렸다
-  ember: { shot: 'ember', rangeMul: 0.5, shots: 3, dmgMul: 0.75, spreadMul: 1.5, charge: 'flame' },
+  ember: { shot: 'ember', rangeMul: 0.5, shots: 3, dmgMul: 0.75, spreadMul: 1.5, charge: 'burst' },
   // 알아서 따라가는 탄 — 빗나가지 않는 만큼 한 발이 가볍다
   firefly: { shot: 'firefly', homing: 2.2, dmgMul: 0.8, charge: 'volley' },
   // 전방위로 짧고 빠르게 — interval 을 안 늘려서 셋 중 제일 자주 휘두른다.
@@ -2517,39 +2517,23 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 작살 — 꿰어서 끌고 온다. 흩어진 것을 한 줄로 모으는 게 목적이다
         chargeBeam(a, full ? 460 : 300, full ? 13 : 10, Math.round(base * (full ? 5 : 2.5)), 300);
         break;
-      case 'flame': {
-        // 불씨 — 코앞을 부채꼴로 태운다. 사거리가 짧은 대신 폭이 넓다
-        const r = full ? 96 : 66;
-        const span = Math.PI * 0.62;
-        const dmg = Math.round(base * (full ? 7 : 3.5));
-        for (let j = foes.length - 1; j >= 0; j--) {
-          const f = foes[j];
-          const dx = f.x - px;
-          const dy = (f.y - 8 - (py - 10)) / 0.78;
-          if (dx * dx + dy * dy > (r + f.def.r) * (r + f.def.r)) continue;
-          let d = Math.atan2(dy, dx) - a;
-          while (d > Math.PI) d -= Math.PI * 2;
-          while (d < -Math.PI) d += Math.PI * 2;
-          if (Math.abs(d) > span / 2) continue;
-          hurtFoe(f, dmg, w.elem);
+      case 'burst': {
+        // 불씨 — 코앞에서 여러 발을 한꺼번에 몰아 쏘고, 이어서 잠깐
+        // 발사 간격이 무너져 평타가 연달아 튀어나온다. 조준해서 겨누는
+        // 무기가 아니라 몰아붙이는 물량이 이 대원의 정체성이다.
+        const n = full ? 6 : 3;
+        const dmg = Math.round(base * (full ? 1.7 : 1.15));
+        for (let i = 0; i < n; i++) {
+          const spread = (i - (n - 1) / 2) * 0.1;
+          const ang = a + spread;
+          addBullet({
+            x: px, y: py - 10,
+            vx: Math.cos(ang) * 260, vy: Math.sin(ang) * 260 * 0.78,
+            dmg, life: 0.85, color: shotColor, r: 3, elem: w.elem,
+          });
+          spawnPart(px + Math.cos(ang) * 9, py - 10 + Math.sin(ang) * 7, 2, shotCore, 130);
         }
-        if (boss) {
-          const dx = boss.x - px;
-          const dy = (boss.y - 14 - (py - 10)) / 0.78;
-          if (dx * dx + dy * dy <= (r + 18) * (r + 18)) {
-            let d = Math.atan2(dy, dx) - a;
-            while (d > Math.PI) d -= Math.PI * 2;
-            while (d < -Math.PI) d += Math.PI * 2;
-            if (Math.abs(d) <= span / 2) hurtBoss(dmg, w.elem);
-          }
-        }
-        arcs.push({ x: px, y: py - 10, angle: a, r, span, life: 0.22, max: 0.22, color: shotColor });
-        for (let i = 0; i < 10; i++) {
-          const d = a + (Math.random() - 0.5) * span;
-          const l = r * (0.3 + Math.random() * 0.7);
-          spawnPart(px + Math.cos(d) * l, py - 10 + Math.sin(d) * l * 0.78, 2, shotCore, 150);
-        }
-        burstT = full ? 0.5 : 0.25;
+        burstT = full ? 0.6 : 0.3;
         break;
       }
       case 'volley': {
@@ -5759,8 +5743,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       } else {
         // 채운 부채꼴이라 반투명만 얹으면 바닥 타일색에 씻겨 탁해진다
         // (물대포·화염 방사에서 고친 것과 같은 문제) — 어두운 바탕을
-        // 먼저 깔고 그 위에 색을 올린다. 불씨 차지가 특히 이 방식(채운
-        // 큰 부채꼴)이라 누렇게 뜬 갈색으로 보였다.
+        // 먼저 깔고 그 위에 색을 올린다. 지금은 도끼·사슬 차지의
+        // 착지 섬광이 이 갈래를 쓴다.
         specialG.beginPath();
         pxArcBand(specialG, ac.x, ac.y, 0, r, a0, a1, 2);
         specialG.fill({ color: 0x0a0a12, alpha: (1 - k) * 0.85 });
