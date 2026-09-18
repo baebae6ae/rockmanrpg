@@ -2759,6 +2759,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 나가는 순간 자체는 표시가 없어서 몸에서 톱날이 갈려 나온다는
         // 게 안 느껴졌다 — 빠르게 도는 무기라 화려하게 말고 짧게만 튄다
         spawnPart(px, py - 10, 3, 0xd8e2f0, 90);
+        sfx.shot('rapid');
       },
     },
     {
@@ -2790,6 +2791,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           // 아니라 그냥 생겨난 것처럼 보인다
           spawnPart(px + Math.cos(a) * 6, py - 10 + Math.sin(a) * 5, 2, 0xffa8dc, 100);
         }
+        sfx.shot('rapid');
       },
     },
     {
@@ -2819,6 +2821,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             r: 4, life: 0.22, max: 0.22, color: 0x9fe8ff,
           });
         }
+        sfx.shot('charge', 'ice');
       },
     },
     {
@@ -2841,8 +2844,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           elem: 'fire',
         });
         // 폭발은 이미 화려하다(blast()) — 발사 순간에도 포신에서 튀는
-        // 불티를 남겨 "던졌다" 를 확실히 보여준다
+        // 불티를 남겨 "던졌다" 를 확실히 보여준다. 터질 때 소리는
+        // blast() 가 이미 낸다 — 여기선 던지는 소리만 보탠다
         spawnPart(px + Math.cos(a) * 8, py - 10 + Math.sin(a) * 6, 3, 0xffc48a, 110);
+        sfx.shot('rapid', 'fire');
       },
     },
     {
@@ -2994,6 +2999,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           x: px, y: py - 10, angle: a, reach, life: 0.1, max: 0.1, color: 0xff9a4c,
           palette: [0xc4340c, 0xff7b1c, 0xffd75e],
         });
+        // 상시 발동이라 매 프레임 부르지만, sfx.shot 의 최소 간격
+        // 게이트가 알아서 걸러 준다 — 계속 타는 소리처럼 들린다
+        sfx.shot('rapid', 'fire');
       },
     },
     {
@@ -3202,6 +3210,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           if (Math.random() < 0.3) spawnPart(f.x, f.y - 8, 1, 0xff9a4c, 90);
           hurtFoe(f, dmg, 'fire');
         }
+        // 상시 발동이라 매 프레임 부르지만, sfx.shot 의 최소 간격
+        // 게이트가 알아서 걸러 준다 — 계속 타는 소리처럼 들린다
+        sfx.shot('rapid', 'fire');
       },
     },
     {
