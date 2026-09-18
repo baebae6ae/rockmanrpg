@@ -2432,15 +2432,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 경로 위에 큰 참격을 여러 개 겹쳐 찍으면 정작 돌아가는 캐릭터가 그
     // 밑에 파묻힌다. 착지 지점에 마무리 일격 하나만 남긴다.
-    // 도끼·사슬이 이 함수를 같이 쓰지만 정체성은 다르다 — 도끼는
-    // 뭉툭하고 넓게, 사슬은 "더 멀리, 더 얇게" 이므로 가늘고 길게
-    // 뻗는 낫 모양(crescent)을 대신 쓴다.
+    // (지금은 도끼만 이 함수를 쓴다 — 사슬은 chainWhip() 으로 갈라졌다)
     arcs.push({
-      x: toX, y: toY - 10, angle: a,
-      r: chargeLook === 'reap' ? width * 2.4 : width * 1.6,
-      span: chargeLook === 'reap' ? Math.PI * 0.5 : Math.PI * 0.9,
+      x: toX, y: toY - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
       life: 0.16, max: 0.16, color: 0xffffff,
-      look: chargeLook === 'reap' ? 'crescent' : undefined,
     });
 
     for (let j = foes.length - 1; j >= 0; j--) {
@@ -2478,6 +2473,40 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (dx * dx + dy * dy <= (r + 18) * (r + 18)) hurtBoss(dmg, w.elem);
     }
     arcs.push({ x: px, y: py - 10, angle: 0, r, span: Math.PI * 2, life: 0.2, max: 0.2, color, look: 'ring' });
+  }
+
+  /**
+   * 사슬 차지 — 도끼처럼 몸으로 파고들지 않는다. 제자리에 선 채로
+   * 채찍을 훨씬 먼 거리까지 크게 휘둘러 부채꼴 범위를 통째로 쓸어
+   * 낸다. 몸이 안 움직이니 도끼의 "돌진" 정체성과 아예 갈린다.
+   */
+  function chainWhip(centerAngle: number, reach: number, span: number, dmg: number): void {
+    const half = span / 2;
+    for (let j = foes.length - 1; j >= 0; j--) {
+      const f = foes[j];
+      const dx = f.x - px;
+      const dy = (f.y - 8 - (py - 10)) / 0.78;
+      if (dx * dx + dy * dy > (reach + f.def.r) * (reach + f.def.r)) continue;
+      let d = Math.atan2(dy, dx) - centerAngle;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      if (Math.abs(d) > half) continue;
+      hurtFoe(f, dmg, w.elem);
+    }
+    if (boss) {
+      const dx = boss.x - px;
+      const dy = (boss.y - 14 - (py - 10)) / 0.78;
+      if (dx * dx + dy * dy <= (reach + 18) * (reach + 18)) {
+        let d = Math.atan2(dy, dx) - centerAngle;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        if (Math.abs(d) <= half) hurtBoss(dmg, w.elem);
+      }
+    }
+    whipT = 0.3;
+    whipAngle = centerAngle;
+    whipSpan = span;
+    whipReach = reach;
   }
 
   /**
@@ -2561,8 +2590,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         }
         break;
       case 'reap':
-        // 사슬 — 더 멀리, 더 얇게 지나간다. 겨냥이 맞으면 한 줄을 쓸어낸다
-        chargeLunge(a, full ? 280 : 170, w.arcR * (full ? 0.72 : 0.6), Math.round(base * (full ? 6 : 3)));
+        // 사슬 — 도끼처럼 몸으로 파고들지 않는다. 제자리에서 채찍을
+        // 훨씬 먼 거리까지 크게 휘둘러 부채꼴을 통째로 쓸어낸다 —
+        // "더 멀리, 더 얇게" 를 돌진이 아니라 원거리 채찍으로 살린다.
+        chainWhip(a, full ? 260 : 160, w.arcSpan * (full ? 1.7 : 1.25), Math.round(base * (full ? 6 : 3)));
         break;
       default:
         // 도끼 — 몸 자체가 칼이 되어 조준선을 따라 파고든다
@@ -3665,6 +3696,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let slashLungeWidth = 0;
   /** 돌진이 실제로 진행 중인 시간 — 0 될 때까지 매 프레임 px/py 를 옮긴다 */
   let lungeMoveT = 0;
+  /** 사슬 채찍 — 제자리에서 부채꼴을 휘두르는 연출 표시 시간·각도·폭·사거리 */
+  let whipT = 0;
+  let whipAngle = 0;
+  let whipSpan = 0;
+  let whipReach = 0;
   /** 버스터 차지 — 일직선 관통 광선 표시 시간·방향·사거리·폭 */
   let chargeBeamT = 0;
   const chargeBeamAngles: number[] = [];
@@ -4164,7 +4200,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     rushLeapT = 0; rushLeapX = 0;
     // 세이버 차지 돌진 — 남아 있으면 새 판 시작 첫 프레임에 캐릭터가
     // 지난 판 목적지 쪽으로 몸이 홱 꺾인다.
-    lungeMoveT = 0; chargeBeamT = 0;
+    lungeMoveT = 0; chargeBeamT = 0; whipT = 0;
     slashLungeFromX = 0; slashLungeFromY = 0;
     slashLungeToX = 0; slashLungeToY = 0; slashLungeWidth = 0;
     px = ARENA_W / 2; py = ARENA_H / 2;
@@ -5006,6 +5042,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (burstT > 0) burstT -= dt;
     if (slashLungeT > 0) slashLungeT -= dt;
     if (chargeBeamT > 0) chargeBeamT -= dt;
+    if (whipT > 0) whipT -= dt;
     const itv = burstT > 0 ? w.interval * 0.32 : w.interval;
     fireAcc += dt;
     let guard = 0;
@@ -6111,58 +6148,32 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 실제 판정 반경(width)보다 눈에 보이는 크기가 훨씬 크면 사기
       // 기술처럼 보인다 — 버스터 빔 굵기 수준으로 시각적 크기만 줄인다
       const bladeR = slashLungeWidth * 0.65;
-      if (chargeLook === 'reap') {
-        // 사슬 — 도끼처럼 도는 칼날 바퀴를 쓰면 "더 얇은 도끼"로만
-        // 보인다. 아예 다른 생김새로 간다 — 지나온 경로에 사슬 마디
-        // (고리)가 이어지는 자국을 남기고, 맨 앞엔 작은 낫끝만 둔다.
-        const dx = px - slashLungeFromX;
-        const dy = hy - (slashLungeFromY - 10);
-        const dist = Math.hypot(dx, dy);
-        if (dist > 6) {
-          const ux = dx / dist;
-          const uy = dy / dist;
-          const gap = 9;
-          const n = Math.floor(dist / gap);
-          lungeG.beginPath();
-          for (let i = 0; i <= n; i++) {
-            pxRing(lungeG, slashLungeFromX + ux * i * gap, (slashLungeFromY - 10) + uy * i * gap, 4, 1, 1, 1);
-          }
-          lungeG.fill({ color: shotCore, alpha: 0.85 });
-        }
+      // 도끼 — 몸 주위로 두꺼운 칼날 셋이 함께 돈다. 채운 쐐기라
+      // 반투명만 얹으면 바닥에 씻겨 흐릿해진다 — 어두운 바탕을 깔고
+      // 그 위 색은 거의 불투명하게 올린다
+      const blades = 3;
+      const bladeSpan = Math.PI * 0.5;
+      for (let i = 0; i < blades; i++) {
+        const ang = spin + (i / blades) * Math.PI * 2;
+        const a0 = ang - bladeSpan / 2;
+        const a1 = ang + bladeSpan / 2;
         lungeG.beginPath();
-        pxArcBand(lungeG, px, hy, bladeR * 0.5, bladeR, spin - 0.25, spin + 0.25, 1);
-        lungeG.fill({ color: 0xffffff, alpha: 0.9 });
-      } else {
-        // 도끼 — 몸 주위로 두꺼운 칼날 셋이 함께 돈다. 채운 쐐기라
-        // 반투명만 얹으면 바닥에 씻겨 흐릿해진다 — 어두운 바탕을 깔고
-        // 그 위 색은 거의 불투명하게 올린다
-        const blades = 3;
-        const bladeSpan = Math.PI * 0.5;
-        for (let i = 0; i < blades; i++) {
-          const ang = spin + (i / blades) * Math.PI * 2;
-          const a0 = ang - bladeSpan / 2;
-          const a1 = ang + bladeSpan / 2;
-          lungeG.beginPath();
-          pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
-          lungeG.fill({ color: 0x0a0a12, alpha: 0.75 });
-          lungeG.beginPath();
-          pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
-          lungeG.fill({ color: shotCore, alpha: 0.9 });
-          lungeG.beginPath();
-          pxArcBand(lungeG, px, hy, bladeR - 3, bladeR, a0, a1, 1);
-          lungeG.fill({ color: 0xffffff, alpha: 0.95 });
-        }
+        pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
+        lungeG.fill({ color: 0x0a0a12, alpha: 0.75 });
+        lungeG.beginPath();
+        pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
+        lungeG.fill({ color: shotCore, alpha: 0.9 });
+        lungeG.beginPath();
+        pxArcBand(lungeG, px, hy, bladeR - 3, bladeR, a0, a1, 1);
+        lungeG.fill({ color: 0xffffff, alpha: 0.95 });
       }
       lungeG.beginPath();
       pxDisc(lungeG, px, hy, slashLungeWidth * 0.3, 1, 1);
       lungeG.fill({ color: 0xffffff, alpha: 0.5 });
-      if (chargeLook !== 'reap') {
-        // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만.
-        // 사슬은 위에서 이미 고리 자국으로 경로를 표시했다.
-        lungeG.beginPath();
-        pxLine(lungeG, slashLungeFromX, slashLungeFromY - 10, px, hy, 2, 2);
-        lungeG.fill({ color: shotColor, alpha: 0.25 });
-      }
+      // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만
+      lungeG.beginPath();
+      pxLine(lungeG, slashLungeFromX, slashLungeFromY - 10, px, hy, 2, 2);
+      lungeG.fill({ color: shotColor, alpha: 0.25 });
     } else if (slashLungeT > 0 && phase === 'play') {
       // 돌진이 끝난 뒤 — 지나온 자리에 옅게 남는 잔광만 (착지 충격은
       // releaseCharge() 가 이미 rings 로 쏘아뒀다)
@@ -6170,6 +6181,31 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.beginPath();
       pxLine(specialG, slashLungeFromX, slashLungeFromY - 10, slashLungeToX, slashLungeToY - 10, 2, 2);
       specialG.fill({ color: shotColor, alpha: 0.25 * k });
+    }
+
+    // 사슬 채찍 — 제자리에 선 채로 부채꼴을 크게 훑는다. 도끼의 회전
+    // 돌진과는 아예 다른 동작이다 — 팔(사슬 고리 줄)이 실제로 각도를
+    // 이동하며 휩쓸고, 지나온 자리엔 옅은 부채꼴 자국이 남는다.
+    if (whipT > 0 && phase === 'play') {
+      const t = Math.min(1, (1 - whipT / 0.3) * 1.15);
+      const hy = py - 10;
+      const half = whipSpan / 2;
+      const curAngle = whipAngle - half + whipSpan * t;
+      specialG.beginPath();
+      pxArcBand(specialG, px, hy, whipReach * 0.15, whipReach, whipAngle - half, curAngle, 2);
+      specialG.fill({ color: shotColor, alpha: 0.22 });
+      const c = Math.cos(curAngle);
+      const sn = Math.sin(curAngle) * 0.78;
+      const gap = 10;
+      const n = Math.floor(whipReach / gap);
+      specialG.beginPath();
+      for (let i = 0; i <= n; i++) {
+        pxRing(specialG, px + c * i * gap, hy + sn * i * gap, 4, 1, 1, 1);
+      }
+      specialG.fill({ color: shotCore, alpha: 0.9 });
+      specialG.beginPath();
+      pxArcBand(specialG, px, hy, whipReach * 0.85, whipReach * 1.05, curAngle - 0.2, curAngle + 0.2, 1);
+      specialG.fill({ color: 0xffffff, alpha: 0.9 });
     }
 
     // 버스터 차지 — 조준선을 따라 나가는 즉발 판정. 넷 다 같은 판정
