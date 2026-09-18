@@ -5906,8 +5906,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.stroke({ color: 0x8ef0d8, width: 1, alpha: 0.4 });
 
       // 터지기 직전 예고 고리 — 언제 터지는지 알 수 있어야 한다
-      specialG.circle(decoy.x, decoy.y - 8, decoy.r * k)
-        .stroke({ color: 0xdcfff6, width: 1 + k * 2, alpha: 0.25 + k * 0.5 });
+      specialG.beginPath();
+      pxRing(specialG, decoy.x, decoy.y - 8, decoy.r * k, 1, 1, Math.max(1, Math.round(1 + k * 2)));
+      specialG.fill({ color: 0xdcfff6, alpha: 0.25 + k * 0.5 });
 
       // 분신 본체 — 겹쳐 그린 유령 실루엣
       for (let i = 2; i >= 0; i--) {
@@ -6092,14 +6093,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       for (let i = 0; i < 4; i++) {
         const back = ((animClock * 3 + i / 4) % 1) * 70;
         const rr = 8 + back * 0.28;
-        specialG.circle(px - c * back, hy - sn * back, rr)
-          .stroke({ color: 0x9ff0ff, width: 2, alpha: (1 - back / 70) * 0.6 });
+        specialG.beginPath();
+        pxRing(specialG, px - c * back, hy - sn * back, rr, 1, 1, 2);
+        specialG.fill({ color: 0x9ff0ff, alpha: (1 - back / 70) * 0.6 });
       }
 
       // 속심
-      specialG.circle(px, hy, 24).fill({ color: 0x2f7ba0, alpha: 0.4 });
-      specialG.circle(px, hy, 16).fill({ color: 0x9ff0ff, alpha: 0.75 });
-      specialG.circle(px, hy, 8).fill({ color: 0xffffff, alpha: 0.95 });
+      specialG.beginPath();
+      pxDisc(specialG, px, hy, 24, 1, 1);
+      specialG.fill({ color: 0x2f7ba0, alpha: 0.4 });
+      specialG.beginPath();
+      pxDisc(specialG, px, hy, 16, 1, 1);
+      specialG.fill({ color: 0x9ff0ff, alpha: 0.75 });
+      specialG.beginPath();
+      pxDisc(specialG, px, hy, 8, 1, 1);
+      specialG.fill({ color: 0xffffff, alpha: 0.95 });
       // 앞쪽 충격 쐐기
       specialG.moveTo(px + c * 40, hy + sn * 40)
         .lineTo(px + c * 8 - sn * 16, hy + sn * 8 + c * 16)
@@ -6109,27 +6117,29 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     }
 
     // --- 보스 무기 이펙트
-    // 롱쇼트 빔 — 화면을 가르는 관통 광선
+    // 롱쇼트 빔 — 화면을 가르는 관통 광선. 버스터 차지 광선과 같은
+    // moveTo/lineTo + 네이티브 circle() 문제가 있어서 같이 고친다.
     if (beamT > 0 && phase === 'play') {
       const k = beamT / 0.3;
       const c = Math.cos(beamAngle);
       const sn = Math.sin(beamAngle) * 0.78;
       const hy = py - 10;
+      const x1 = px + c * 420;
+      const y1 = hy + sn * 420;
       const widths = [
         { w: 22 * k, c: 0x2f7ba0, a: 0.35 },
         { w: 12 * k, c: 0xdcf4ff, a: 0.6 },
         { w: 5 * k, c: 0xffffff, a: 0.95 },
       ];
       for (const L of widths) {
-        specialG.moveTo(px - sn * L.w, hy + c * L.w)
-          .lineTo(px + c * 420 - sn * L.w, hy + sn * 420 + c * L.w)
-          .lineTo(px + c * 420 + sn * L.w, hy + sn * 420 - c * L.w)
-          .lineTo(px + sn * L.w, hy - c * L.w)
-          .closePath()
-          .fill({ color: L.c, alpha: L.a });
+        specialG.beginPath();
+        pxLine(specialG, px, hy, x1, y1, L.w * 2, 2);
+        specialG.fill({ color: L.c, alpha: L.a });
       }
       // 발사구 섬광
-      specialG.circle(px, hy, 16 * k).fill({ color: 0xffffff, alpha: 0.8 });
+      specialG.beginPath();
+      pxDisc(specialG, px, hy, 16 * k, 1, 1);
+      specialG.fill({ color: 0xffffff, alpha: 0.8 });
     }
 
     // 세이버 차지 돌진 — 도는 몸 자체가 참격이니, 회전이 뚜렷이 보이는
@@ -6328,10 +6338,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (stingT > 0 && phase === 'play') {
       for (let i = 0; i < 3; i++) {
         const rr = 46 * (0.6 + i * 0.2) * (0.94 + Math.sin(animClock * 15 + i * 2) * 0.06);
-        specialG.circle(px, py - 10, rr)
-          .stroke({ color: i === 2 ? 0xdcffe4 : 0x8ef0a0, width: 2, alpha: 0.5 - i * 0.12 });
+        specialG.beginPath();
+        pxRing(specialG, px, py - 10, rr, 1, 1, 2);
+        specialG.fill({ color: i === 2 ? 0xdcffe4 : 0x8ef0a0, alpha: 0.5 - i * 0.12 });
       }
-      specialG.circle(px, py - 10, 46).fill({ color: 0x8ef0a0, alpha: 0.12 });
+      specialG.beginPath();
+      pxDisc(specialG, px, py - 10, 46, 1, 1);
+      specialG.fill({ color: 0x8ef0a0, alpha: 0.12 });
     }
 
     // 가드 셸 — 도는 방패 조각
@@ -6439,8 +6452,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       specialG.rect(px - 9, py - 32 + stomp, 18, 9).fill({ color: 0x1a1408 });
       specialG.rect(px - 8, py - 31 + stomp, 16, 7).fill({ color: 0x9fe8ff, alpha: 0.5 });
       // 남은 시간 고리
-      specialG.circle(px, py - 16, 42)
-        .stroke({ color: body, width: 2, alpha: 0.3 + (rideT / RIDE_TIME) * 0.4 });
+      specialG.beginPath();
+      pxRing(specialG, px, py - 16, 42, 1, 1, 2);
+      specialG.fill({ color: body, alpha: 0.3 + (rideT / RIDE_TIME) * 0.4 });
     }
 
     // 아머 캡슐 — 멀리서도 보여야 찾으러 갈 마음이 생긴다
