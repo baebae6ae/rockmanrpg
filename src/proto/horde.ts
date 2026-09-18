@@ -2432,9 +2432,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
     // 경로 위에 큰 참격을 여러 개 겹쳐 찍으면 정작 돌아가는 캐릭터가 그
     // 밑에 파묻힌다. 착지 지점에 마무리 일격 하나만 남긴다.
+    // 도끼·사슬이 이 함수를 같이 쓰지만 정체성은 다르다 — 도끼는
+    // 뭉툭하고 넓게, 사슬은 "더 멀리, 더 얇게" 이므로 가늘고 길게
+    // 뻗는 낫 모양(crescent)을 대신 쓴다.
     arcs.push({
-      x: toX, y: toY - 10, angle: a, r: width * 1.6, span: Math.PI * 0.9,
+      x: toX, y: toY - 10, angle: a,
+      r: chargeLook === 'reap' ? width * 2.4 : width * 1.6,
+      span: chargeLook === 'reap' ? Math.PI * 0.5 : Math.PI * 0.9,
       life: 0.16, max: 0.16, color: 0xffffff,
+      look: chargeLook === 'reap' ? 'crescent' : undefined,
     });
 
     for (let j = foes.length - 1; j >= 0; j--) {
@@ -4536,6 +4542,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     };
     dbg.__hordeAllClear = (): boolean => allStagesClear();
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
+    /** 차지 방출을 직접 발동 — 실제로 모으지 않고 이펙트/판정을 바로 확인할 때 쓴다 */
+    dbg.__hordeReleaseCharge = (lv: number): void => { releaseCharge(lv); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
     /** 무기 조준을 거치지 않고 보스에 상성 피해를 직접 넣는다 — 약점/저항
         피드백(파티클·링·히트스톱)이 실제로 뜨는지 확인할 때 쓴다 */
@@ -6094,59 +6102,142 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     if (lungeMoveT > 0 && phase === 'play') {
       // 중심을 관통하는 직선 3개는 그냥 별표(*)로 보인다 — 칼이 아니다.
       // 세이버 스윙과 같은 초승달(부채꼴) 조각을 여러 개 돌려서, 진짜
-      // 칼날이 몸 주위를 도는 모양으로 만든다.
+      // 칼날이 몸 주위를 도는 모양으로 만든다. arc()/circle() 은
+      // 매끈하게 갈려서 다른 도트 이펙트와 결이 안 맞았다 — pxArcBand/
+      // pxDisc/pxLine 으로 바꾼다.
       const t = clamp(1 - lungeMoveT / LUNGE_MOVE_DUR, 0, 1);
       const spin = t * Math.PI * 2 * 2.5 * facing;
       const hy = py - 10;
-      const blades = 3;
       // 실제 판정 반경(width)보다 눈에 보이는 크기가 훨씬 크면 사기
       // 기술처럼 보인다 — 버스터 빔 굵기 수준으로 시각적 크기만 줄인다
       const bladeR = slashLungeWidth * 0.65;
-      const bladeSpan = Math.PI * 0.5;
-      for (let i = 0; i < blades; i++) {
-        const ang = spin + (i / blades) * Math.PI * 2;
-        const a0 = ang - bladeSpan / 2;
-        const a1 = ang + bladeSpan / 2;
-        lungeG.moveTo(px, hy).arc(px, hy, bladeR, a0, a1).closePath()
-          .fill({ color: shotCore, alpha: 0.4 });
-        lungeG.arc(px, hy, bladeR, a0, a1)
-          .stroke({ color: 0xffffff, width: 2.5, alpha: 0.95 });
+      if (chargeLook === 'reap') {
+        // 사슬 — 도끼의 뭉툭한 칼날 바퀴 대신, 가늘고 길게 뻗는 낫
+        // 하나가 돈다. "더 멀리, 더 얇게" 라는 정체성을 회전 이펙트
+        // 에도 그대로 옮긴다.
+        const a0 = spin - 0.08;
+        const a1 = spin + 0.7;
+        lungeG.beginPath();
+        pxArcBand(lungeG, px, hy, bladeR * 0.55, bladeR * 1.35, a0, a1, 2);
+        lungeG.fill({ color: shotCore, alpha: 0.9 });
+        lungeG.beginPath();
+        pxArcBand(lungeG, px, hy, bladeR * 1.2, bladeR * 1.35, a0, a1, 1);
+        lungeG.fill({ color: 0xffffff, alpha: 0.95 });
+      } else {
+        // 도끼 — 몸 주위로 두꺼운 칼날 셋이 함께 돈다. 채운 쐐기라
+        // 반투명만 얹으면 바닥에 씻겨 흐릿해진다 — 어두운 바탕을 깔고
+        // 그 위 색은 거의 불투명하게 올린다
+        const blades = 3;
+        const bladeSpan = Math.PI * 0.5;
+        for (let i = 0; i < blades; i++) {
+          const ang = spin + (i / blades) * Math.PI * 2;
+          const a0 = ang - bladeSpan / 2;
+          const a1 = ang + bladeSpan / 2;
+          lungeG.beginPath();
+          pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
+          lungeG.fill({ color: 0x0a0a12, alpha: 0.75 });
+          lungeG.beginPath();
+          pxArcBand(lungeG, px, hy, 0, bladeR, a0, a1, 2);
+          lungeG.fill({ color: shotCore, alpha: 0.9 });
+          lungeG.beginPath();
+          pxArcBand(lungeG, px, hy, bladeR - 3, bladeR, a0, a1, 1);
+          lungeG.fill({ color: 0xffffff, alpha: 0.95 });
+        }
       }
-      lungeG.circle(px, hy, slashLungeWidth * 0.3).fill({ color: 0xffffff, alpha: 0.5 });
+      lungeG.beginPath();
+      pxDisc(lungeG, px, hy, slashLungeWidth * 0.3, 1, 1);
+      lungeG.fill({ color: 0xffffff, alpha: 0.5 });
       // 지나온 궤적 — 캐릭터를 가리지 않게 옅은 선 하나로만
-      lungeG.moveTo(slashLungeFromX, slashLungeFromY - 10).lineTo(px, hy)
-        .stroke({ color: shotColor, width: 2, alpha: 0.25 });
+      lungeG.beginPath();
+      pxLine(lungeG, slashLungeFromX, slashLungeFromY - 10, px, hy, 2, 2);
+      lungeG.fill({ color: shotColor, alpha: 0.25 });
     } else if (slashLungeT > 0 && phase === 'play') {
       // 돌진이 끝난 뒤 — 지나온 자리에 옅게 남는 잔광만 (착지 충격은
       // releaseCharge() 가 이미 rings 로 쏘아뒀다)
       const k = slashLungeT / 0.3;
-      specialG.moveTo(slashLungeFromX, slashLungeFromY - 10)
-        .lineTo(slashLungeToX, slashLungeToY - 10)
-        .stroke({ color: shotColor, width: 2, alpha: 0.25 * k });
+      specialG.beginPath();
+      pxLine(specialG, slashLungeFromX, slashLungeFromY - 10, slashLungeToX, slashLungeToY - 10, 2, 2);
+      specialG.fill({ color: shotColor, alpha: 0.25 * k });
     }
 
-    // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선
+    // 버스터 차지 — 조준선을 따라 화면을 가르는 일직선 관통 광선.
+    // 예전엔 moveTo/lineTo 로 사각형을 채우고 총구엔 매끈한 원을
+    // 썼다 — 비스듬한 각도에서 그 두 변이 안티에일리어싱으로 갈려
+    // 다른 도트 이펙트와 결이 안 맞았다. pxLine/pxDisc 로 바꿔 계단진
+    // 도트로 찍는다(못·바늘·거울·작살 넷이 같이 쓴다).
     if (chargeBeamT > 0 && phase === 'play') {
       const k = chargeBeamT / 0.3;
       const hy = py - 10;
-      const widths = [
-        { w: chargeBeamWidth * 1.3 * k, c: shotColor, a: 0.3 },
-        { w: chargeBeamWidth * 0.75 * k, c: shotCore, a: 0.6 },
-        { w: chargeBeamWidth * 0.3 * k, c: 0xffffff, a: 0.95 },
-      ];
-      for (const ang of chargeBeamAngles) {
+      // 거울(split)만 세 줄기를 동시에 쏜다 — 빛이 갈라지는 느낌을
+      // 주려고 줄기마다 안쪽 밝은 층의 색을 다르게 물들인다. 나머지
+      // 셋은 항상 한 줄기뿐이라 tint 색이 안 쓰인다.
+      const tints = [0xff9ad6, 0xffffff, 0x9adcff];
+      for (let bi = 0; bi < chargeBeamAngles.length; bi++) {
+        const ang = chargeBeamAngles[bi];
         const c = Math.cos(ang);
         const sn = Math.sin(ang) * 0.78;
+        const x1 = px + c * chargeBeamRange;
+        const y1 = hy + sn * chargeBeamRange;
+        const widths = [
+          { w: chargeBeamWidth * 1.3 * k, c: shotColor, a: 0.3 },
+          { w: chargeBeamWidth * 0.75 * k, c: shotCore, a: 0.6 },
+          { w: chargeBeamWidth * 0.3 * k, c: chargeLook === 'split' ? tints[bi % 3] : 0xffffff, a: 0.95 },
+        ];
         for (const L of widths) {
-          specialG.moveTo(px - sn * L.w, hy + c * L.w)
-            .lineTo(px + c * chargeBeamRange - sn * L.w, hy + sn * chargeBeamRange + c * L.w)
-            .lineTo(px + c * chargeBeamRange + sn * L.w, hy + sn * chargeBeamRange - c * L.w)
-            .lineTo(px + sn * L.w, hy - c * L.w)
-            .closePath()
-            .fill({ color: L.c, alpha: L.a });
+          specialG.beginPath();
+          pxLine(specialG, px, hy, x1, y1, L.w * 2, 2);
+          specialG.fill({ color: L.c, alpha: L.a });
+        }
+        if (chargeLook === 'thread') {
+          // 바늘 — 실을 꿴 자국처럼 길을 따라 작은 눈금을 남긴다.
+          // 사거리(최대 900)가 화면 폭(270)보다 훨씬 길어서, 사거리
+          // 비율로 점을 찍으면 전부 화면 밖에 찍혀 하나도 안 보인다 —
+          // 화면에 실제로 보이는 거리만큼만 찍는다.
+          const perpX = -sn;
+          const perpY = c;
+          const visible = Math.min(chargeBeamRange, 130);
+          specialG.beginPath();
+          for (let d = 20; d < visible; d += 20) {
+            const mx = px + c * d;
+            const my = hy + sn * d;
+            pxLine(specialG, mx - perpX * 4, my - perpY * 4, mx + perpX * 4, my + perpY * 4, 1, 1);
+          }
+          specialG.fill({ color: 0xffffff, alpha: 0.7 * k });
+        } else if (chargeLook === 'reel') {
+          // 작살 — 끝에서 나를 향해 되감기는 고리들. 마찬가지로 화면에
+          // 보이는 거리 안에서만 오간다. 광선 속살(흰 속심)이 이미
+          // 밝아서 밝은 색만으로는 안 보인다 — 어두운 테두리를 먼저
+          // 깔아 배경과 무관하게 도드라지게 한다.
+          const visible = Math.min(chargeBeamRange, 130);
+          specialG.beginPath();
+          for (let s = 0; s < 3; s++) {
+            const t = 1 - ((animClock * 2.2 + s / 3) % 1);
+            pxRing(specialG, px + c * visible * t, hy + sn * visible * t, 5, 1, 1, 2);
+          }
+          specialG.fill({ color: 0x0a0a12, alpha: 0.7 * k });
+          specialG.beginPath();
+          for (let s = 0; s < 3; s++) {
+            const t = 1 - ((animClock * 2.2 + s / 3) % 1);
+            pxRing(specialG, px + c * visible * t, hy + sn * visible * t, 4, 1, 1, 1);
+          }
+          specialG.fill({ color: shotCore, alpha: 0.9 * k });
         }
       }
-      specialG.circle(px, hy, chargeBeamWidth * 1.1 * k).fill({ color: 0xffffff, alpha: 0.85 });
+      if (chargeLook === 'drive' && chargeBeamAngles.length) {
+        // 못 — 끝에 박히는 충격을 십자로 남긴다
+        const ang0 = chargeBeamAngles[0];
+        const c0 = Math.cos(ang0);
+        const s0 = Math.sin(ang0) * 0.78;
+        const tipX = px + c0 * chargeBeamRange;
+        const tipY = hy + s0 * chargeBeamRange;
+        specialG.beginPath();
+        pxLine(specialG, tipX - 10 * k, tipY, tipX + 10 * k, tipY, 2, 1);
+        pxLine(specialG, tipX, tipY - 8 * k, tipX, tipY + 8 * k, 2, 1);
+        specialG.fill({ color: 0xffffff, alpha: 0.8 * k });
+      }
+      specialG.beginPath();
+      pxDisc(specialG, px, hy, chargeBeamWidth * 1.1 * k, 1, 1);
+      specialG.fill({ color: 0xffffff, alpha: 0.85 });
     }
 
     // 카멜레온 스팅 — 무적인 동안 몸 주위가 타오른다
