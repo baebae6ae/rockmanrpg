@@ -15,6 +15,7 @@ import type { Input } from '../input/input';
 import { AnimView, loadSheet, type Sheet } from '../anim/sheet';
 import { THEMES, buildTheme } from './stage_bg';
 import { createSfx } from './sfx';
+import { createBgm, type BgmMood } from './bgm';
 import { GachaReel, RARITY_COLOR, type Rarity, type ReelItem } from './gacha';
 import {
   type FoeKind, type KindDef, type Element, type BossDef,
@@ -1251,6 +1252,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   // 수동사격도 없어서 버튼 넷 중 셋이 아무것도 안 하고, 그러면서 레벨업
   // 카드 위를 덮는다. 이 모드에 필요한 것만 직접 그린다: 이동 + 대시.
   const sfx = createSfx();
+  const bgm = createBgm();
+  /** 디버그 훅에서 현재 무드를 읽으려고 따로 들고 있다 — bgm 자체엔
+      getter 가 없다 */
+  let bgmMood: BgmMood = 'menu';
+  function setBgmMood(m: BgmMood): void { bgmMood = m; bgm.setMood(m); }
   const best = loadBest();
   const clearedStages = new Set<string>(loadCleared());
   /** 보스를 잡아 영구히 얻은 무기 — 무기 id → 레벨 */
@@ -1275,7 +1281,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     saveCurseTier(curseTier);
   }
   // 브라우저는 사용자 동작 전에는 소리를 안 내준다 — 첫 입력에서 연다
-  const unlock = (): void => sfx.unlock();
+  const unlock = (): void => { sfx.unlock(); bgm.start(); };
   window.addEventListener('pointerdown', unlock, { once: true });
   window.addEventListener('keydown', unlock, { once: true });
 
@@ -2045,6 +2051,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       sfx.boss();
       shake = 8;
     }
+    setBgmMood('boss');
   }
 
   /** 보스 행동 — 다가오다가 준비 동작을 보이고 사방으로 뿌린다 */
@@ -2309,7 +2316,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       shake = 9;
       spawnPart(px, py - 10, 16, 0xff5c5c, 160);
       sfx.hurt();
-      if (hp <= 0) { hp = 0; phase = 'dead'; deadTimer = 0; sfx.dead(); recordBest(); }
+      if (hp <= 0) { hp = 0; phase = 'dead'; deadTimer = 0; sfx.dead(); recordBest(); setBgmMood('menu'); }
     }
   }
 
@@ -2342,6 +2349,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         `${b.name} 격파 — 무기 획득`,
       );
       phase = 'gacha';
+      setBgmMood('menu');
     } else {
       coins += Math.round(COINS_PER_PULL * CURSE_TIERS[curseTier].reward);
       sfx.coin();
@@ -2351,6 +2359,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         markStageCleared(b.def.id);
         clearTimer = 0;
         phase = 'stage_clear';
+        setBgmMood('menu');
+      } else {
+        setBgmMood('play');
       }
     }
   }
@@ -4300,6 +4311,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     for (const k of Object.keys(taken)) delete taken[k];
     phase = 'play';
     deadTimer = 0;
+    setBgmMood('play');
   }
 
   // ------------------------------------------------------------ 캐릭터 선택
@@ -4442,6 +4454,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     bossPickList = BOSS_DEFS.slice();
     bossSelIndex = 0;
     phase = 'boss_select';
+    setBgmMood('menu');
   }
 
   function drawBossSelect(dtMs: number): void {
@@ -4589,6 +4602,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     };
     dbg.__hordeAllClear = (): boolean => allStagesClear();
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
+    dbg.__hordeBgmMood = (): BgmMood => bgmMood;
+    dbg.__hordeBgmMuted = (): boolean => bgm.muted;
+    dbg.__hordeToggleMute = (): void => { sfx.toggleMute(); bgm.toggleMute(); };
     /** 차지 방출을 직접 발동 — 실제로 모으지 않고 이펙트/판정을 바로 확인할 때 쓴다 */
     dbg.__hordeReleaseCharge = (lv: number): void => { releaseCharge(lv); };
     dbg.__hordeKillBoss = (): void => { if (boss) { boss.hp = 0; killBoss(); } };
@@ -4717,6 +4733,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
             phase = 'stage_clear';
           } else {
             phase = 'play';
+            setBgmMood(boss ? 'boss' : 'play');
             // 코인이 더 있으면 연달아 돌린다
             tryPull();
           }
@@ -4866,7 +4883,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       chargeLevel = 0;
     }
 
-    if (input.pressed('weapon')) sfx.toggleMute();
+    if (input.pressed('weapon')) { sfx.toggleMute(); bgm.toggleMute(); }
     if (input.pressed('menu')) paused = !paused;
 
     const wantDash = input.pressed('dash') || touchDash;
@@ -5290,6 +5307,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           shake = 12;
           sfx.dead();
           recordBest();
+          setBgmMood('menu');
         }
       }
     }
@@ -5500,6 +5518,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         shake = 12;
         sfx.dead();
         recordBest();
+        setBgmMood('menu');
       }
     }
 
