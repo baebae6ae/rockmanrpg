@@ -31,6 +31,8 @@ export interface Sfx {
   stage(): void;
   dash(): void;
   pick(): void;
+  /** 경험치 구슬 흡수 — 초당 수십 개씩 들어오므로 pick() 보다 훨씬 짧고 조용하다 */
+  gem(): void;
   boss(): void;
   explode(): void;
   /** 릴이 한 칸 넘어갈 때 — near 가 1에 가까울수록 음이 높아진다 */
@@ -218,6 +220,14 @@ export function createSfx(): Sfx {
     pick(): void {
       if (!ensure()) return;
       tone('square', 880, 1320, 0.09, 0.08);
+    },
+
+    gem(): void {
+      // 자석에 끌려 한꺼번에 여러 개가 들어올 때가 많다 — 게이트를 빡빡하게
+      // 걸어 두지 않으면 삐- 하는 단음이 되어 버린다. 짧고 조용한 틱 하나로
+      // "쌓이고 있다"는 것만 알려주고 물러난다.
+      if (!ensure() || !gate('gem', 0.045)) return;
+      tone('square', 1600, 2000, 0.035, 0.045);
     },
 
     stage(): void {

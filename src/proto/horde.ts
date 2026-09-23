@@ -1354,6 +1354,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let facing = 1;
   let hp = 100;
   let maxHp = 100;
+  /** 체력바 잔상용 — 실제 hp 보다 느리게 따라 내려가며 방금 깎인 양을 보여준다 */
+  let hpTrail = 100;
+  /** 보스 체력바 잔상 — 같은 용도, 보스가 새로 나올 때마다 새 최대치로 맞춘다 */
+  let bossHpTrail = 0;
   let iframe = 0;
   let dashTimer = 0;
   let dashCd = 0;
@@ -1388,6 +1392,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let animClock = 0;
   let shake = 0;
   let hitstop = 0;
+  /** 보스 처치 순간의 카메라 펀치인 — 남은 시간(0이면 평상시 배율) */
+  let camZoomT = 0;
+  const CAM_ZOOM_DUR = 0.3;
   let phase: 'select' | 'play' | 'pick' | 'gacha' | 'dead' | 'boss_select' | 'stage_clear' = 'select';
   let selIndex = 0;
   /** 사격 자세를 유지하는 남은 시간 — 0보다 크면 공격 모션을 재생한다 */
@@ -1489,7 +1496,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 그래서 다른 칸을 누르면 설명만 바꾸고, 이미 골라 둔 칸을 다시
         // 눌러야 시작한다. 이미 고른 것으로 시작할 때는 여전히 한 번이다.
         if (i === selIndex) startRun();
-        else selIndex = i;
+        else { selIndex = i; sfx.reelTick(0.3); }
         break;
       }
       return;
@@ -1504,7 +1511,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 캐릭터 선택과 같은 두 단계. 여기는 설명을 못 읽어서가 아니라
         // 잘못 짚은 손가락 하나로 보스전이 바로 시작되기 때문이다.
         if (i === bossSelIndex) chooseBoss();
-        else bossSelIndex = i;
+        else { bossSelIndex = i; sfx.reelTick(0.3); }
         break;
       }
       return;
@@ -2046,6 +2053,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       hp: maxHp, maxHp, view, mode: 0, timer: 2.4, flash: 0,
       def: bd, ax: 0, ay: 0, guarding: false, hidden: false,
     };
+    bossHpTrail = maxHp;
     if (announce) {
       bossBanner = 2.4;
       sfx.boss();
@@ -2323,6 +2331,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function killBoss(): void {
     const b = boss;
     if (!b) return;
+    // 잡몹과 똑같이 그 프레임에 훅 사라지면 처치했다는 느낌이 안 산다 —
+    // 짧은 정지 + 카메라 펀치인으로 "마지막 한 방"이라는 무게를 준다.
+    hitstop = Math.max(hitstop, 0.13);
+    camZoomT = CAM_ZOOM_DUR;
     for (let i = 0; i < 26; i++) pushGem(b.x, b.y - 8, 4 * CURSE_TIERS[curseTier].reward);
     spawnPart(b.x, b.y - 10, 60, 0xffc45c, 220);
     rings.push({ x: b.x, y: b.y - 10, r: 70, life: 0.5, max: 0.5, color: 0xffd05c });
@@ -4022,6 +4034,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 계수를 키워 후반 한 레벨이 10초 이상 걸리게 잡았다.
     xpNeed = Math.round(4 + level * 3 + level * level * 0.8);
 
+    // 카드 화면으로 뚝 끊기기 전에, 캐릭터 위에서 레벨업 자체를 눈으로
+    // 보여준다 — 지금까지는 사운드 하나만 내고 곧장 메뉴로 넘어가서
+    // "숫자만 바뀌었다"로 읽혔다.
+    spawnPart(px, py - 10, 14, 0xfff2c0, 130);
+    rings.push({ x: px, y: py - 10, r: 22, life: 0.3, max: 0.3, color: 0xffd85c });
+
     openPick();
   }
 
@@ -4232,11 +4250,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 안 건드리면서 전반적인 생존 여유만 넓힌다.
     maxHp = Math.round(charDef.base_stats.hp * 1.3 * CURSE_TIERS[curseTier].playerHp);
     hp = maxHp;
+    hpTrail = maxHp;
     iframe = 0;
     dashTimer = 0; dashCd = 0;
     attackHold = 0; attackBeat = 0;
     time = 0; kills = 0; level = 1; xp = 0; xpNeed = 4;
-    spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0;
+    spawnAcc = 0; fireAcc = 0; surgeAt = 32; shake = 0; hitstop = 0; camZoomT = 0;
     waveElem = rollWaveElem('none');
     nextWaveElem = rollWaveElem(waveElem);
     waveEnd = WAVE_LEN; waveBanner = 0; waveTold = false;
@@ -4681,10 +4700,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const dt = Math.min(app.ticker.deltaMS / 1000, 1 / 30);
 
     if (phase === 'select') {
+      const prevSel = selIndex;
       if (input.pressed('left')) selIndex = (selIndex + CHAR_DEFS.length - 1) % CHAR_DEFS.length;
       if (input.pressed('right')) selIndex = (selIndex + 1) % CHAR_DEFS.length;
       if (input.pressed('up')) selIndex = (selIndex + CHAR_DEFS.length - SEL_COLS) % CHAR_DEFS.length;
       if (input.pressed('down')) selIndex = (selIndex + SEL_COLS) % CHAR_DEFS.length;
+      if (selIndex !== prevSel) sfx.reelTick(0.3);
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) startRun();
       selLayer.visible = phase === 'select';
       if (selLayer.visible) drawSelect(app.ticker.deltaMS);
@@ -4692,10 +4713,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       return;
     }
     if (phase === 'boss_select') {
+      const prevBossSel = bossSelIndex;
       if (input.pressed('left')) bossSelIndex = (bossSelIndex + bossPickList.length - 1) % bossPickList.length;
       if (input.pressed('right')) bossSelIndex = (bossSelIndex + 1) % bossPickList.length;
       if (input.pressed('up')) bossSelIndex = (bossSelIndex + bossPickList.length - BOSS_SEL_COLS) % bossPickList.length;
       if (input.pressed('down')) bossSelIndex = (bossSelIndex + BOSS_SEL_COLS) % bossPickList.length;
+      if (bossSelIndex !== prevBossSel) sfx.reelTick(0.3);
       if (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash')) chooseBoss();
       if (input.pressed('menu') || input.pressed('weapon')) cycleCurseTier();
       bossSelLayer.visible = true;
@@ -4798,17 +4821,25 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 멈춘다. 그동안 적이 움직이거나 보스가 먼저 때리면 "준비할 시간"이
     // 사라진다.
     if (bossIntroT > 0) {
-      bossIntroT -= dt;
-      const elapsed = BOSS_INTRO_DUR - Math.max(0, bossIntroT);
-      if (elapsed > BOSS_INTRO_FILL_START) {
-        const span = BOSS_INTRO_FILL_END - BOSS_INTRO_FILL_START;
-        const want = Math.min(
-          BOSS_INTRO_TICKS,
-          Math.floor(((elapsed - BOSS_INTRO_FILL_START) / span) * BOSS_INTRO_TICKS),
-        );
-        if (want > bossIntroTicks) {
-          bossIntroTicks = want;
-          sfx.reelTick(bossIntroTicks / BOSS_INTRO_TICKS);
+      const elapsedBefore = BOSS_INTRO_DUR - Math.max(0, bossIntroT);
+      // 반복해서 보는 연출이라 강제로 1.6초를 다 기다리게 하면 지겨워진다.
+      // 짧은 유예(오터치 방지) 뒤에는 탭으로 곧장 끝낼 수 있게 한다.
+      if (elapsedBefore > 0.3 && (input.pressed('jump') || input.pressed('shoot') || input.pressed('dash'))) {
+        bossIntroT = 0;
+        bossIntroTicks = BOSS_INTRO_TICKS;
+      } else {
+        bossIntroT -= dt;
+        const elapsed = BOSS_INTRO_DUR - Math.max(0, bossIntroT);
+        if (elapsed > BOSS_INTRO_FILL_START) {
+          const span = BOSS_INTRO_FILL_END - BOSS_INTRO_FILL_START;
+          const want = Math.min(
+            BOSS_INTRO_TICKS,
+            Math.floor(((elapsed - BOSS_INTRO_FILL_START) / span) * BOSS_INTRO_TICKS),
+          );
+          if (want > bossIntroTicks) {
+            bossIntroTicks = want;
+            sfx.reelTick(bossIntroTicks / BOSS_INTRO_TICKS);
+          }
         }
       }
       draw(dt);
@@ -5554,6 +5585,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (d < 11) {
         xp += g.val;
         gems.splice(i, 1);
+        sfx.gem();
       }
     }
     if (xp >= xpNeed) levelUp();
@@ -5572,8 +5604,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const camY = clamp(py - H / 2, 0, ARENA_H - H);
     const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0;
     const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0;
-    world.position.set(Math.round(-camX + sx), Math.round(-camY + sy));
-    farLayer.position.set(Math.round(-camX * 0.42 + sx * 0.42), Math.round(-camY * 0.42 + sy * 0.42));
+    // 보스 처치 펀치인 — 화면 중앙을 축으로 잠깐 확대했다 되돌아온다.
+    // 0 → 1 → 0 을 그리는 사인 곡선이라 순간적으로 튀지 않고 자연스럽게 붙는다.
+    if (camZoomT > 0) camZoomT = Math.max(0, camZoomT - dt);
+    const zoomP = camZoomT > 0 ? 1 - camZoomT / CAM_ZOOM_DUR : 1;
+    const zoomK = camZoomT > 0 ? 1 + Math.sin(zoomP * Math.PI) * 0.07 : 1;
+    world.scale.set(zoomK);
+    world.position.set(
+      Math.round((W / 2) * (1 - zoomK) - camX * zoomK + sx),
+      Math.round((H / 2) * (1 - zoomK) - camY * zoomK + sy),
+    );
+    farLayer.scale.set(zoomK);
+    farLayer.position.set(
+      Math.round((W / 2) * (1 - zoomK) - camX * 0.42 * zoomK + sx * 0.42),
+      Math.round((H / 2) * (1 - zoomK) - camY * 0.42 * zoomK + sy * 0.42),
+    );
 
     // 화면 밖은 그리지 않는다. 탄 수백 발이 상시 떠 있는 게임이라
     // 이걸 안 하면 안 보이는 탄을 그리느라 프레임이 반으로 떨어진다.
@@ -6637,10 +6682,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 세로 화면은 폭이 270뿐이라 한 줄에 다 못 넣는다 — 두 줄로 나눈다
     hudBar.rect(0, 0, W, 26).fill({ color: 0x000000, alpha: 0.55 });
     hudBar.rect(0, 25, W, 1).fill({ color: 0x2b3560, alpha: 0.9 });
-    // 체력 — 칸을 나눠서 그냥 색칠된 띠가 아니라 계기판처럼 보이게 한다
+    // 체력 — 칸을 나눠서 그냥 색칠된 띠가 아니라 계기판처럼 보이게 한다.
+    // 잔상(hpTrail)은 맞은 순간에는 그대로 두고 천천히 내려오게 해서
+    // "방금 이만큼 깎였다"는 폭을 눈으로 보여준다 — 즉시 스냅되면 얼마나
+    // 잃었는지 숫자를 계산해야만 알 수 있다. 회복은 잔상도 즉시 따라간다.
     const hpW = 120;
+    if (hpTrail < hp) hpTrail = hp;
+    else if (hpTrail > hp) hpTrail = Math.max(hp, hpTrail - dt * maxHp * 0.5);
     const hpFill = Math.round(hpW * clamp(hp / maxHp, 0, 1));
+    const hpTrailFill = Math.round(hpW * clamp(hpTrail / maxHp, 0, 1));
     hudBar.rect(6, 17, hpW, 5).fill({ color: 0x2a1420 });
+    if (hpTrailFill > hpFill) hudBar.rect(6 + hpFill, 17, hpTrailFill - hpFill, 5).fill({ color: 0xffe9a8, alpha: 0.85 });
     hudBar.rect(6, 17, hpFill, 5).fill({ color: 0xff5c78 });
     for (let seg = 10; seg < hpW; seg += 10) hudBar.rect(6 + seg, 17, 1, 5).fill({ color: 0x000000, alpha: 0.35 });
     hudBar.rect(6, 17, hpW, 1).fill({ color: 0xffb0c0, alpha: 0.5 });
@@ -6706,6 +6758,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       dbg.__hordeGacha = phase === 'gacha';
       dbg.__hordeBossSelect = phase === 'boss_select' ? bossPickList.map((d) => d.id) : null;
       dbg.__hordeBossIntro = bossIntroT;
+      dbg.__hordeHitstop = hitstop;
+      dbg.__hordeCamZoom = camZoomT;
+      dbg.__hordeHpTrail = hpTrail;
+      dbg.__hordeBossHpTrail = bossHpTrail;
       dbg.__hordeArmor = [...armor].join(',');
       dbg.__hordeETank = eTanks;
       dbg.__hordeCaps = capsules.length;
@@ -6918,8 +6974,18 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
           (elapsed - BOSS_INTRO_FILL_START) / (BOSS_INTRO_FILL_END - BOSS_INTRO_FILL_START),
           0, 1,
         );
+        // 문이 차오르는 동안은 잔상이 따로 놀면 안 된다 — 실제 값에 붙여 둔다
+        bossHpTrail = hpRatio * boss.maxHp;
+      } else {
+        if (bossHpTrail < boss.hp) bossHpTrail = boss.hp;
+        else if (bossHpTrail > boss.hp) bossHpTrail = Math.max(boss.hp, bossHpTrail - dt * boss.maxHp * 0.35);
       }
+      const bossTrailRatio = clamp(bossHpTrail / boss.maxHp, 0, 1);
       hudBar.rect(20, 42, bw, 6).fill({ color: 0x2a1420 });
+      if (bossTrailRatio > hpRatio) {
+        hudBar.rect(20 + Math.round(bw * hpRatio), 42, Math.round(bw * (bossTrailRatio - hpRatio)), 6)
+          .fill({ color: 0xffe9a8, alpha: 0.85 });
+      }
       hudBar.rect(20, 42, Math.round(bw * hpRatio), 6).fill({ color: 0xff5c78 });
       hudBar.rect(20, 42, bw, 1).fill({ color: 0xffb0c8, alpha: 0.6 });
     }
@@ -6952,6 +7018,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         '\n화면을 누르면 재시도';
       hintLabel.text = '';
       cardG.clear();
+      // 죽던 순간 그대로 얼어붙은 밝은 전장이 결과창 뒤에 고스란히 남아 있으면
+      // 화면이 뚝 끊긴 것처럼 보인다 — 픽/일시정지 화면과 같은 전체 딤을 깐다.
+      cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.72 });
       // 밝아진 배경 위에서는 글자만 얹으면 안 읽힌다 — 판을 깔고 올린다
       for (const t of cardTexts) t.text = '';
       for (const b of cardBadges) b.visible = false;
@@ -6971,6 +7040,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         '\n화면을 누르면 다음 스테이지로';
       hintLabel.text = '';
       cardG.clear();
+      cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.72 });
       for (const t of cardTexts) t.text = '';
       for (const b of cardBadges) b.visible = false;
       // 죽음 화면과 같은 틀에 테두리만 금빛으로 — 같은 종류의 결과 화면인데
@@ -7062,7 +7132,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
   function drawPick(): void {
     cardG.clear();
-    cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.72 });
+    // pickOpenT(0.35→0) 동안 딤과 카드가 같이 들어온다 — 이게 없으면
+    // 화면이 뚝 끊겨 카드 뭉치로 바뀐 것처럼 보인다.
+    const openProgress = clamp(1 - pickOpenT / 0.35, 0, 1);
+    cardG.rect(0, 0, W, H).fill({ color: 0x05070f, alpha: 0.72 * openProgress });
 
     // 세로 화면이라 카드를 가로로 늘어놓을 수 없다 — 위에서 아래로 쌓는다.
     // 손가락으로 짚을 거라 한 장을 화면 폭 거의 전부로 잡는다.
@@ -7077,10 +7150,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const cy = y0 + i * (ch + gap);
       const on = i === pickIndex;
       cardRects.push({ x, y: cy, w: cw, h: ch });
+      // 카드마다 살짝 시차를 둬서 위에서부터 순서대로 자리 잡는 것처럼
+      // 보이게 한다 — 셋이 동시에 뚝 나타나면 그냥 스냅으로 읽힌다.
+      const perCard = clamp((openProgress - i * 0.12) / (1 - i * 0.12), 0, 1);
+      const eased = 1 - Math.pow(1 - perCard, 3);
+      const slide = (1 - eased) * 50;
+      const cx = x + slide;
       const o = pickList[i];
       const isNew = o.kind === 'weapon' && o.lv === 0;
       const hasDef = o.kind === 'weapon' || o.kind === 'swap';
-      drawPanel(cardG, x, cy, cw, ch, {
+      drawPanel(cardG, cx, cy, cw, ch, {
         fill: on ? 0x1e3266 : 0x11172e,
         accent: hasDef ? o.def.color : 0x8ef0ff,
         active: on,
@@ -7088,7 +7167,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
 
       // 무기·교체 카드는 위쪽에 그 무기 색의 띠를 둘러 능력치 카드와 구분한다
       if (hasDef) {
-        cardG.rect(x + 10, cy + 3, cw - 20, 4).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
+        cardG.rect(cx + 10, cy + 3, cw - 20, 4).fill({ color: o.def.color, alpha: on ? 1 : 0.55 });
       }
 
       const name = cardTexts[i * 2];
@@ -7103,18 +7182,21 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         desc.text = `무기고 교체 · ${o.def.desc(o.lv)}`;
         badge.text = '교체';
         badge.style.fill = 0xc9a8ff;
-        badge.position.set(x + cw / 2, cy + 18);
+        badge.position.set(cx + cw / 2, cy + 18);
       } else {
         name.text = o.def.name;
         desc.text = o.def.desc(o.lv);
         badge.text = isNew ? 'NEW' : `Lv.${o.lv} → ${o.lv + 1}`;
         badge.style.fill = isNew ? 0xffd85c : 0x8ef0ff;
-        badge.position.set(x + cw / 2, cy + 18);
+        badge.position.set(cx + cw / 2, cy + 18);
       }
       badge.visible = badge.text !== '';
+      badge.alpha = eased;
       name.style.fill = on ? 0xffffff : 0x9fb0dd;
-      name.position.set(x + cw / 2, cy + 43);
-      desc.position.set(x + cw / 2, cy + 66);
+      name.alpha = eased;
+      name.position.set(cx + cw / 2, cy + 43);
+      desc.alpha = eased;
+      desc.position.set(cx + cw / 2, cy + 66);
 
       // 속성과, 곧 상대할 무리에 대한 상성. 이게 없으면 구간 예고를
       // 보고도 어느 카드가 답인지 알 수가 없다. 가운데 배지와 겹치지
@@ -7131,8 +7213,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         el.visible = true;
         el.text = ELEM_WORD[we] + tag;
         el.style.fill = mult > 1 ? ELEM_COLOR[we] : mult < 1 ? 0x7a86ab : ELEM_COLOR[we];
-        el.alpha = on ? 1 : 0.7;
-        el.position.set(x + 12, cy + 18);
+        el.alpha = (on ? 1 : 0.7) * eased;
+        el.position.set(cx + 12, cy + 18);
       }
     }
     for (let i = pickList.length; i < 3; i++) {
