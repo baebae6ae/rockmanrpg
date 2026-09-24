@@ -4587,6 +4587,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         따로 둔다 — reset() 이 이 상태를 실제로 지우는지 검증할 때 씀 */
     dbg.__hordeForceBossIntro = (): void => { bossIntroT = BOSS_INTRO_DUR; bossIntroTicks = 3; };
     dbg.__hordeOpenBossSelect = (): void => { openBossSelect(); };
+    /** 선택 화면 포인터 클릭 없이 캐릭터를 바로 골라 판을 시작한다 —
+        헤드리스 테스트에서 특정 캐릭터의 애니메이션을 확인할 때 씀 */
+    dbg.__hordeSelectChar = (id: string): void => {
+      const i = CHAR_DEFS.findIndex((d) => d.id === id);
+      if (i >= 0) { selIndex = i; startRun(); }
+    };
     dbg.__hordeCurseTier = (tier?: number): number => {
       if (tier !== undefined) { curseTier = tier; saveCurseTier(curseTier); }
       return curseTier;
@@ -5033,10 +5039,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         if (moving && !hv.has('run_attack')) {
           // 한 번 휘두르고 나면 걷기를 보여준 뒤 다음 단을 낸다.
           // 여기서 바로 다음 스윙을 틀면 다리가 한 번도 안 움직인다.
-          swingGap = 0.3;
+          // play() 는 태그가 바뀔 때마다 첫 칸부터 다시 튼다 — 이 틈이
+          // 걷기 한 바퀴(4칸×125ms=0.5초)보다 짧으면 매번 같은 앞부분
+          // 두 칸만 보이고 잘려서, 다리가 아예 안 움직이는 것처럼 보였다
+          // (바늘의 경우가 정확히 이것 — 앞 두 칸이 서로 닮아 더 티가 났다).
+          swingGap = 0.52;
           hv.play(idleTag, idleTag);
         } else {
-          hv.play(comboTag(), 'attack_main');
+          // 콤보 변형 태그(attack_main2/3)가 없는 캐릭터는 다음 태그도
+          // 지금과 같은 attack_main 이라 play() 가 같은 이름이면 그냥
+          // 무시해 버린다 — 연사 간격이 짧아 대기로 돌아갈 틈이 없는
+          // 캐릭터(불씨·반딧불)는 마지막 칸에 멈춘 채 굳어 버렸다.
+          const next = comboTag();
+          if (next !== hv.current) hv.play(next, 'attack_main');
+          else hv.restart();
         }
       } else {
         hv.restart();
@@ -6750,6 +6766,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         curse: curseTier,
         face: facing,
         anim: hero?.current ?? '',
+        animFrame: hero?.texture.frame.x ?? -1,
         style: w.style,
         dmg: w.dmg,
         char: charDef.id,
