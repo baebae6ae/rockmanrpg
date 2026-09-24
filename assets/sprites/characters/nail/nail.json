@@ -34,6 +34,14 @@
       17
     ],
     [
+      24,
+      22
+    ],
+    [
+      24,
+      22
+    ],
+    [
       28,
       29
     ],
@@ -102,6 +110,7 @@
       21
     ]
   ],
+  "walk_neutral": 0,
   "tags": {
     "idle": {
       "from": 0,
@@ -123,7 +132,7 @@
     },
     "attack_main": {
       "from": 7,
-      "to": 13,
+      "to": 15,
       "duration": 40,
       "loop": false
     },
@@ -146,14 +155,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 14,
-      "to": 23,
+      "from": 16,
+      "to": 25,
       "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 23,
-      "to": 23,
+      "from": 25,
+      "to": 25,
       "duration": 200,
       "loop": false
     }

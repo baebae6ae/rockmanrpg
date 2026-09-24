@@ -4988,6 +4988,13 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const t = comboStep === 0 ? 'attack_main' : `attack_main${comboStep + 1}`;
       return hv.has(t) ? t : 'attack_main';
     };
+    // 걷기에서 공격 자세로는 다리가 선 자세와 가장 닮은 걷기 칸이 끝나는
+    // 순간에만 넘어가고, 공격이 끝나면 그다음 칸부터 걷는다. 아무 칸에서나
+    // 넘어가면 성큼 벌린 다리가 한 프레임 만에 모여 뚝 끊겨 보였다.
+    const walkResume = hv.walkNeutral + 1;
+    const walkReady = hv.current !== 'run'
+      || (hv.offset === hv.walkNeutral && hv.endsWithin(app.ticker.deltaMS));
+    const swinging = hv.current.startsWith('attack_main') && !hv.finished;
     if (holdFire && chargeT > 0 && hv.has('charge_loop')) {
       // 차지 중엔 무기 종류와 무관하게 이 자세가 최우선이다. 총류는
       // 원래 자동사격마다 스윙 자세가 없으니 더더욱, 세이버도 차지
@@ -5004,7 +5011,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // SHOW_ATTACK_POSE 뿐이다.
         wantTag = idleTag;
       } else if (!(dashTimer > 0 || moving)) {
-        wantTag = comboTag();
+        // 총류는 서 있을 때도 걸을 때와 같은 박자(공격 한 번 → 0.5초 쉼)로
+        // 자세를 낸다. 발사 간격마다 곧장 다시 틀면 불씨·반딧불(0.075초)은
+        // 쉴 틈 없이 총을 흔들어 대기만 해서 걸을 때보다 훨씬 급해 보였다.
+        // 세이버는 휘두르기가 곧 타격이라 그대로 이어서 휘두른다.
+        wantTag = w.style === 'saber' || swinging || swingGap <= 0 ? comboTag() : idleTag;
       } else if (hv.has(moveTag)) {
         // 이동 전용 공격 태그가 있으면(엑스) 그대로 쓴다 — 걷기와 사격이
         // 한 태그에 들어 있어 고민할 게 없다.
@@ -5012,8 +5023,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       } else if (hv.has('attack_main')) {
         // 없으면(제로) 걷기와 휘두르기를 번갈아 쓴다. 계속 휘두르게 두면
         // 다리가 한 번도 안 움직여서 미끄러지듯 떠다니는 그림이 된다.
-        const swinging = hv.current.startsWith('attack_main') && !hv.finished;
-        wantTag = swinging || swingGap <= 0 ? comboTag() : idleTag;
+        wantTag = swinging || (swingGap <= 0 && walkReady) ? comboTag() : idleTag;
       } else {
         wantTag = idleTag;
       }
@@ -5026,7 +5036,16 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 0.2초보다 긴 동작이 중간에 잘려 '뚝 생겼다 사라지는' 것처럼 보였다.
     // 대시만은 즉시 끊는다.
     const finishSwing = inCombo && dashTimer <= 0;
-    if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) hv.play(wantTag, idleTag);
+    // 발사 간격이 자세 유지 시간(0.2초)보다 긴 대원(거울 0.42초)은 공격이
+    // 끝날 때 이미 firing 이 꺼져 있어 아래 재시작 분기를 안 거친다 — 여기서도
+    // 같은 쉼을 줘야 다음 발에 곧장 다시 총을 들지 않는다.
+    if (hv.current.startsWith('attack_main') && hv.finished && wantTag === idleTag
+      && (moving || w.style !== 'saber')) {
+      swingGap = moving ? 0.4 : 0.5;
+    }
+    if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) {
+      hv.play(wantTag, idleTag, wantTag === 'run' && hv.current.startsWith('attack_main') ? walkResume : 0);
+    }
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서
     // 부들거리기만 하므로, 한 번 끝까지 재생된 뒤에만 다시 튼다.
@@ -5036,15 +5055,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       // 반복되지 않게 한다.
       if (hv.current.startsWith('attack_main')) {
         comboStep = (comboStep + 1) % 3;
-        if (moving && !hv.has('run_attack')) {
-          // 한 번 휘두르고 나면 걷기를 보여준 뒤 다음 단을 낸다.
-          // 여기서 바로 다음 스윙을 틀면 다리가 한 번도 안 움직인다.
-          // play() 는 태그가 바뀔 때마다 첫 칸부터 다시 튼다 — 이 틈이
-          // 걷기 한 바퀴(4칸×125ms=0.5초)보다 짧으면 매번 같은 앞부분
-          // 두 칸만 보이고 잘려서, 다리가 아예 안 움직이는 것처럼 보였다
-          // (바늘의 경우가 정확히 이것 — 앞 두 칸이 서로 닮아 더 티가 났다).
-          swingGap = 0.52;
-          hv.play(idleTag, idleTag);
+        if ((moving || w.style !== 'saber') && !hv.has('run_attack')) {
+          // 한 번 휘두르고 나면 걷기(서 있으면 대기)를 보여준 뒤 다음 단을
+          // 낸다. 걸을 때는 걷기 한 바퀴(4칸×125ms)를 다 돌고 기준 칸에서
+          // 넘어가므로 0.4초 뒤 기준 칸이 끝나는 순간 — 서 있을 때도 같은
+          // 0.5초를 쉬어 두 박자를 맞춘다. 틈이 한 바퀴보다 짧으면 매번
+          // 앞 두 칸만 보이고 잘려 다리가 안 움직이는 것처럼 보였다.
+          swingGap = moving ? 0.4 : 0.5;
+          hv.play(idleTag, idleTag, moving ? walkResume : 0);
         } else {
           // 콤보 변형 태그(attack_main2/3)가 없는 캐릭터는 다음 태그도
           // 지금과 같은 attack_main 이라 play() 가 같은 이름이면 그냥
@@ -6767,6 +6785,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         face: facing,
         anim: hero?.current ?? '',
         animFrame: hero?.texture.frame.x ?? -1,
+        animOff: hero?.offset ?? -1,
         style: w.style,
         dmg: w.dmg,
         char: charDef.id,

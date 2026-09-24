@@ -21,6 +21,8 @@ export interface SheetMeta {
   tags: Record<string, TagMeta>;
   /** 칸 번호마다의 총구 위치 [바라보는 쪽으로의 거리, 발에서의 높이] */
   muzzle?: [number, number][];
+  /** 다리가 대기 자세와 가장 닮은 걷기 칸(태그 안에서의 순번) */
+  walk_neutral?: number;
 }
 
 export interface Sheet {
@@ -120,7 +122,22 @@ export class AnimView extends Sprite {
     return this.sheet.meta.muzzle?.[this.index] ?? null;
   }
 
-  play(name: string, fallback = 'idle'): void {
+  /** 지금 칸이 태그 안에서 몇 번째인지 */
+  get offset(): number {
+    return this.tag ? this.index - this.tag.from : 0;
+  }
+
+  /** 지금 칸이 이번 틱(dtMs) 안에 다음 칸으로 넘어가는가 */
+  endsWithin(dtMs: number): boolean {
+    return !!this.tag && this.elapsed + dtMs >= this.tag.duration;
+  }
+
+  get walkNeutral(): number {
+    return this.sheet.meta.walk_neutral ?? 0;
+  }
+
+  /** startOffset — 태그의 몇 번째 칸부터 틀지 (걷기를 이어 붙일 때) */
+  play(name: string, fallback = 'idle', startOffset = 0): void {
     const resolved = this.has(name) ? name : fallback;
     if (resolved === this.tagName) return;
 
@@ -129,7 +146,7 @@ export class AnimView extends Sprite {
 
     this.tagName = resolved;
     this.tag = tag;
-    this.index = tag.from;
+    this.index = tag.from + (startOffset % (tag.to - tag.from + 1));
     this.elapsed = 0;
     this.done = false;
     this.texture = this.sheet.textures[this.index];

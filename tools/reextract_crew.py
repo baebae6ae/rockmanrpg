@@ -833,7 +833,8 @@ def build(cid: str):
         frames = []
         for f, (_, ticks) in zip(out['attack'], seq):
             frames += [f] * ticks
-        out['attack'] = frames + [base]
+        # 앞뒤로 대기 자세를 끼워 걷기↔공격이 늘 같은 선 자세를 거쳐 넘어가게 한다
+        out['attack'] = [base] * 2 + frames + [base]
     else:
         if cid in ATTACK_KEYS:
             base = out['idle'][0]
@@ -873,6 +874,16 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
     for j, c in enumerate(cells):
         r, q = divmod(j, cols)
         sheet[r * ch:(r + 1) * ch, q * cw:(q + 1) * cw] = c
+    # 다리가 대기 자세와 가장 닮은 걷기 칸 — 걷다가 공격 자세로 넘어갈 때
+    # 이 칸이 끝나는 순간에만 넘어가고, 공격이 끝나면 그다음 칸부터 걷는다
+    def legs(c):
+        a = c[:, :, 3] > 0
+        ys = np.nonzero(a.any(axis=1))[0]
+        a[:int(ys.max() - (ys.max() - ys.min()) * 0.4)] = False
+        return a
+    still = legs(cells[tags['idle'][0]])
+    walk_cells = cells[tags['walk'][0]:tags['walk'][1] + 1]
+    walk_neutral = int(np.argmax([(legs(c) & still).sum() / max(1, (legs(c) | still).sum()) for c in walk_cells]))
     prev = prev_meta['tags']
     atk_total = (prev['attack_main']['to'] - prev['attack_main']['from'] + 1) * prev['attack_main']['duration']
     na = tags['attack'][1] - tags['attack'][0] + 1
@@ -890,6 +901,7 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
         # 칸 번호마다의 총구 위치 [앞쪽 거리, 발에서의 높이] — horde.ts 가
         # 쏘는 순간 보이는 칸의 값을 쓴다
         'muzzle': [muzzle_of(c) for c in cells],
+        'walk_neutral': walk_neutral,
         'tags': {
             # 대표 한 장과 숨 들이쉰 한 장을 느긋하게 번갈아 — 0.9초에 한 번
             'idle': t(*tags['idle'], 450, True),

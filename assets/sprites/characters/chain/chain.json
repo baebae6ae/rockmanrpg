@@ -78,6 +78,7 @@
       31
     ]
   ],
+  "walk_neutral": 0,
   "tags": {
     "idle": {
       "from": 0,

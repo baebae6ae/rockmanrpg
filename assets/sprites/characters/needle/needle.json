@@ -3,7 +3,7 @@
     "w": 90,
     "h": 68
   },
-  "columns": 21,
+  "columns": 22,
   "muzzle": [
     [
       28,
@@ -32,6 +32,14 @@
     [
       22,
       16
+    ],
+    [
+      28,
+      12
+    ],
+    [
+      28,
+      12
     ],
     [
       22,
@@ -90,6 +98,7 @@
       13
     ]
   ],
+  "walk_neutral": 0,
   "tags": {
     "idle": {
       "from": 0,
@@ -111,7 +120,7 @@
     },
     "attack_main": {
       "from": 7,
-      "to": 13,
+      "to": 15,
       "duration": 40,
       "loop": false
     },
@@ -134,14 +143,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 14,
-      "to": 20,
+      "from": 16,
+      "to": 22,
       "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 20,
-      "to": 20,
+      "from": 22,
+      "to": 22,
       "duration": 200,
       "loop": false
     }
