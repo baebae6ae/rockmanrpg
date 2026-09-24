@@ -246,6 +246,53 @@ def downscale(img: np.ndarray, k: float) -> np.ndarray:
     return np.concatenate([rgb.clip(0, 255), np.where(al >= 0.5, 255, 0)], axis=2).astype(np.uint8)
 
 
+def register(f: np.ndarray, ref: np.ndarray) -> int:
+    """원본 해상도에서 f 를 ref 에 겹칠 가로 이동량 — 발끝을 맞춘 채
+    머리·가슴(위쪽 55%) 실루엣이 가장 많이 겹치는 자리. 무게중심 같은
+    요약값은 AI 가 칸마다 디테일을 조금씩 다르게 그린 만큼 같이 흔들려서,
+    실루엣 전체를 맞대어 본다."""
+    H = max(f.shape[0], ref.shape[0])
+    def top(img):
+        a = np.zeros((H, img.shape[1]), bool)
+        a[H - img.shape[0]:] = img[:, :, 3] > 0
+        return a[: int(H * 0.55)]
+    a, b = top(f), top(ref)
+    wa, wb = a.shape[1], b.shape[1]
+    best, best_s = -1.0, 0
+    for s in range(-wa + 8, wb - 8):
+        x0, x1 = max(0, s), min(wb, s + wa)
+        if x1 - x0 < 8:
+            continue
+        pa = a[:, x0 - s:x1 - s]
+        pb = b[:, x0:x1]
+        inter = (pa & pb).sum()
+        union = a.sum() + b.sum() - inter
+        iou = inter / max(1, union)
+        if iou > best:
+            best, best_s = iou, s
+    return best_s
+
+
+def on_grid(frames: list[np.ndarray], shifts: list[int], anchor: float, k: float):
+    """원본 프레임을 한 캔버스 위 같은 자리(발끝 바닥, 정렬 이동 반영)에
+    놓고 같은 격자로 줄인다. 칸마다 따로 잘라 줄이면 잘린 시작점마다 축소
+    격자가 어긋나서, 똑같은 그림도 픽셀 색이 전부 조금씩 달라져 가만히
+    서 있는 캐릭터가 반짝거린다."""
+    left = [s for s in shifts]
+    x_min = min(min(left), 0)
+    x_max = max(max(l + f.shape[1] for l, f in zip(left, frames)), 0)
+    half = int(np.ceil(max(anchor - x_min, x_max - anchor))) + 4
+    RW = half * 2
+    RH = max(f.shape[0] for f in frames) + 4
+    out = []
+    for f, l in zip(frames, left):
+        c = np.zeros((RH, RW, 4), np.uint8)
+        x = int(round(half - anchor + l))
+        c[RH - f.shape[0]:, x:x + f.shape[1]] = f
+        out.append(downscale(c, k))
+    return out
+
+
 def anchor_x(img: np.ndarray) -> float:
     """머리·가슴(위쪽 45%)의 가로 중심 — 무기나 다리가 뻗어도 덜 흔들린다"""
     ys, xs = np.nonzero(img[:, :, 3] > 0)
@@ -354,6 +401,34 @@ def drop_outliers(fs: list[np.ndarray], thr: float = 0.72, keep: int = 5) -> lis
     return fs
 
 
+def frame_change(a: np.ndarray, b: np.ndarray) -> float:
+    """두 칸 사이에 실루엣이나 색이 달라진 픽셀 비율"""
+    oa, ob = a[:, :, 3] > 0, b[:, :, 3] > 0
+    d = (oa != ob) | ((oa & ob) & (np.abs(a[:, :, :3].astype(int) - b[:, :, :3].astype(int)).sum(2) > 60))
+    return d.sum() / max(1, (oa | ob).sum())
+
+
+def breathing_idle(fs: list[np.ndarray]) -> list[np.ndarray]:
+    """대기 동작 = 대표 한 장 + 가슴 위를 1px 들어 올린 한 장.
+
+    원본 대기 줄은 실제로는 거의 안 움직이고, AI 가 칸마다 도끼날 크기·
+    투구 음영·눈 모양을 조금씩 다르게 다시 그린 것뿐이다. 그걸 그대로
+    돌리면 가만히 서 있는 캐릭터가 부글부글 끓는다(한 칸 넘어갈 때마다
+    픽셀의 60~80% 가 바뀌었다). 다른 칸들과 가장 덜 다른 칸을 대표로
+    골라 그 그림만 쓰고, 움직임은 도트 게임 대기 동작의 정석대로 가슴
+    위 1px 들썩임으로 준다."""
+    n = len(fs)
+    sc = [np.mean([frame_change(fs[i], fs[j]) for j in range(n) if j != i]) for i in range(n)]
+    base = fs[int(np.argmin(sc))]
+    ys = np.nonzero((base[:, :, 3] > 0).any(axis=1))[0]
+    top, bot = ys.min(), ys.max()
+    cut = int(bot - (bot - top) * 0.45)
+    up = base.copy()
+    up[top - 1:cut - 1] = base[top:cut]
+    up[cut - 1:cut] = base[cut - 1:cut]
+    return [base, up]
+
+
 def hue_shift(img: np.ndarray, lo: float, hi: float, deg: float) -> np.ndarray:
     """색상환에서 [lo, hi]도 대역(채도가 있는 칸만)을 deg 만큼 민다"""
     rgb = img[:, :, :3].astype(float) / 255
@@ -405,14 +480,19 @@ def muzzle_of(cell: np.ndarray) -> list[int]:
 
 
 def place(f: np.ndarray, cw: int, ch: int) -> np.ndarray:
-    canvas = np.zeros((ch, cw, 4), np.uint8)
+    """정렬된 캔버스에서 고정 기준점(ANCHOR)을 가운데로 cw×ch 를 잘라낸다.
+    칸마다 기준점을 다시 계산하지 않는다 — 그 계산이 1px 씩 흔들려서
+    몸 전체가 좌우로 떨렸다."""
     h, w = f.shape[:2]
-    x = int(round(cw / 2 - anchor_x(f)))
-    y = ch - h
-    sx0, sx1 = max(0, -x), min(w, cw - x)
-    sy0 = max(0, -y)
-    canvas[y + sy0:, x + sx0:x + sx1] = f[sy0:, sx0:sx1]
-    return canvas
+    out = np.zeros((ch, cw, 4), np.uint8)
+    x0 = int(round(ANCHOR - cw / 2))
+    sx0, sx1 = max(0, x0), min(w, x0 + cw)
+    sy0 = max(0, h - ch)
+    out[ch - (h - sy0):, sx0 - x0:sx1 - x0] = f[sy0:, sx0:sx1]
+    return out
+
+
+ANCHOR = 0.0
 
 
 # ------------------------------------------------------------ 한 명 처리
@@ -423,9 +503,25 @@ def build(cid: str):
     raw = find_frames(rgba, title, rows, EXPECT.get(cid))
     idle_h = float(np.median([f.shape[0] for f in raw['idle']]))
     k = TARGET_H / idle_h
-    fr = {n: [drop_fragments(strip_dust(drop_fragments(downscale(f, k)))) for f in fs] for n, fs in raw.items()}
-    fr = {n: [trim(f) for f in fs] for n, fs in fr.items()}
-    idle_w = float(np.median([f.shape[1] for f in fr['idle']]))
+    # 모든 동작을 대기 첫 칸에 맞대어 정렬하고, 한 격자에서 줄인다.
+    # 쓰러지는 피격 칸은 실루엣이 딴판이라 맞대기가 안 먹어서 무게중심으로 둔다
+    ref = raw['idle'][0]
+    ref_ax = anchor_x(ref)
+    names = [n for n in raw if raw[n]]
+    flat, shifts, owner = [], [], []
+    for n in names:
+        for f in raw[n]:
+            flat.append(f)
+            shifts.append(register(f, ref) if n != 'hurt' else int(round(ref_ax - anchor_x(f))))
+            owner.append(n)
+    grid = on_grid(flat, shifts, ref_ax, k)
+    fr = {n: [] for n in names}
+    for n, g in zip(owner, grid):
+        fr[n].append(drop_fragments(strip_dust(drop_fragments(g))))
+    GW = grid[0].shape[1]
+    global ANCHOR
+    ANCHOR = GW / 2
+    idle_w = float(np.median([trim(f).shape[1] for f in fr['idle']]))
     # 캐릭터가 아니라 이펙트 조각(검기·잔상)만 잡힌 것은 버린다 — 대기 자세
     # 색과 거의 안 겹치거나 키가 턱없이 작은 것
     ref = np.concatenate([f[f[:, :, 3] > 0][:, :3] for f in fr['idle']]).astype(int)
@@ -434,7 +530,7 @@ def build(cid: str):
     def is_body(f):
         px = f[f[:, :, 3] > 0][:, :3].astype(int) // 24
         share = np.mean([tuple(p) in ref_q for p in px.tolist()])
-        return share > 0.55 and f.shape[0] > TARGET_H * 0.4
+        return share > 0.55 and trim(f).shape[0] > TARGET_H * 0.4
     fr = {n: [f for f in fs if is_body(f)] for n, fs in fr.items()}
 
     idle_px = float(np.median([(f[:, :, 3] > 0).sum() for f in fr['idle']]))
@@ -446,7 +542,7 @@ def build(cid: str):
             g, lost = strip_fx(f)
             g = drop_fragments(g, 0.08)
             n = (g[:, :, 3] > 0).sum()
-            res.append((i, trim(g) if n else f, lost if n > idle_px * 0.4 else 1.0))
+            res.append((i, g if n else f, lost if n > idle_px * 0.4 else 1.0))
         good = [(i, g) for i, g, lost in res if lost <= max_lost]
         if len(good) < need:
             good = sorted([(i, g) for i, g, lost in sorted(res, key=lambda t: t[2])[:need]])
@@ -472,6 +568,7 @@ def build(cid: str):
     if cid in RECOLOR:
         lo, hi, deg = RECOLOR[cid]
         out = {n: [hue_shift(f, lo, hi, deg) for f in fs] for n, fs in out.items()}
+    out['idle'] = breathing_idle(out['idle'])
     return out, k, idle_w
 
 
@@ -480,8 +577,8 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
     half = 0
     for n in order:
         for f in fr[n]:
-            ax = anchor_x(f)
-            half = max(half, ax + 1, f.shape[1] - ax + 1)
+            xs = np.nonzero((f[:, :, 3] > 0).any(axis=0))[0]
+            half = max(half, ANCHOR - xs.min() + 1, xs.max() + 1 - ANCHOR + 1)
     cw = int(np.ceil(half)) * 2
     cells, tags, i = [], {}, 0
     for n in order:
@@ -515,7 +612,8 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
         # 쏘는 순간 보이는 칸의 값을 쓴다
         'muzzle': [muzzle_of(c) for c in cells],
         'tags': {
-            'idle': t(*tags['idle'], 130, True),
+            # 대표 한 장과 숨 들이쉰 한 장을 느긋하게 번갈아 — 0.9초에 한 번
+            'idle': t(*tags['idle'], 450, True),
             'walk': t(*tags['walk'], walk_ms, True),
             'dash': t(*tags['dash'], 70, True),
             'attack_main': t(*tags['attack'], atk_ms, False),
