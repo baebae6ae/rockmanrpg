@@ -511,6 +511,30 @@ def walk_keys(fs: list[np.ndarray], k: int = 4) -> list[np.ndarray]:
     return [fs[i] for i in pick]
 
 
+def settle_to_idle(fs: list[np.ndarray], base: np.ndarray, thr: float = 0.72) -> list[np.ndarray]:
+    """공격 앞뒤의 준비 자세 칸을 대기 대표 그림으로 바꾼다.
+
+    원본 공격 줄은 휘두르기 전후에 준비 자세가 여러 칸 이어지는데, 칸마다
+    다시 그려져 있어서 공격이 끝났는데도 몸이 부글거렸고(종은 4칸), 대기에서
+    공격으로 넘어가는 순간 얼굴이 바뀌었다. 맨 앞과 맨 뒤에서 대기 그림과
+    실루엣이 thr 이상 겹치는 칸만 바꾼다 — 휘두르는 가운데 칸은 건드리지 않는다."""
+    b = base[:, :, 3] > 0
+    close = []
+    for f in fs:
+        a = f[:, :, 3] > 0
+        close.append((a & b).sum() / max(1, (a | b).sum()) >= thr)
+    out = list(fs)
+    i = 0
+    while i < len(out) and close[i]:
+        out[i] = base
+        i += 1
+    j = len(out) - 1
+    while j > i and close[j]:
+        out[j] = base
+        j -= 1
+    return out
+
+
 def hold_redraws(fs: list[np.ndarray], thr: float = 0.8) -> list[np.ndarray]:
     """실루엣이 거의 같은 연속 칸(움직임 없이 다시 그리기만 한 칸)은 앞 칸을
     그대로 유지한다 — 자세가 실제로 바뀔 때만 그림이 바뀌게. 무기는 실루엣에서
@@ -695,7 +719,7 @@ def build(cid: str):
     out['walk'] = stable_upper(walk_keys(out['walk']))
     # 대시는 짧게 스치는 한 자세라, 다시 그린 칸들을 돌릴 이유가 없다
     out['dash'] = [out['dash'][central_index(out['dash'])]]
-    out['attack'] = hold_redraws(out['attack'])
+    out['attack'] = hold_redraws(settle_to_idle(out['attack'], out['idle'][0]))
     return out, k, idle_w
 
 
