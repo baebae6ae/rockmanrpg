@@ -236,28 +236,6 @@ const STYLE_DESC: Record<Style, string> = {
 };
 
 /**
- * 대원별 실제 총구(발사체가 나오는 지점) 위치 — 서 있는 자세(armWeapon
- * 'down') 기준, 몸 중심에서 바라보는 방향으로 얼마나(dx) 떨어져 있고
- * 발에서 얼마나 높은지(dy)를 tools/lib/crew.ts 의 무기 그림에서 직접
- * 측정한 값이다.
- *
- * 예전엔 캐릭터·무기와 무관하게 (9, 10) 고정값 하나를 다 같이 썼다.
- * 총구 높이만 맞추고 나니(총구 높이 수정 커밋) 이번엔 총알이 총구가
- * 아니라 목 옆 몸통에 바짝 붙어 나가는 게 보였다 — 바늘의 총열은
- * 24칸이나 뻗어 있는데 9칸짜리 고정폭을 쓰면 총구 3분의 1도 못
- * 가는 자리에서 나가는 셈이다. 무기마다 총구까지 뻗은 길이가 다 달라서
- * (짧은 권총부터 등에 멘 포드까지) 캐릭터별로 실측해 표로 둔다.
- */
-const MUZZLE: Record<string, [number, number]> = {
-  nail: [20, 29],
-  needle: [27, 22],
-  ember: [20, 22],
-  firefly: [12, 32],
-  harpoon: [10, 52],
-  mirror: [6, 29],
-};
-
-/**
  * 대원별 공격 서명.
  *
  * 방식(차지/연사/세이버)은 밸런스의 뼈대라 그대로 두되, 같은 방식을 쓰는
@@ -2706,12 +2684,20 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
     attackHold = 0.2;
-    // 총알이 실제로 나가는 자리는 조준 각도 계산(py-10, 위 base)과는
-    // 별개다. 캐릭터별 실측 총구 위치(MUZZLE)가 있으면 그걸 쓰고,
-    // 없으면(세이버는 탄이 없어 안 쓰인다) 대략의 손 높이로 대체한다.
-    const muz = MUZZLE[charDef.id];
-    const muzX = px + facing * (muz?.[0] ?? 9);
-    const muzY = py - (muz?.[1] ?? (charDef.hitbox?.h ?? 30) * (charDef.muzzle_ratio ?? 0.63));
+    // 총구는 지금 보이는 칸의 총 끝이다 — 총류는 사격 중에도 대기/걷기
+    // 그림을 그대로 쓰므로 걸으며 팔이 흔들리면 총구도 같이 움직인다.
+    // 기록이 없는 시트(임시 도트)는 대략의 손 높이로 대체한다.
+    const muz = hero?.muzzle() ?? [9, (charDef.hitbox?.h ?? 30) * (charDef.muzzle_ratio ?? 0.63)];
+    const muzX = px + facing * muz[0] * heroScale;
+    const muzY = py - muz[1] * heroScale;
+    // 조준도 총구에서 한다. 예전엔 몸 기준점(py-10)에서 잰 각도로 총구에서
+    // 쏴서 탄이 조준선과 평행하게 총구 높이만큼 떠서 날아갔고, 옆에 선
+    // 적은 머리 위로 지나가 한 발도 안 맞았다(못 기준 8방향 명중 4/16).
+    // 세로를 0.82 로 눌러 쏘는 것(fireOne)도 여기서 되돌려 둬야 대각선의
+    // 적에게 정확히 닿는다.
+    const gunAim = target
+      ? Math.atan2(((target.y - 8) - muzY) / 0.82, target.x - muzX)
+      : facing > 0 ? 0 : Math.PI;
 
     fireDrones(base);
 
@@ -2726,9 +2712,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       const t = w.shots === 1 ? 0 : i / (w.shots - 1) - 0.5;
       // 연사는 매 발이 조금씩 흩어져야 "갈긴다"는 느낌이 난다
       const jitter = w.style === 'rapid' ? (Math.random() - 0.5) * 0.1 : 0;
-      fireOne(base + t * w.spread + jitter, shotLife * (w.style === 'charge' ? 1.5 : 1), muzX, muzY, w.dmg);
+      fireOne(gunAim + t * w.spread + jitter, shotLife * (w.style === 'charge' ? 1.5 : 1), muzX, muzY, w.dmg);
     }
-    spawnPart(muzX + Math.cos(base) * 5, muzY + Math.sin(base) * 5, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
+    spawnPart(muzX + Math.cos(gunAim) * 5, muzY + Math.sin(gunAim) * 4, w.style === 'charge' ? 4 : 2, 0xfff2c0, 60);
     sfx.shot(w.style);
   }
 
@@ -4621,6 +4607,17 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     };
     dbg.__hordeAllClear = (): boolean => allStagesClear();
     dbg.__hordeSpawnFoe = (elite = false): void => { spawnFoe(elite); };
+    /** 명중 검사용 — 적을 모두 치우고 플레이어 기준 (dx, dy) 에 하나만 세운다 */
+    dbg.__hordePlaceFoe = (dx: number, dy: number): void => {
+      for (let i = foes.length - 1; i >= 0; i--) retire(foes[i]);
+      spawnFoe(false);
+      const f = foes[foes.length - 1];
+      if (!f) return;
+      f.x = px + dx; f.y = py + dy; f.hp = 1e9; f.kx = 0; f.ky = 0;
+    };
+    dbg.__hordeFoeHp = (): number[] => foes.map((f) => f.hp);
+    dbg.__hordeShoot = (): void => { shoot(); };
+    dbg.__hordeClearBullets = (): void => { bullets.length = 0; };
     dbg.__hordeBgmMood = (): BgmMood => bgmMood;
     dbg.__hordeBgmMuted = (): boolean => bgm.muted;
     dbg.__hordeToggleMute = (): void => { sfx.toggleMute(); bgm.toggleMute(); };

@@ -19,6 +19,8 @@ export interface SheetMeta {
   canvas: { w: number; h: number };
   columns: number;
   tags: Record<string, TagMeta>;
+  /** 칸 번호마다의 총구 위치 [바라보는 쪽으로의 거리, 발에서의 높이] */
+  muzzle?: [number, number][];
 }
 
 export interface Sheet {
@@ -111,6 +113,11 @@ export class AnimView extends Sprite {
 
   has(name: string): boolean {
     return name in this.sheet.meta.tags;
+  }
+
+  /** 지금 보이는 칸의 총구 위치 — 시트에 기록이 없으면 null */
+  muzzle(): [number, number] | null {
+    return this.sheet.meta.muzzle?.[this.index] ?? null;
   }
 
   play(name: string, fallback = 'idle'): void {

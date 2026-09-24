@@ -388,6 +388,22 @@ def hue_shift(img: np.ndarray, lo: float, hi: float, deg: float) -> np.ndarray:
 RECOLOR = {'harpoon': (115, 205, 40)}
 
 
+def muzzle_of(cell: np.ndarray) -> list[int]:
+    """한 칸에서 총구(탄이 나올 자리) — 가슴~무릎 높이 띠에서 바라보는
+    방향(오른쪽)으로 가장 멀리 뻗은 점. 칸 가운데(=발 기준점)에서의
+    [앞쪽 거리, 발에서의 높이]. 총·버스터 계열은 사격 중에도 대기/걷기
+    그림을 그대로 쓰므로 그 칸마다의 총 끝이 곧 총구다."""
+    ch, cw = cell.shape[:2]
+    ys, xs = np.nonzero(cell[:, :, 3] > 0)
+    h = ch - ys
+    band = (h >= 12) & (h <= 42)
+    if not band.any():
+        return [9, 30]
+    xm = xs[band].max()
+    yy = ys[band][xs[band] >= xm - 1].mean()
+    return [int(round(xm + 0.5 - cw / 2)), int(round(ch - yy))]
+
+
 def place(f: np.ndarray, cw: int, ch: int) -> np.ndarray:
     canvas = np.zeros((ch, cw, 4), np.uint8)
     h, w = f.shape[:2]
@@ -495,6 +511,9 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
     meta = {
         'canvas': {'w': cw, 'h': CANVAS_H},
         'columns': cols,
+        # 칸 번호마다의 총구 위치 [앞쪽 거리, 발에서의 높이] — horde.ts 가
+        # 쏘는 순간 보이는 칸의 값을 쓴다
+        'muzzle': [muzzle_of(c) for c in cells],
         'tags': {
             'idle': t(*tags['idle'], 130, True),
             'walk': t(*tags['walk'], walk_ms, True),

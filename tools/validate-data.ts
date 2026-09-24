@@ -526,10 +526,9 @@ try {
     }
   }
 
-  // 대원별 공격 서명(SIG)·총구 위치(MUZZLE)·방식(STYLE_BY_ARCHETYPE) 이
-  // 실제 9명의 캐릭터 데이터를 전부 커버하는지
+  // 대원별 공격 서명(SIG)·방식(STYLE_BY_ARCHETYPE) 이 실제 9명의 캐릭터
+  // 데이터를 전부 커버하는지, 총 쏘는 대원의 시트에 칸마다 총구가 있는지
   const sigIds = new Set(parseFlatObjectKeys(hordeSrc, 'SIG'));
-  const muzzleIds = new Set(parseFlatObjectKeys(hordeSrc, 'MUZZLE'));
   const styleByArchetype = new Set(parseFlatObjectKeys(hordeSrc, 'STYLE_BY_ARCHETYPE'));
 
   for (const { id, archetype } of characterIds) {
@@ -537,9 +536,27 @@ try {
     if (!styleByArchetype.has(archetype)) {
       fail('horde.ts', `STYLE_BY_ARCHETYPE 에 archetype '${archetype}' (캐릭터 '${id}') 이 없다`);
     }
-    // 세이버는 근접이라 총구 좌표가 필요 없다 — 버스터/연사만 있으면 된다
-    if (archetype !== 'saber' && !muzzleIds.has(id)) {
-      fail('horde.ts', `MUZZLE 에 캐릭터 '${id}' (${archetype}) 의 총구 좌표가 없다`);
+    // 세이버는 근접이라 총구가 필요 없다 — 버스터/연사만 검사한다.
+    // 총구는 tools/reextract_crew.py 가 칸마다 재서 시트 JSON 에 적는다.
+    if (archetype !== 'saber') {
+      const where = `sprites/characters/${id}`;
+      const metaPath = resolve(ROOT, `assets/sprites/characters/${id}/${id}.json`);
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as {
+        canvas: { w: number; h: number };
+        tags: Record<string, { to: number }>;
+        muzzle?: unknown;
+      };
+      const frames = Math.max(...Object.values(meta.tags).map((t) => t.to)) + 1;
+      const muz = meta.muzzle;
+      if (!Array.isArray(muz) || muz.length < frames) {
+        fail(where, `총구(muzzle) 가 칸 수(${frames})만큼 없다 — tools/reextract_crew.py 로 다시 뽑아라`);
+      } else {
+        muz.forEach((m, i) => {
+          const ok = Array.isArray(m) && m.length === 2
+            && Math.abs(m[0]) <= meta.canvas.w / 2 && m[1] >= 0 && m[1] <= meta.canvas.h;
+          if (!ok) fail(where, `총구 ${i}번 칸 좌표가 캔버스 밖이다: ${JSON.stringify(m)}`);
+        });
+      }
     }
   }
 } catch (e) {
