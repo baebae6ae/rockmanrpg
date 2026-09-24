@@ -1,38 +1,38 @@
 {
   "canvas": {
-    "w": 82,
-    "h": 63
+    "w": 80,
+    "h": 68
   },
-  "columns": 18,
+  "columns": 25,
   "tags": {
     "idle": {
       "from": 0,
-      "to": 3,
+      "to": 7,
       "duration": 130,
       "loop": true
     },
     "walk": {
-      "from": 4,
-      "to": 12,
-      "duration": 70,
+      "from": 8,
+      "to": 15,
+      "duration": 79,
       "loop": true
     },
     "dash": {
-      "from": 13,
-      "to": 13,
+      "from": 16,
+      "to": 18,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 14,
-      "to": 17,
-      "duration": 90,
+      "from": 19,
+      "to": 26,
+      "duration": 45,
       "loop": false
     },
     "run": {
-      "from": 4,
-      "to": 12,
-      "duration": 70,
+      "from": 8,
+      "to": 15,
+      "duration": 79,
       "loop": true
     },
     "jump_rise": {
@@ -48,14 +48,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 0,
-      "to": 0,
-      "duration": 200,
+      "from": 27,
+      "to": 34,
+      "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 0,
-      "to": 0,
+      "from": 34,
+      "to": 34,
       "duration": 200,
       "loop": false
     }
