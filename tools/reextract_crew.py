@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import glob
+import itertools
 import json
 import subprocess
 import sys
@@ -470,6 +471,43 @@ def stable_upper(fs: list[np.ndarray], frac: float = 0.55) -> list[np.ndarray]:
     return out
 
 
+def walk_keys(fs: list[np.ndarray], k: int = 4) -> list[np.ndarray]:
+    """걷기에서 다리 자세가 서로 가장 크게 다른 k 칸만 순서대로 고른다.
+
+    원본 걷기 8~11칸은 이웃 칸끼리 발이 거의 안 움직이고 다리 디테일만
+    다시 그려져 있어서, 그대로 돌리면 다리가 걷는 게 아니라 꿈틀거렸다
+    (상체만 고정했을 때 '반으로 잘려 아래만 우글거린다'). 도트 게임의
+    정석처럼 디딤·모음·반대 디딤·모음 네 자세만 남기면 다리 그림이 바뀔
+    때마다 실제로 발이 움직인다."""
+    n = len(fs)
+    if n <= k:
+        return fs
+
+    def lower(f):
+        a = f[:, :, 3] > 0
+        ys = np.nonzero(a.any(axis=1))[0]
+        m = np.zeros_like(a)
+        cut = int(ys.max() - (ys.max() - ys.min()) * 0.42)
+        m[cut:] = a[cut:]
+        return m
+    L = [lower(f) for f in fs]
+    tops = [int(np.nonzero((f[:, :, 3] > 0).any(axis=1))[0].min()) for f in fs]
+    dist = lambda a, b: 1 - (a & b).sum() / max(1, (a | b).sum())
+    best, pick = None, None
+    for comb in itertools.combinations(range(n), k):
+        sc = sum(dist(L[comb[i]], L[comb[(i + 1) % k]]) for i in range(k))
+        # 한 구간에 몰려 뽑히면 걸음이 절뚝인다 — 고르게 퍼진 쪽을 조금 더 친다
+        gaps = [(comb[(i + 1) % k] - comb[i]) % n for i in range(k)]
+        sc -= 0.03 * float(np.std(gaps))
+        # 몸이 오르내리는 폭은 2px 안쪽이어야 걷는 것으로 보인다 — 원본에는
+        # 한 칸만 몸이 4~5px 떠 있는 칸이 섞여 있어 그대로 고르면 걷다가 튄다
+        bob = max(tops[i] for i in comb) - min(tops[i] for i in comb)
+        sc -= 0.25 * max(0, bob - 2)
+        if best is None or sc > best:
+            best, pick = sc, comb
+    return [fs[i] for i in pick]
+
+
 def hold_redraws(fs: list[np.ndarray], thr: float = 0.8) -> list[np.ndarray]:
     """실루엣이 거의 같은 연속 칸(움직임 없이 다시 그리기만 한 칸)은 앞 칸을
     그대로 유지한다 — 자세가 실제로 바뀔 때만 그림이 바뀌게. 무기는 실루엣에서
@@ -641,7 +679,7 @@ def build(cid: str):
         lo, hi, deg = RECOLOR[cid]
         out = {n: [hue_shift(f, lo, hi, deg) for f in fs] for n, fs in out.items()}
     out['idle'] = breathing_idle(out['idle'])
-    out['walk'] = stable_upper(out['walk'])
+    out['walk'] = stable_upper(walk_keys(out['walk']))
     # 대시는 짧게 스치는 한 자세라, 다시 그린 칸들을 돌릴 이유가 없다
     out['dash'] = [out['dash'][central_index(out['dash'])]]
     out['attack'] = hold_redraws(out['attack'])
@@ -672,13 +710,14 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
         r, q = divmod(j, cols)
         sheet[r * CANVAS_H:(r + 1) * CANVAS_H, q * cw:(q + 1) * cw] = c
     prev = prev_meta['tags']
-    walk_total = (prev['walk']['to'] - prev['walk']['from'] + 1) * prev['walk']['duration']
     atk_total = (prev['attack_main']['to'] - prev['attack_main']['from'] + 1) * prev['attack_main']['duration']
-    nw = tags['walk'][1] - tags['walk'][0] + 1
     na = tags['attack'][1] - tags['attack'][0] + 1
     # 한 바퀴 걸리는 시간은 예전과 같게 — 프레임이 늘었다고 걸음이 느려지면
     # 이동 속도와 발이 안 맞아 미끄러져 보인다
-    walk_ms = max(45, round(walk_total / nw))
+    # 걷기는 다리 자세 네 칸만 쓰므로 예전 한 바퀴 시간을 네 칸으로 나누면
+    # 칸당 190ms 까지 늘어 걸음이 끊겨 보였다 — 4칸 걷기의 흔한 속도(초당
+    # 8칸)로 아홉 명 모두 같게 둔다
+    walk_ms = 125
     atk_ms = max(45, round(atk_total / na))
     t = lambda a, b, ms, loop: {'from': a, 'to': b, 'duration': ms, 'loop': loop}
     meta = {

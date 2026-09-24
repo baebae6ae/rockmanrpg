@@ -3,7 +3,7 @@
     "w": 92,
     "h": 68
   },
-  "columns": 22,
+  "columns": 18,
   "muzzle": [
     [
       24,
@@ -22,32 +22,12 @@
       23
     ],
     [
-      18,
-      22
-    ],
-    [
       20,
-      23
+      26
     ],
     [
       22,
       24
-    ],
-    [
-      24,
-      24
-    ],
-    [
-      20,
-      22
-    ],
-    [
-      22,
-      21
-    ],
-    [
-      24,
-      22
     ],
     [
       24,
@@ -107,26 +87,26 @@
     },
     "walk": {
       "from": 2,
-      "to": 10,
-      "duration": 70,
+      "to": 5,
+      "duration": 125,
       "loop": true
     },
     "dash": {
-      "from": 11,
-      "to": 11,
+      "from": 6,
+      "to": 6,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 12,
-      "to": 17,
+      "from": 7,
+      "to": 12,
       "duration": 75,
       "loop": false
     },
     "run": {
       "from": 2,
-      "to": 10,
-      "duration": 70,
+      "to": 5,
+      "duration": 125,
       "loop": true
     },
     "jump_rise": {
@@ -142,14 +122,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 18,
-      "to": 22,
+      "from": 13,
+      "to": 17,
       "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 22,
-      "to": 22,
+      "from": 17,
+      "to": 17,
       "duration": 200,
       "loop": false
     }

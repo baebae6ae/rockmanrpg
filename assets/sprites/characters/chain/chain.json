@@ -22,20 +22,8 @@
       20
     ],
     [
-      28,
-      20
-    ],
-    [
-      26,
-      19
-    ],
-    [
       26,
       18
-    ],
-    [
-      26,
-      20
     ],
     [
       26,
@@ -99,26 +87,26 @@
     },
     "walk": {
       "from": 2,
-      "to": 8,
-      "duration": 70,
+      "to": 5,
+      "duration": 125,
       "loop": true
     },
     "dash": {
-      "from": 9,
-      "to": 9,
+      "from": 6,
+      "to": 6,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 10,
-      "to": 16,
+      "from": 7,
+      "to": 13,
       "duration": 64,
       "loop": false
     },
     "run": {
       "from": 2,
-      "to": 8,
-      "duration": 70,
+      "to": 5,
+      "duration": 125,
       "loop": true
     },
     "jump_rise": {
@@ -134,14 +122,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 17,
-      "to": 20,
+      "from": 14,
+      "to": 17,
       "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 20,
-      "to": 20,
+      "from": 17,
+      "to": 17,
       "duration": 200,
       "loop": false
     }
