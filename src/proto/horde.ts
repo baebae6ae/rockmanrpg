@@ -236,6 +236,17 @@ const STYLE_DESC: Record<Style, string> = {
 };
 
 /**
+ * 총류(charge/rapid)인데도 쏠 때 실제로 스윙 자세를 보여주는 대원.
+ *
+ * 총류는 원래 자동사격마다 팔을 크게 쓰는 자세로 안 바꾼다 — 다리가
+ * 멈추거나 뚝뚝 끊겨 보였기 때문이다(대기/이동 자세를 그대로 쓰고
+ * 총구 섬광·탄으로만 쏘는 걸 표현했다). 이 다섯 명은 무기를 당겼다
+ * 모아 쏘는 전용 그림(assets/raw/<id>_charge.png)을 attack_main 으로
+ * 따로 갖고 있어서, 그 그림이 실제로 화면에 보이게 예외로 둔다.
+ */
+const SHOW_ATTACK_POSE = new Set(['needle', 'nail', 'mirror', 'harpoon', 'firefly']);
+
+/**
  * 대원별 공격 서명.
  *
  * 방식(차지/연사/세이버)은 밸런스의 뼈대라 그대로 두되, 같은 방식을 쓰는
@@ -4979,11 +4990,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       wantTag = 'charge_loop';
     } else if (firing) {
       const moveTag = dashTimer > 0 ? 'dash_attack' : 'run_attack';
-      if (w.style !== 'saber') {
+      if (w.style !== 'saber' && !SHOW_ATTACK_POSE.has(charDef.id)) {
         // 총류(charge/rapid)는 자동사격 간격(빠르면 초당 여러 번)마다
         // 스윙 자세로 갈아탔더니 다리가 멈추거나 뚝뚝 끊겨 보였다 — 총은
         // 실제로 휘두르는 무기가 아니라 총구 섬광과 탄만으로 충분하다.
-        // 팔을 크게 써야 하는 건 근접무기(세이버)뿐이다.
+        // 팔을 크게 써야 하는 건 근접무기(세이버)와, 전용 그림이 있는
+        // SHOW_ATTACK_POSE 뿐이다.
         wantTag = idleTag;
       } else if (!(dashTimer > 0 || moving)) {
         wantTag = comboTag();
@@ -5003,11 +5015,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 콤보 중간 단(attack_main2/3)이 재생 중이면 끊지 않는다 — 매 프레임
     // attack_main 으로 되돌리면 2단 이후가 첫 프레임에서 잘려 안 보인다.
     const inCombo = hv.current.startsWith('attack_main') && !hv.finished;
-    // 근접은 한 번 휘두르기 시작하면 끝까지 보여준다. 사격 자세 유지 시간
-    // (attackHold 0.2초)이 지나는 순간 대기로 바꿔 버려서, 0.5초짜리 휘두르기가
-    // 내리찍는 도중 잘려 도끼가 '뚝 생겼다 사라지는' 것처럼 보였다. 대시만은
-    // 즉시 끊는다.
-    const finishSwing = w.style === 'saber' && inCombo && dashTimer <= 0;
+    // 한 번 휘두르기(또는 총류의 모아 쏘기) 시작하면 끝까지 보여준다. 사격
+    // 자세 유지 시간(attackHold 0.2초)이 지나는 순간 대기로 바꿔 버려서,
+    // 0.2초보다 긴 동작이 중간에 잘려 '뚝 생겼다 사라지는' 것처럼 보였다.
+    // 대시만은 즉시 끊는다.
+    const finishSwing = inCombo && dashTimer <= 0;
     if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) hv.play(wantTag, idleTag);
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서

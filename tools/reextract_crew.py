@@ -212,9 +212,17 @@ def find_frames(rgba: np.ndarray, title: bool, rows: list[str], expect: int | No
 
 
 def load_sheet_frames(path: Path) -> list[np.ndarray]:
-    """투명 배경에 줄지어 그린 시트에서 칸을 왼쪽 위부터 차례로 뽑는다"""
-    rgba = np.array(Image.open(path).convert('RGBA'))
-    A = rgba[:, :, 3] > 200
+    """줄지어 그린 시트에서 칸을 왼쪽 위부터 차례로 뽑는다. 투명 배경(알파)과
+    검은 배경(불투명 PNG) 둘 다 받는다 — 검은 배경은 밝기로 몸을 가른다."""
+    img = Image.open(path).convert('RGBA')
+    rgba = np.array(img)
+    has_alpha = (rgba[:, :, 3] < 250).any()
+    if has_alpha:
+        A = rgba[:, :, 3] > 200
+    else:
+        A = rgba[:, :, :3].astype(int).sum(axis=2) > 15
+        rgba = rgba.copy()
+        rgba[:, :, 3] = np.where(A, 255, 0)
     out = []
     for y0, y1 in runs(A.sum(axis=1), 0, gap=6):
         for x0, x1 in runs(A[y0:y1].sum(axis=0), 0, gap=4):
@@ -630,12 +638,47 @@ ATTACK_SHEET = {
         'seq': [(1, 1), (2, 1), (3, 2), (4, 2), (5, 2), (6, 2), (7, 1), (8, 1)],
         'tick': 40,
     },
+    # 아래 다섯은 총류(charge/rapid)다 — horde.ts 는 원래 총류가 자동사격
+    # 중엔 팔을 휘두르는 스윙 자세로 안 바꾸고 대기/이동 자세를 그대로
+    # 쓴다(다리가 끊겨 보이는 걸 막으려던 예전 결정). 그 결정을 이 다섯
+    # 명만 뒤집어 SHOW_ATTACK_POSE 에 넣었다 — 실제로 쏘는 동안 이 자세가
+    # 나온다.
+    'needle': {
+        'file': 'needle_charge.png',
+        'stance': [0],
+        'seq': [(1, 1), (2, 1), (3, 4)],
+        'tick': 40,
+    },
+    'nail': {
+        'file': 'nail_charge.png',
+        'stance': [0],
+        'seq': [(2, 1), (3, 1), (4, 1), (5, 3)],
+        'tick': 40,
+    },
+    'mirror': {
+        'file': 'mirror_charge.png',
+        'stance': [0],
+        'seq': [(1, 1), (2, 1), (3, 4)],
+        'tick': 40,
+    },
+    'harpoon': {
+        'file': 'harpoon_charge.png',
+        'stance': [0],
+        'seq': [(2, 1), (3, 1), (4, 3)],
+        'tick': 40,
+    },
+    'firefly': {
+        'file': 'firefly_charge.png',
+        'stance': [0],
+        'seq': [(1, 1), (2, 1), (3, 2)],
+        'tick': 40,
+    },
 }
 
 # 무기가 외곽선 없이 밝게 빛나게 그려진 대원 — 외곽선 기준 이펙트 제거가
 # 공격 칸의 무기를 검기로 오인해 통째로 지운다(도끼날이 사라져 자루만
 # 휘둘렀다). 대시는 다른 대원처럼 속도선을 지워야 하므로 공격에만 적용한다
-WEAPON_GLOWS = {'axe'}
+WEAPON_GLOWS = {'axe', 'needle', 'nail', 'mirror', 'harpoon', 'firefly'}
 
 # 원본 삽화가 같은 청록 갑옷이라 게임에서 거의 같은 캐릭터로 보이던 둘 중
 # 작살의 갑옷 대역만 파란 쪽으로 민다 (3eddecf 와 같은 조정 — 피부·금장식·
@@ -723,7 +766,8 @@ def build(cid: str):
         px = f[f[:, :, 3] > 0][:, :3].astype(int) // 24
         share = np.mean([tuple(p) in ref_q for p in px.tolist()])
         return share > 0.55 and trim(f).shape[0] > TARGET_H * 0.4
-    fr = {n: [f for f in fs if is_body(f)] for n, fs in fr.items()}
+    curated = {'attack'} if cid in ATTACK_SHEET else set()
+    fr = {n: (fs if n in curated else [f for f in fs if is_body(f)]) for n, fs in fr.items()}
 
     idle_px = float(np.median([(f[:, :, 3] > 0).sum() for f in fr['idle']]))
 
