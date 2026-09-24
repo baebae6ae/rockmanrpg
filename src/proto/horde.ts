@@ -5003,7 +5003,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 콤보 중간 단(attack_main2/3)이 재생 중이면 끊지 않는다 — 매 프레임
     // attack_main 으로 되돌리면 2단 이후가 첫 프레임에서 잘려 안 보인다.
     const inCombo = hv.current.startsWith('attack_main') && !hv.finished;
-    if (!(firing && wantTag === 'attack_main' && inCombo)) hv.play(wantTag, idleTag);
+    // 근접은 한 번 휘두르기 시작하면 끝까지 보여준다. 사격 자세 유지 시간
+    // (attackHold 0.2초)이 지나는 순간 대기로 바꿔 버려서, 0.5초짜리 휘두르기가
+    // 내리찍는 도중 잘려 도끼가 '뚝 생겼다 사라지는' 것처럼 보였다. 대시만은
+    // 즉시 끊는다.
+    const finishSwing = w.style === 'saber' && inCombo && dashTimer <= 0;
+    if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) hv.play(wantTag, idleTag);
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서
     // 부들거리기만 하므로, 한 번 끝까지 재생된 뒤에만 다시 튼다.

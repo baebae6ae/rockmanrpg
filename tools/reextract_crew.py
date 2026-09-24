@@ -211,6 +211,19 @@ def find_frames(rgba: np.ndarray, title: bool, rows: list[str], expect: int | No
     return frames
 
 
+def load_sheet_frames(path: Path) -> list[np.ndarray]:
+    """투명 배경에 줄지어 그린 시트에서 칸을 왼쪽 위부터 차례로 뽑는다"""
+    rgba = np.array(Image.open(path).convert('RGBA'))
+    A = rgba[:, :, 3] > 200
+    out = []
+    for y0, y1 in runs(A.sum(axis=1), 0, gap=6):
+        for x0, x1 in runs(A[y0:y1].sum(axis=0), 0, gap=4):
+            f = rgba[y0:y1, x0:x1].copy()
+            f[:, :, 3] = np.where(f[:, :, 3] > 150, 255, 0)
+            out.append(trim(f))
+    return out
+
+
 def split_merged(crop: np.ndarray, expect: int | None, typical_h: int):
     """붙어 있는 여러 프레임을 한 덩어리로 잡았을 때 쪼갠다"""
     w = crop.shape[1]
@@ -596,11 +609,28 @@ def hue_shift(img: np.ndarray, lo: float, hi: float, deg: float) -> np.ndarray:
 #       누르는 순간 머리가 뚝 꺼졌다가 도끼를 세운 칸만 이어지고 끝나
 #       휘두르는 것으로 안 읽혔다. 앞으로 내리찍는 두 칸(6·7)만 쓰면 몸이
 #       낮아지는 순간이 곧 내리찍는 순간이라 체중을 실은 동작이 된다
-ATTACK_KEYS = {'axe': [6, 7]}
+ATTACK_KEYS: dict[str, list[int]] = {}
 
-# 원본에서 그 줄만 다른 크기로 그려진 경우의 보정 배율(원본 해상도에서 키운다).
-#   axe 공격 줄은 헬멧 폭이 대기의 0.94 배 — 내리찍는 순간 몸이 작아졌다 커졌다
-ROW_SCALE = {'axe': {'attack': 1 / 0.94}}
+# 원본에서 그 줄만 다른 크기로 그려진 경우의 보정 배율(원본 해상도에서 키운다)
+ROW_SCALE: dict[str, dict[str, float]] = {}
+
+# 공격 동작을 따로 새로 그려 온 대원 — 원본 시트의 공격 줄 대신 이 시트를 쓴다.
+#   file   assets/raw 안의 파일
+#   stance 대기 자세로 그린 칸 — 이 칸들의 키를 원본 대기 키에 맞춰 크기를
+#          정한다(머리 대 몸 비율이 원본과 같게 그려져 있다: 헬멧폭/키 0.45)
+#   seq    실제로 쓸 칸과 각 칸을 몇 틱 보여줄지. 게임은 공격하는 순간 바로
+#          피해를 주고 궤적을 그리므로, 들어 올리기는 짧게 하고 내리찍는 칸이
+#          시작 후 0.08초 안에 나오게 한다. 앞뒤 대기 칸은 빼고 끝을 대기
+#          대표 그림 한 칸으로 닫는다
+#   tick   한 틱 길이(ms). 도끼 공격 간격 0.57초 안에 끝나게 잡는다
+ATTACK_SHEET = {
+    'axe': {
+        'file': 'axe_attack.png',
+        'stance': [0, 9, 10, 11],
+        'seq': [(1, 1), (2, 1), (3, 2), (4, 2), (5, 2), (6, 2), (7, 1), (8, 1)],
+        'tick': 40,
+    },
+}
 
 # 무기가 외곽선 없이 밝게 빛나게 그려진 대원 — 외곽선 기준 이펙트 제거가
 # 공격 칸의 무기를 검기로 오인해 통째로 지운다(도끼날이 사라져 자루만
@@ -651,6 +681,15 @@ def build(cid: str):
     key, title, rows = CREW[cid]
     rgba = np.array(Image.open(raw_path(key)).convert('RGBA'))
     raw = find_frames(rgba, title, rows, EXPECT.get(cid))
+    if cid in ATTACK_SHEET:
+        cfg = ATTACK_SHEET[cid]
+        new = load_sheet_frames(ROOT / 'assets/raw' / cfg['file'])
+        idle_raw_h = float(np.median([f.shape[0] for f in raw['idle']]))
+        stance_h = float(np.median([new[i].shape[0] for i in cfg['stance']]))
+        sc = idle_raw_h / stance_h
+        raw['attack'] = [np.array(Image.fromarray(new[i]).resize(
+            (round(new[i].shape[1] * sc), round(new[i].shape[0] * sc)), Image.LANCZOS))
+            for i, _ in cfg['seq']]
     for n, sc in ROW_SCALE.get(cid, {}).items():
         raw[n] = [np.array(Image.fromarray(f).resize(
             (round(f.shape[1] * sc), round(f.shape[0] * sc)), Image.LANCZOS)) for f in raw[n]]
@@ -730,10 +769,18 @@ def build(cid: str):
     out['walk'] = stable_upper(walk_keys(out['walk']))
     # 대시는 짧게 스치는 한 자세라, 다시 그린 칸들을 돌릴 이유가 없다
     out['dash'] = [out['dash'][central_index(out['dash'])]]
-    if cid in ATTACK_KEYS:
+    if cid in ATTACK_SHEET:
+        seq = ATTACK_SHEET[cid]['seq']
         base = out['idle'][0]
-        out['attack'] = [base] + [out['attack'][i] for i in ATTACK_KEYS[cid]] + [base]
-    out['attack'] = hold_redraws(settle_to_idle(out['attack'], out['idle'][0]))
+        frames = []
+        for f, (_, ticks) in zip(out['attack'], seq):
+            frames += [f] * ticks
+        out['attack'] = frames + [base]
+    else:
+        if cid in ATTACK_KEYS:
+            base = out['idle'][0]
+            out['attack'] = [base] + [out['attack'][i] for i in ATTACK_KEYS[cid]] + [base]
+        out['attack'] = hold_redraws(settle_to_idle(out['attack'], out['idle'][0]))
     return out, k, idle_w
 
 
@@ -745,21 +792,29 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
             xs = np.nonzero((f[:, :, 3] > 0).any(axis=0))[0]
             half = max(half, ANCHOR - xs.min() + 1, xs.max() + 1 - ANCHOR + 1)
     cw = int(np.ceil(half)) * 2
+    # 칸 높이는 기본 68 — 도끼를 머리 위로 드는 칸처럼 더 높은 그림이 있는
+    # 대원만 필요한 만큼 늘린다(발끝 기준이라 늘려도 위치는 안 바뀐다)
+    ch = CANVAS_H
+    for n in order:
+        for f in fr[n]:
+            ys = np.nonzero((f[:, :, 3] > 0).any(axis=1))[0]
+            ch = max(ch, int(f.shape[0] - ys.min()) + 2)
+    ch += ch % 2
     cells, tags, i = [], {}, 0
     for n in order:
         tags[n] = (i, i + len(fr[n]) - 1)
         for f in fr[n]:
-            cells.append(place(f, cw, CANVAS_H))
+            cells.append(place(f, cw, ch))
         i += len(fr[n])
     # 한 줄로 길게 붙이면 가로가 4000px 를 넘는 대원이 생긴다 — 휴대폰 GPU
     # 중에는 4096px 넘는 텍스처를 못 올리는 것이 있어서, 2048px 안에서
     # 줄을 바꿔 격자로 깐다 (로더가 columns 로 줄바꿈을 계산한다)
     cols = min(len(cells), MAX_SHEET_W // cw)
     nrows = -(-len(cells) // cols)
-    sheet = np.zeros((nrows * CANVAS_H, cols * cw, 4), np.uint8)
+    sheet = np.zeros((nrows * ch, cols * cw, 4), np.uint8)
     for j, c in enumerate(cells):
         r, q = divmod(j, cols)
-        sheet[r * CANVAS_H:(r + 1) * CANVAS_H, q * cw:(q + 1) * cw] = c
+        sheet[r * ch:(r + 1) * ch, q * cw:(q + 1) * cw] = c
     prev = prev_meta['tags']
     atk_total = (prev['attack_main']['to'] - prev['attack_main']['from'] + 1) * prev['attack_main']['duration']
     na = tags['attack'][1] - tags['attack'][0] + 1
@@ -769,10 +824,10 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
     # 칸당 190ms 까지 늘어 걸음이 끊겨 보였다 — 4칸 걷기의 흔한 속도(초당
     # 8칸)로 아홉 명 모두 같게 둔다
     walk_ms = 125
-    atk_ms = max(45, round(atk_total / na))
+    atk_ms = ATTACK_SHEET[cid]['tick'] if cid in ATTACK_SHEET else max(45, round(atk_total / na))
     t = lambda a, b, ms, loop: {'from': a, 'to': b, 'duration': ms, 'loop': loop}
     meta = {
-        'canvas': {'w': cw, 'h': CANVAS_H},
+        'canvas': {'w': cw, 'h': ch},
         'columns': cols,
         # 칸 번호마다의 총구 위치 [앞쪽 거리, 발에서의 높이] — horde.ts 가
         # 쏘는 순간 보이는 칸의 값을 쓴다
@@ -805,7 +860,7 @@ def main(ids: list[str]):
         fr, k, idle_w = build(cid)
         meta = write(cid, fr, prev)
         counts = {n: len(v) for n, v in fr.items()}
-        print(f'{cid:8} 배율 {k:.3f}  캔버스 {meta["canvas"]["w"]}x{CANVAS_H}  {counts}')
+        print(f'{cid:8} 배율 {k:.3f}  캔버스 {meta["canvas"]["w"]}x{meta["canvas"]["h"]}  {counts}')
 
 
 if __name__ == '__main__':
