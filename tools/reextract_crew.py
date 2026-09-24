@@ -673,12 +673,26 @@ ATTACK_SHEET = {
         'seq': [(1, 1), (2, 1), (3, 2)],
         'tick': 40,
     },
+    'ember': {
+        'file': 'ember_attack.png',
+        'stance': [0],
+        'seq': [(1, 1), (2, 1), (3, 1), (4, 2)],
+        'tick': 40,
+    },
+    # bell 은 근접(saber)이라 attack_main 이 이미 화면에 나온다 —
+    # SHOW_ATTACK_POSE 는 필요 없고 그림만 이걸로 바꾼다
+    'bell': {
+        'file': 'bell_attack.png',
+        'stance': [0],
+        'seq': [(1, 1), (2, 1), (3, 1), (4, 3), (5, 1), (6, 1)],
+        'tick': 40,
+    },
 }
 
 # 무기가 외곽선 없이 밝게 빛나게 그려진 대원 — 외곽선 기준 이펙트 제거가
 # 공격 칸의 무기를 검기로 오인해 통째로 지운다(도끼날이 사라져 자루만
 # 휘둘렀다). 대시는 다른 대원처럼 속도선을 지워야 하므로 공격에만 적용한다
-WEAPON_GLOWS = {'axe', 'needle', 'nail', 'mirror', 'harpoon', 'firefly'}
+WEAPON_GLOWS = {'axe', 'needle', 'nail', 'mirror', 'harpoon', 'firefly', 'ember', 'bell'}
 
 # 원본 삽화가 같은 청록 갑옷이라 게임에서 거의 같은 캐릭터로 보이던 둘 중
 # 작살의 갑옷 대역만 파란 쪽으로 민다 (3eddecf 와 같은 조정 — 피부·금장식·

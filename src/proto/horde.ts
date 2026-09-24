@@ -244,7 +244,7 @@ const STYLE_DESC: Record<Style, string> = {
  * 모아 쏘는 전용 그림(assets/raw/<id>_charge.png)을 attack_main 으로
  * 따로 갖고 있어서, 그 그림이 실제로 화면에 보이게 예외로 둔다.
  */
-const SHOW_ATTACK_POSE = new Set(['needle', 'nail', 'mirror', 'harpoon', 'firefly']);
+const SHOW_ATTACK_POSE = new Set(['needle', 'nail', 'mirror', 'harpoon', 'firefly', 'ember']);
 
 /**
  * 대원별 공격 서명.
