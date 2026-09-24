@@ -19,7 +19,7 @@
     ],
     [
       18,
-      20
+      21
     ],
     [
       20,
@@ -62,20 +62,12 @@
       17
     ],
     [
-      30,
-      18
-    ],
-    [
-      32,
-      17
-    ],
-    [
       24,
       21
     ],
     [
-      22,
-      22
+      24,
+      21
     ],
     [
       28,
@@ -161,13 +153,13 @@
     },
     "dash": {
       "from": 13,
-      "to": 15,
+      "to": 13,
       "duration": 70,
       "loop": true
     },
     "attack_main": {
-      "from": 16,
-      "to": 24,
+      "from": 14,
+      "to": 22,
       "duration": 50,
       "loop": false
     },
@@ -190,14 +182,14 @@
       "loop": false
     },
     "hurt": {
-      "from": 25,
-      "to": 34,
+      "from": 23,
+      "to": 32,
       "duration": 80,
       "loop": false
     },
     "death": {
-      "from": 34,
-      "to": 34,
+      "from": 32,
+      "to": 32,
       "duration": 200,
       "loop": false
     }

@@ -408,6 +408,80 @@ def frame_change(a: np.ndarray, b: np.ndarray) -> float:
     return d.sum() / max(1, (oa | ob).sum())
 
 
+def central_index(fs: list[np.ndarray]) -> int:
+    """다른 칸들과 가장 덜 다른 칸 — 그 동작의 대표 그림"""
+    n = len(fs)
+    if n == 1:
+        return 0
+    sc = [np.mean([frame_change(fs[i], fs[j]) for j in range(n) if j != i]) for i in range(n)]
+    return int(np.argmin(sc))
+
+
+def shift_img(img: np.ndarray, dx: int, dy: int) -> np.ndarray:
+    out = np.zeros_like(img)
+    h, w = img.shape[:2]
+    ys0, ys1 = max(0, dy), min(h, h + dy)
+    xs0, xs1 = max(0, dx), min(w, w + dx)
+    out[ys0:ys1, xs0:xs1] = img[ys0 - dy:ys1 - dy, xs0 - dx:xs1 - dx]
+    return out
+
+
+def stable_upper(fs: list[np.ndarray], frac: float = 0.55) -> list[np.ndarray]:
+    """걷기 — 허리 위(머리·몸통·팔)는 대표 걷기 그림 하나로 고정하고, 다리만
+    각 칸의 원본을 쓴다.
+
+    원본 걷기는 다리뿐 아니라 얼굴·투구·갑옷 디테일까지 칸마다 다시 그려져
+    있어서, 걷기 시작하면 상체가 부글거렸다. 상체는 걸어도 모양이 안 바뀌어야
+    하는 부분이라 대표 그림을 칸마다 맞대어(몸이 오르내리는 만큼 위치만 따라)
+    덮는다. 머리만 따로 덮어 보니 경계선이 눈을 가로질러 얼굴에 줄이 생겨서,
+    이음새를 모양이 단순한 허리에 둔다."""
+    rep = fs[central_index(fs)]
+    ys = np.nonzero((rep[:, :, 3] > 0).any(axis=1))[0]
+    cut = int(ys.min() + (ys.max() - ys.min() + 1) * frac)
+    patch = rep.copy()
+    patch[cut:] = 0
+    pa0 = patch[:, :, 3] > 0
+    out = []
+    for f in fs:
+        fa = f[:, :, 3] > 0
+        near = dilate(fa, 3)
+        best, arg = -1.0, (0, 0)
+        # 좌우는 이미 원본 해상도에서 맞춰 뒀다 — 여기서 또 좌우로 따라가면
+        # AI 가 칸마다 조금씩 다르게 그린 만큼 고정한 상체가 좌우로 떨린다.
+        # 몸이 오르내리는 위아래만 따라간다.
+        for dy in range(-4, 5):
+            for dx in (0,):
+                sp = shift_img(pa0[:, :, None].astype(np.uint8), dx, dy)[:, :, 0] > 0
+                iou = (sp & fa).sum() / max(1, (sp | (fa & dilate(sp, 3))).sum())
+                if iou > best:
+                    best, arg = iou, (dx, dy)
+        p = shift_img(patch, *arg)
+        pa = p[:, :, 3] > 0
+        py, px = np.nonzero(pa)
+        g = f.copy()
+        # 허리 위는 좌우 끝까지 전부 대표 그림으로 — 대표 상체 틀만 비우면
+        # 원본에서 더 뒤로 뻗은 팔이 틀 밖에 조각으로 남았다(작살).
+        # 이음새 두 줄은 다리와 이어지게 원본을 남긴다
+        box = np.zeros(pa.shape, bool)
+        box[py.min():py.max() - 1, :] = True
+        g[box & ~pa] = 0
+        g[pa] = p[pa]
+        out.append(drop_fragments(g, 0.08))
+    return out
+
+
+def hold_redraws(fs: list[np.ndarray], thr: float = 0.8) -> list[np.ndarray]:
+    """실루엣이 거의 같은 연속 칸(움직임 없이 다시 그리기만 한 칸)은 앞 칸을
+    그대로 유지한다 — 자세가 실제로 바뀔 때만 그림이 바뀌게. 무기는 실루엣에서
+    차지하는 몫이 작아 이보다 낮추면 도끼를 드는 칸까지 합쳐진다."""
+    out = [fs[0]]
+    for f in fs[1:]:
+        a, b = out[-1][:, :, 3] > 0, f[:, :, 3] > 0
+        iou = (a & b).sum() / max(1, (a | b).sum())
+        out.append(out[-1] if iou >= thr else f)
+    return out
+
+
 def breathing_idle(fs: list[np.ndarray]) -> list[np.ndarray]:
     """대기 동작 = 대표 한 장 + 가슴 위를 1px 들어 올린 한 장.
 
@@ -417,9 +491,7 @@ def breathing_idle(fs: list[np.ndarray]) -> list[np.ndarray]:
     픽셀의 60~80% 가 바뀌었다). 다른 칸들과 가장 덜 다른 칸을 대표로
     골라 그 그림만 쓰고, 움직임은 도트 게임 대기 동작의 정석대로 가슴
     위 1px 들썩임으로 준다."""
-    n = len(fs)
-    sc = [np.mean([frame_change(fs[i], fs[j]) for j in range(n) if j != i]) for i in range(n)]
-    base = fs[int(np.argmin(sc))]
+    base = fs[central_index(fs)]
     ys = np.nonzero((base[:, :, 3] > 0).any(axis=1))[0]
     top, bot = ys.min(), ys.max()
     cut = int(bot - (bot - top) * 0.45)
@@ -569,6 +641,10 @@ def build(cid: str):
         lo, hi, deg = RECOLOR[cid]
         out = {n: [hue_shift(f, lo, hi, deg) for f in fs] for n, fs in out.items()}
     out['idle'] = breathing_idle(out['idle'])
+    out['walk'] = stable_upper(out['walk'])
+    # 대시는 짧게 스치는 한 자세라, 다시 그린 칸들을 돌릴 이유가 없다
+    out['dash'] = [out['dash'][central_index(out['dash'])]]
+    out['attack'] = hold_redraws(out['attack'])
     return out, k, idle_w
 
 
