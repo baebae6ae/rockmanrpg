@@ -57,9 +57,6 @@ EXPECT = {'needle': 8}
 #          생겼다 사라진다. 창 없는 다섯 칸으로 통일한다.
 #          공격 3,6,8,10 — 초승달 검기 칸
 DROP = {
-    # axe    공격 5 — 도끼를 들어 올린 뒤 준비 자세로 한 칸 되돌아갔다가
-    #        내리찍는 원본 순서라 휘두르는 흐름이 끊겼다
-    'axe': {'attack': [5]},
     'chain': {'attack': [6], 'hurt': [3, 5, 6]},
     'needle': {'walk': [0, 1, 2], 'attack': [3, 6, 8, 10]},
 }
@@ -594,6 +591,17 @@ def hue_shift(img: np.ndarray, lo: float, hi: float, deg: float) -> np.ndarray:
     return res
 
 
+# 공격을 '대기 자세 → 원본의 이 칸들 → 대기 자세'로 새로 엮는 대원.
+#   axe 원본 공격 줄은 전부 대기보다 한참 웅크린 자세(키 82→68)라, 공격을
+#       누르는 순간 머리가 뚝 꺼졌다가 도끼를 세운 칸만 이어지고 끝나
+#       휘두르는 것으로 안 읽혔다. 앞으로 내리찍는 두 칸(6·7)만 쓰면 몸이
+#       낮아지는 순간이 곧 내리찍는 순간이라 체중을 실은 동작이 된다
+ATTACK_KEYS = {'axe': [6, 7]}
+
+# 원본에서 그 줄만 다른 크기로 그려진 경우의 보정 배율(원본 해상도에서 키운다).
+#   axe 공격 줄은 헬멧 폭이 대기의 0.94 배 — 내리찍는 순간 몸이 작아졌다 커졌다
+ROW_SCALE = {'axe': {'attack': 1 / 0.94}}
+
 # 무기가 외곽선 없이 밝게 빛나게 그려진 대원 — 외곽선 기준 이펙트 제거가
 # 공격 칸의 무기를 검기로 오인해 통째로 지운다(도끼날이 사라져 자루만
 # 휘둘렀다). 대시는 다른 대원처럼 속도선을 지워야 하므로 공격에만 적용한다
@@ -643,6 +651,9 @@ def build(cid: str):
     key, title, rows = CREW[cid]
     rgba = np.array(Image.open(raw_path(key)).convert('RGBA'))
     raw = find_frames(rgba, title, rows, EXPECT.get(cid))
+    for n, sc in ROW_SCALE.get(cid, {}).items():
+        raw[n] = [np.array(Image.fromarray(f).resize(
+            (round(f.shape[1] * sc), round(f.shape[0] * sc)), Image.LANCZOS)) for f in raw[n]]
     idle_h = float(np.median([f.shape[0] for f in raw['idle']]))
     k = TARGET_H / idle_h
     # 모든 동작을 대기 첫 칸에 맞대어 정렬하고, 한 격자에서 줄인다.
@@ -719,6 +730,9 @@ def build(cid: str):
     out['walk'] = stable_upper(walk_keys(out['walk']))
     # 대시는 짧게 스치는 한 자세라, 다시 그린 칸들을 돌릴 이유가 없다
     out['dash'] = [out['dash'][central_index(out['dash'])]]
+    if cid in ATTACK_KEYS:
+        base = out['idle'][0]
+        out['attack'] = [base] + [out['attack'][i] for i in ATTACK_KEYS[cid]] + [base]
     out['attack'] = hold_redraws(settle_to_idle(out['attack'], out['idle'][0]))
     return out, k, idle_w
 
