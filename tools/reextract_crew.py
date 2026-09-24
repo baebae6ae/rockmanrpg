@@ -57,6 +57,9 @@ EXPECT = {'needle': 8}
 #          생겼다 사라진다. 창 없는 다섯 칸으로 통일한다.
 #          공격 3,6,8,10 — 초승달 검기 칸
 DROP = {
+    # axe    공격 5 — 도끼를 들어 올린 뒤 준비 자세로 한 칸 되돌아갔다가
+    #        내리찍는 원본 순서라 휘두르는 흐름이 끊겼다
+    'axe': {'attack': [5]},
     'chain': {'attack': [6], 'hurt': [3, 5, 6]},
     'needle': {'walk': [0, 1, 2], 'attack': [3, 6, 8, 10]},
 }
@@ -567,6 +570,11 @@ def hue_shift(img: np.ndarray, lo: float, hi: float, deg: float) -> np.ndarray:
     return res
 
 
+# 무기가 외곽선 없이 밝게 빛나게 그려진 대원 — 외곽선 기준 이펙트 제거가
+# 공격 칸의 무기를 검기로 오인해 통째로 지운다(도끼날이 사라져 자루만
+# 휘둘렀다). 대시는 다른 대원처럼 속도선을 지워야 하므로 공격에만 적용한다
+WEAPON_GLOWS = {'axe'}
+
 # 원본 삽화가 같은 청록 갑옷이라 게임에서 거의 같은 캐릭터로 보이던 둘 중
 # 작살의 갑옷 대역만 파란 쪽으로 민다 (3eddecf 와 같은 조정 — 피부·금장식·
 # 윤곽선은 그대로라 디자인은 안 바뀐다)
@@ -649,7 +657,12 @@ def build(cid: str):
         """이펙트를 지우고, 이펙트가 대부분이던(=캐릭터가 아닌) 프레임은 뺀다"""
         res = []
         for i, f in enumerate(fr.get(name, [])):
-            g, lost = strip_fx(f)
+            if cid in WEAPON_GLOWS and name == 'attack':
+                # 무기 자체가 외곽선 없이 빛나는 대원 — 이펙트로 오인해 지우면
+                # 무기가 사라진다. 이펙트 칸 판별은 캐릭터 판정(is_body)에 맡긴다
+                g, lost = f, 0.0
+            else:
+                g, lost = strip_fx(f)
             g = drop_fragments(g, 0.08)
             n = (g[:, :, 3] > 0).sum()
             res.append((i, g if n else f, lost if n > idle_px * 0.4 else 1.0))
