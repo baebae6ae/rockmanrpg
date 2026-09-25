@@ -4991,9 +4991,12 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 걷기에서 공격 자세로는 다리가 선 자세와 가장 닮은 걷기 칸이 끝나는
     // 순간에만 넘어가고, 공격이 끝나면 그다음 칸부터 걷는다. 아무 칸에서나
     // 넘어가면 성큼 벌린 다리가 한 프레임 만에 모여 뚝 끊겨 보였다.
+    // 대시가 끝난 직후도 곧장 넘어가지 않는다 — 대시 → 공격 → 걷기 한 칸 →
+    // 공격처럼 0.1초 간격으로 자세가 뒤바뀌었다. 서 있다 걷기 시작할 때만 바로.
     const walkResume = hv.walkNeutral + 1;
-    const walkReady = hv.current !== 'run'
-      || (hv.offset === hv.walkNeutral && hv.endsWithin(app.ticker.deltaMS));
+    const walkReady = hv.current === 'idle'
+      || (hv.current === 'run' && hv.offset === hv.walkNeutral && hv.endsWithin(app.ticker.deltaMS));
+    const leavingPose = hv.current.startsWith('attack_main') || hv.current === 'dash';
     const swinging = hv.current.startsWith('attack_main') && !hv.finished;
     if (holdFire && chargeT > 0 && hv.has('charge_loop')) {
       // 차지 중엔 무기 종류와 무관하게 이 자세가 최우선이다. 총류는
@@ -5020,6 +5023,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // 이동 전용 공격 태그가 있으면(엑스) 그대로 쓴다 — 걷기와 사격이
         // 한 태그에 들어 있어 고민할 게 없다.
         wantTag = moveTag;
+      } else if (dashTimer > 0) {
+        // 대시 중엔 대시 자세만 — 공격 자세를 섞으면 미끄러지며 총을 드는
+        // 그림이 대시 잔상 위에 겹쳤다
+        wantTag = idleTag;
       } else if (hv.has('attack_main')) {
         // 없으면(제로) 걷기와 휘두르기를 번갈아 쓴다. 계속 휘두르게 두면
         // 다리가 한 번도 안 움직여서 미끄러지듯 떠다니는 그림이 된다.
@@ -5036,15 +5043,15 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 0.2초보다 긴 동작이 중간에 잘려 '뚝 생겼다 사라지는' 것처럼 보였다.
     // 대시만은 즉시 끊는다.
     const finishSwing = inCombo && dashTimer <= 0;
-    // 발사 간격이 자세 유지 시간(0.2초)보다 긴 대원(거울 0.42초)은 공격이
-    // 끝날 때 이미 firing 이 꺼져 있어 아래 재시작 분기를 안 거친다 — 여기서도
-    // 같은 쉼을 줘야 다음 발에 곧장 다시 총을 들지 않는다.
-    if (hv.current.startsWith('attack_main') && hv.finished && wantTag === idleTag
+    if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) {
+      hv.play(wantTag, idleTag, wantTag === 'run' && leavingPose ? walkResume : 0);
+    }
+    // 공격·대시 자세를 벗어나는 순간(끝까지 돌았든 대시로 끊겼든, 발사 간격이
+    // 길어 firing 이 이미 꺼졌든) 늘 같은 쉼을 준다 — 재시작 분기에서만 주면
+    // 거기를 안 거치는 길로 빠질 때마다 곧장 다음 공격 자세가 튀어나왔다.
+    if (leavingPose && hv.current !== 'dash' && !hv.current.startsWith('attack_main')
       && (moving || w.style !== 'saber')) {
       swingGap = moving ? 0.4 : 0.5;
-    }
-    if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) {
-      hv.play(wantTag, idleTag, wantTag === 'run' && hv.current.startsWith('attack_main') ? walkResume : 0);
     }
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서

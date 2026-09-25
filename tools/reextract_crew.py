@@ -221,15 +221,40 @@ def load_sheet_frames(path: Path) -> list[np.ndarray]:
         A = rgba[:, :, 3] > 200
     else:
         A = rgba[:, :, :3].astype(int).sum(axis=2) > 15
-        rgba = rgba.copy()
-        rgba[:, :, 3] = np.where(A, 255, 0)
     out = []
     for y0, y1 in runs(A.sum(axis=1), 0, gap=6):
         for x0, x1 in runs(A[y0:y1].sum(axis=0), 0, gap=4):
-            f = rgba[y0:y1, x0:x1].copy()
-            f[:, :, 3] = np.where(f[:, :, 3] > 150, 255, 0)
+            if has_alpha:
+                f = rgba[y0:y1, x0:x1].copy()
+                f[:, :, 3] = np.where(f[:, :, 3] > 150, 255, 0)
+            else:
+                f = black_bg_cut(rgba, A, y0, y1, x0, x1)
             out.append(trim(f))
     return out
+
+
+def black_bg_cut(rgba: np.ndarray, body: np.ndarray, y0: int, y1: int, x0: int, x1: int,
+                 ring: int = 3, max_pocket: int = 700) -> np.ndarray:
+    """검은 배경 시트에서 한 칸을 오린다.
+
+    외곽선과 몸 안의 선도 배경과 같은 검정(합 0~15)이라 밝기로만 가르면 선이
+    전부 투명해져, 공격 칸만 외곽선이 없고 몸에 바늘구멍이 숭숭 뚫린 그림이
+    됐다(대기·걷기는 외곽선이 또렷한데). 바깥에서 이어지는 검정만 배경으로
+    보고, 몸에 둘러싸인 검정(안쪽 선)과 몸에 붙은 ring px 띠(바깥 외곽선,
+    원본 해상도에서 칸 한 픽셀 두께)는 그림으로 남긴다. 아주 큰 막힌 검정만
+    팔과 몸 사이 같은 진짜 빈틈으로 보고 뚫어 둔다."""
+    p = ring + 2
+    Y0, Y1 = max(0, y0 - p), min(rgba.shape[0], y1 + p)
+    X0, X1 = max(0, x0 - p), min(rgba.shape[1], x1 + p)
+    b = body[Y0:Y1, X0:X1]
+    outside = flood_outside(b)
+    pocket = ~b & ~outside
+    lab, sizes = components(pocket)
+    gap = np.isin(lab, [i for i, s in enumerate(sizes) if i and s > max_pocket])
+    keep = b | (pocket & ~gap) | (outside & dilate(b, ring))
+    f = rgba[Y0:Y1, X0:X1].copy()
+    f[:, :, 3] = np.where(keep, 255, 0)
+    return f
 
 
 def split_merged(crop: np.ndarray, expect: int | None, typical_h: int):
@@ -268,16 +293,20 @@ def downscale(img: np.ndarray, k: float) -> np.ndarray:
     return np.concatenate([rgb.clip(0, 255), np.where(al >= 0.5, 255, 0)], axis=2).astype(np.uint8)
 
 
-def register(f: np.ndarray, ref: np.ndarray) -> int:
+def register(f: np.ndarray, ref: np.ndarray, legs: bool = False) -> int:
     """원본 해상도에서 f 를 ref 에 겹칠 가로 이동량 — 발끝을 맞춘 채
     머리·가슴(위쪽 55%) 실루엣이 가장 많이 겹치는 자리. 무게중심 같은
     요약값은 AI 가 칸마다 디테일을 조금씩 다르게 그린 만큼 같이 흔들려서,
-    실루엣 전체를 맞대어 본다."""
+    실루엣 전체를 맞대어 본다.
+
+    legs — 다리(아래 30%)로 맞댄다. 따로 그려 온 공격 시트는 거울·총을
+    앞으로 내민 상체로 맞추면 몸 전체가 뒤로 밀려, 쏠 때마다 발이 미끄러졌다
+    (거울 9px). 서서 쏘는 동작은 발이 땅에 붙어 있어야 한다."""
     H = max(f.shape[0], ref.shape[0])
     def top(img):
         a = np.zeros((H, img.shape[1]), bool)
         a[H - img.shape[0]:] = img[:, :, 3] > 0
-        return a[: int(H * 0.55)]
+        return a[int(H * 0.7):] if legs else a[: int(H * 0.55)]
     a, b = top(f), top(ref)
     wa, wb = a.shape[1], b.shape[1]
     best, best_s = -1.0, 0
@@ -463,10 +492,9 @@ def stable_upper(fs: list[np.ndarray], frac: float = 0.55) -> list[np.ndarray]:
     patch = rep.copy()
     patch[cut:] = 0
     pa0 = patch[:, :, 3] > 0
-    out = []
+    fits = []
     for f in fs:
         fa = f[:, :, 3] > 0
-        near = dilate(fa, 3)
         best, arg = -1.0, (0, 0)
         # 좌우는 이미 원본 해상도에서 맞춰 뒀다 — 여기서 또 좌우로 따라가면
         # AI 가 칸마다 조금씩 다르게 그린 만큼 고정한 상체가 좌우로 떨린다.
@@ -477,7 +505,23 @@ def stable_upper(fs: list[np.ndarray], frac: float = 0.55) -> list[np.ndarray]:
                 iou = (sp & fa).sum() / max(1, (sp | (fa & dilate(sp, 3))).sum())
                 if iou > best:
                     best, arg = iou, (dx, dy)
-        p = shift_img(patch, *arg)
+        fits.append(arg[1])
+    # 칸마다 원본 다리에 맞춘 높이를 그대로 쓰면 들썩임이 불규칙했다(반딧불
+    # -1,0,-1,+2 로 두 번 오르다 한 번에 2px 떨어짐). 네 칸 걷기의 정석대로
+    # 디딤(낮음)·모음(높음)을 1px 차로 번갈아 두고, 원본 높이에 가장 가까운
+    # 위상을 고른다
+    if len(fs) == 4:
+        best = None
+        for base in range(min(fits) - 1, max(fits) + 2):
+            for ph in (0, 1):
+                pat = [base - ((i + ph) % 2) for i in range(4)]
+                err = sum(abs(a - b) for a, b in zip(pat, fits))
+                if best is None or err < best[0]:
+                    best = (err, pat)
+        fits = best[1]
+    out = []
+    for f, dy in zip(fs, fits):
+        p = shift_img(patch, 0, dy)
         pa = p[:, :, 3] > 0
         py, px = np.nonzero(pa)
         g = f.copy()
@@ -761,7 +805,10 @@ def build(cid: str):
     for n in names:
         for f in raw[n]:
             flat.append(f)
-            shifts.append(register(f, ref) if n != 'hurt' else int(round(ref_ax - anchor_x(f))))
+            if n == 'hurt':
+                shifts.append(int(round(ref_ax - anchor_x(f))))
+            else:
+                shifts.append(register(f, ref, legs=n == 'attack' and cid in ATTACK_SHEET))
             owner.append(n)
     grid = on_grid(flat, shifts, ref_ax, k)
     fr = {n: [] for n in names}
@@ -840,11 +887,67 @@ def build(cid: str):
             base = out['idle'][0]
             out['attack'] = [base] + [out['attack'][i] for i in ATTACK_KEYS[cid]] + [base]
         out['attack'] = hold_redraws(settle_to_idle(out['attack'], out['idle'][0]))
+    # 원본 피격 줄은 움찔 → 쓰러짐 → 일어남 → 다시 쓰러짐처럼 여러 번 그린
+    # 넘어지는 칸이 뒤섞여 있어, 0.34초 경직 동안 앞 네 칸(쓰러지다 만 그림)이
+    # 돌다가 벌떡 선 자세로 튀었다. 경직은 첫 움찔 한 칸을 붙들고, 쓰러짐은
+    # 키가 가장 낮은(누운) 칸 하나로 따로 둔다 — 예전엔 마지막 피격 칸을
+    # 썼는데 그게 다시 일어선 칸인 대원이 많아 죽어도 서 있었다.
+    hurt = out['hurt']
+    tall = lambda f: np.ptp(np.nonzero((f[:, :, 3] > 0).any(axis=1))[0])
+    heights = [tall(f) for f in hurt]
+    # 누운 칸이 아예 없는 대원(사슬 — 남은 칸이 사슬 소용돌이뿐)은 움찔 칸으로
+    low = int(np.argmin(heights))
+    out['down'] = [hurt[low] if heights[low] < 0.75 * tall(out['idle'][0]) else hurt[0]]
+    out['hurt'] = [hurt[0]]
     return out, k, idle_w
 
 
+# 대기 자세에서 들고 있는 무기를 걷기·대시 칸에도 옮겨 쥐여 준다.
+# 바늘은 원본 걷기 여덟 칸 중 앞 두 칸만 창을 들고 있어(나머지는 창 없이
+# 주먹을 내민 달리기) 창 없는 칸으로 통일했더니, 멈출 때마다 창이 생겼다가
+# 걸으면 사라졌다. 대기 칸의 창(선 y = y0 + slope·(x - x0), 칸 가운데·발끝
+# 기준 좌표)을 떼어 각 동작의 쥔 손 위치(move)로 옮겨 그린다 — 손 밖으로
+# 나온 창끝은 통째로, 몸을 가로지르는 자루는 밝은 픽셀만.
+CARRY = {
+    'needle': {'line': (20, -13, 0.357), 'front': 15, 'across': -17,
+               'move': {'walk': (0, -6), 'dash': (3, 1)}},
+}
+
+
+def carry_weapon(cid: str, cells: list[np.ndarray], tags: dict, cw: int, ch: int):
+    cfg = CARRY[cid]
+    x0, y0, slope = cfg['line']
+    x0 += cw / 2
+    y0 += ch
+    src = cells[tags['idle'][0]]
+    yy, xx = np.mgrid[0:ch, 0:cw]
+    dist = np.abs(yy - (y0 + slope * (xx - x0))) / np.sqrt(1 + slope * slope)
+    a = src[:, :, 3] > 0
+    rgb = src[:, :, :3].astype(float) / 255
+    mx, mn = rgb.max(axis=2), rgb.min(axis=2)
+    light = (mx > 0.6) & ((mx - mn) / np.maximum(mx, 1e-6) < 0.35)
+    front = a & (dist <= 2.2) & (xx >= cw / 2 + cfg['front'])
+    across = a & (dist <= 1.0) & (xx >= cw / 2 + cfg['across']) & (xx < cw / 2 + cfg['front']) & light
+    ys, xs = np.nonzero(front | across)
+    for tag, (dx, dy) in cfg['move'].items():
+        a0, a1 = tags[tag]
+        # 걷기는 상체가 칸마다 1px 오르내리니 창도 같이 — 첫 칸 상체와 비교
+        ref = cells[a0].copy()
+        ref[int(ch * 0.6):] = 0
+        for i in range(a0, a1 + 1):
+            best, bob = -1, 0
+            for d in (-2, -1, 0, 1, 2):
+                sh = shift_img(ref, 0, d)
+                m = (sh[:, :, 3] > 0) & (cells[i][:, :, 3] > 0) & (sh[:, :, :3] == cells[i][:, :, :3]).all(axis=2)
+                if m.sum() > best:
+                    best, bob = m.sum(), d
+            Y, X = ys + dy + bob, xs + dx
+            ok = (Y >= 0) & (Y < ch) & (X >= 0) & (X < cw)
+            cells[i][Y[ok], X[ok]] = src[ys[ok], xs[ok]]
+
+
 def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
-    order = ['idle', 'walk', 'dash', 'attack', 'hurt']
+    order = ['idle', 'walk', 'dash', 'attack', 'hurt', 'down']
     half = 0
     for n in order:
         for f in fr[n]:
@@ -865,6 +968,8 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
         for f in fr[n]:
             cells.append(place(f, cw, ch))
         i += len(fr[n])
+    if cid in CARRY:
+        carry_weapon(cid, cells, tags, cw, ch)
     # 한 줄로 길게 붙이면 가로가 4000px 를 넘는 대원이 생긴다 — 휴대폰 GPU
     # 중에는 4096px 넘는 텍스처를 못 올리는 것이 있어서, 2048px 안에서
     # 줄을 바꿔 격자로 깐다 (로더가 columns 로 줄바꿈을 계산한다)
@@ -911,8 +1016,8 @@ def write(cid: str, fr: dict[str, list[np.ndarray]], prev_meta: dict):
             'run': t(*tags['walk'], walk_ms, True),
             'jump_rise': t(0, 0, 200, False),
             'jump_fall': t(0, 0, 200, False),
-            'hurt': t(*tags['hurt'], 80, False),
-            'death': t(tags['hurt'][1], tags['hurt'][1], 200, False),
+            'hurt': t(*tags['hurt'], 340, False),
+            'death': t(*tags['down'], 200, False),
         },
     }
     d = ROOT / f'assets/sprites/characters/{cid}'
