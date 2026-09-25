@@ -245,6 +245,10 @@ const STYLE_DESC: Record<Style, string> = {
  * 따로 갖고 있어서, 그 그림이 실제로 화면에 보이게 예외로 둔다.
  */
 const SHOW_ATTACK_POSE = new Set(['needle', 'nail', 'mirror', 'harpoon', 'firefly', 'ember']);
+/** 공격 자세 사이의 쉼 — 걸을 땐 이 시간이 지난 뒤 다음 기준 칸이 끝날 때
+    넘어가므로 실제로는 걷기 두 칸(0.25초), 서 있을 땐 그만큼 대기 */
+const REST_WALK = 0.2;
+const REST_STAND = 0.25;
 
 /**
  * 대원별 공격 서명.
@@ -1399,6 +1403,8 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   let dustAcc = 0;
   /** run_attack 이 없는 시트에서 걷기와 휘두르기를 번갈아 쓰기 위한 간격 */
   let swingGap = 0;
+  /** 걷다가 공격 자세로 넘어간 걷기 칸 — 공격이 끝나면 그다음 칸부터 잇는다 */
+  let walkExit = -1;
   /** 레벨업 카드 한 장 — 능력치이거나 특수무기(신규/강화)다 */
   type PickOption =
     | { kind: 'stat'; up: Upgrade }
@@ -2694,7 +2700,10 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
   function shoot(): void {
     const target = nearestFoe(px, py);
     const base = target ? Math.atan2((target.y - 8) - (py - 10), target.x - px) : facing > 0 ? 0 : Math.PI;
-    attackHold = 0.2;
+    // 다음 발까지 공격 상태가 끊기지 않게 발사 간격보다 조금 길게 — 0.2초로
+    // 고정했더니 간격이 0.3초 넘는 대원은 발 사이마다 상태가 꺼져, 걷다가
+    // 공격 자세로 넘어갈 자리에서 자주 건너뛰어 '멈췄다 가끔 하다' 했다.
+    attackHold = Math.max(0.2, w.interval + 0.15);
     // 총구는 지금 보이는 칸의 총 끝이다 — 총류는 사격 중에도 대기/걷기
     // 그림을 그대로 쓰므로 걸으며 팔이 흔들리면 총구도 같이 움직인다.
     // 기록이 없는 시트(임시 도트)는 대략의 손 높이로 대체한다.
@@ -4993,9 +5002,14 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 넘어가면 성큼 벌린 다리가 한 프레임 만에 모여 뚝 끊겨 보였다.
     // 대시가 끝난 직후도 곧장 넘어가지 않는다 — 대시 → 공격 → 걷기 한 칸 →
     // 공격처럼 0.1초 간격으로 자세가 뒤바뀌었다. 서 있다 걷기 시작할 때만 바로.
-    const walkResume = hv.walkNeutral + 1;
+    // 넘어가는 자리는 기준 칸과 반대 발 기준 칸(두 칸 건너) 둘 — 한 바퀴에
+    // 한 자리뿐이면 걷는 동안 공격 자세가 0.8초에 한 번꼴로 드문드문 나왔다.
+    // 공격 뒤엔 넘어갔던 칸의 다음 칸부터 이어 걸어, 두 칸씩 끊겨도 다리는
+    // 네 칸을 차례로 다 돈다.
+    const walkN = hv.walkNeutral;
+    const walkResume = hv.current.startsWith('attack_main') && walkExit >= 0 ? walkExit + 1 : walkN + 1;
     const walkReady = hv.current === 'idle'
-      || (hv.current === 'run' && hv.offset === hv.walkNeutral && hv.endsWithin(app.ticker.deltaMS));
+      || (hv.current === 'run' && hv.offset % 2 === walkN % 2 && hv.endsWithin(app.ticker.deltaMS));
     const leavingPose = hv.current.startsWith('attack_main') || hv.current === 'dash';
     const swinging = hv.current.startsWith('attack_main') && !hv.finished;
     if (holdFire && chargeT > 0 && hv.has('charge_loop')) {
@@ -5014,7 +5028,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         // SHOW_ATTACK_POSE 뿐이다.
         wantTag = idleTag;
       } else if (!(dashTimer > 0 || moving)) {
-        // 총류는 서 있을 때도 걸을 때와 같은 박자(공격 한 번 → 0.5초 쉼)로
+        // 총류는 서 있을 때도 걸을 때와 같은 박자(공격 한 번 → 0.25초 쉼)로
         // 자세를 낸다. 발사 간격마다 곧장 다시 틀면 불씨·반딧불(0.075초)은
         // 쉴 틈 없이 총을 흔들어 대기만 해서 걸을 때보다 훨씬 급해 보였다.
         // 세이버는 휘두르기가 곧 타격이라 그대로 이어서 휘두른다.
@@ -5044,6 +5058,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 대시만은 즉시 끊는다.
     const finishSwing = inCombo && dashTimer <= 0;
     if (!(firing && wantTag === 'attack_main' && inCombo) && !finishSwing) {
+      if (wantTag.startsWith('attack_main') && !hv.current.startsWith('attack_main')) {
+        walkExit = hv.current === 'run' ? hv.offset : -1;
+      }
       hv.play(wantTag, idleTag, wantTag === 'run' && leavingPose ? walkResume : 0);
     }
     // 공격·대시 자세를 벗어나는 순간(끝까지 돌았든 대시로 끊겼든, 발사 간격이
@@ -5051,7 +5068,7 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
     // 거기를 안 거치는 길로 빠질 때마다 곧장 다음 공격 자세가 튀어나왔다.
     if (leavingPose && hv.current !== 'dash' && !hv.current.startsWith('attack_main')
       && (moving || w.style !== 'saber')) {
-      swingGap = moving ? 0.4 : 0.5;
+      swingGap = moving ? REST_WALK : REST_STAND;
     }
     // 공격 태그는 한 번 재생하고 끝나는 것들이라 계속 쏘는 동안에는 다시
     // 틀어줘야 이어져 보인다. 발사 간격(후반 0.027초)에 맞추면 첫 프레임에서
@@ -5064,11 +5081,9 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
         comboStep = (comboStep + 1) % 3;
         if ((moving || w.style !== 'saber') && !hv.has('run_attack')) {
           // 한 번 휘두르고 나면 걷기(서 있으면 대기)를 보여준 뒤 다음 단을
-          // 낸다. 걸을 때는 걷기 한 바퀴(4칸×125ms)를 다 돌고 기준 칸에서
-          // 넘어가므로 0.4초 뒤 기준 칸이 끝나는 순간 — 서 있을 때도 같은
-          // 0.5초를 쉬어 두 박자를 맞춘다. 틈이 한 바퀴보다 짧으면 매번
-          // 앞 두 칸만 보이고 잘려 다리가 안 움직이는 것처럼 보였다.
-          swingGap = moving ? 0.4 : 0.5;
+          // 낸다. 걸을 때는 걷기 두 칸(2×125ms) 뒤 기준 칸이 끝나는 순간에
+          // 넘어가고, 서 있을 때도 같은 0.25초를 쉬어 두 박자를 맞춘다.
+          swingGap = moving ? REST_WALK : REST_STAND;
           hv.play(idleTag, idleTag, moving ? walkResume : 0);
         } else {
           // 콤보 변형 태그(attack_main2/3)가 없는 캐릭터는 다음 태그도
