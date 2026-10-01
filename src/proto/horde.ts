@@ -5061,7 +5061,11 @@ export async function runHordeProto(app: Application, input: Input): Promise<voi
       if (wantTag.startsWith('attack_main') && !hv.current.startsWith('attack_main')) {
         walkExit = hv.current === 'run' ? hv.offset : -1;
       }
-      hv.play(wantTag, idleTag, wantTag === 'run' && leavingPose ? walkResume : 0);
+      // 걸으며 쏘는 태그(run_attack)는 걷기와 다리 칸이 같다 — 둘 사이를
+      // 오갈 땐 걸음 위상을 그대로 이어야 다리가 첫 칸으로 튀지 않는다
+      const sameLegs = (wantTag === 'run_attack' && hv.current === 'run')
+        || (wantTag === 'run' && hv.current === 'run_attack');
+      hv.play(wantTag, idleTag, sameLegs ? hv.offset : wantTag === 'run' && leavingPose ? walkResume : 0);
     }
     // 공격·대시 자세를 벗어나는 순간(끝까지 돌았든 대시로 끊겼든, 발사 간격이
     // 길어 firing 이 이미 꺼졌든) 늘 같은 쉼을 준다 — 재시작 분기에서만 주면

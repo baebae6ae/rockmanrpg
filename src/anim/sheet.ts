@@ -31,18 +31,27 @@ export interface Sheet {
   source: 'sprites' | 'generated';
 }
 
-const pngUrls = import.meta.glob('/assets/{sprites,generated}/**/*.png', {
+const pngUrls = import.meta.glob('/assets/{sprites,generated,rig}/**/*.png', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>;
 
-const metaFiles = import.meta.glob('/assets/{sprites,generated}/**/*.json', {
+const metaFiles = import.meta.glob('/assets/{sprites,generated,rig}/**/*.json', {
   eager: true,
   import: 'default',
 }) as Record<string, SheetMeta>;
 
+/** ?rig — 뼈대로 그린 시험판 시트(assets/rig)가 있으면 그걸 먼저 쓴다 */
+const USE_RIG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('rig');
+
 function resolvePaths(kind: 'characters' | 'enemies', id: string) {
+  if (USE_RIG) {
+    const base = `/assets/rig/${kind}/${id}/${id}`;
+    const png = pngUrls[`${base}.png`];
+    const meta = metaFiles[`${base}.json`];
+    if (png && meta) return { png, meta, source: 'sprites' as const };
+  }
   for (const source of ['sprites', 'generated'] as const) {
     const base = `/assets/${source}/${kind}/${id}/${id}`;
     const png = pngUrls[`${base}.png`];
